@@ -17,7 +17,7 @@ ModeSelector::ModeSelector(QWidget *parent)
     m_planBtn->setToolTip("Plan mode — Claude writes a plan and waits for your approval before acting");
 
     for (auto *btn : {m_agentBtn, m_askBtn, m_planBtn})
-        btn->setFixedHeight(24);
+        btn->setFixedHeight(28);
 
     layout->addWidget(m_agentBtn);
     layout->addWidget(m_askBtn);
@@ -45,22 +45,26 @@ void ModeSelector::setMode(const QString &mode)
 void ModeSelector::updateButtonStyles()
 {
     const auto &p = ThemeManager::instance().palette();
+
+    setStyleSheet(
+        QStringLiteral("ModeSelector { background: %1; border-radius: 8px; padding: 2px; }")
+        .arg(p.bg_raised.name()));
+
     auto setStyle = [&p](QPushButton *btn, bool active) {
         if (active)
             btn->setStyleSheet(
                 QStringLiteral(
                     "QPushButton { background: %1; color: %2; border: none; "
-                    "padding: 2px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; }"
+                    "padding: 4px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; }"
                     "QPushButton:hover { background: %3; }")
-                .arg(p.green.name(), p.on_accent.name(), p.teal.name()));
+                .arg(p.blue.name(), p.on_accent.name(), p.lavender.name()));
         else
             btn->setStyleSheet(
                 QStringLiteral(
-                    "QPushButton { background: %1; color: %2; border: none; "
-                    "padding: 2px 12px; border-radius: 4px; font-size: 11px; }"
-                    "QPushButton:hover { background: %3; color: %4; }")
-                .arg(p.bg_raised.name(), p.text_muted.name(),
-                     p.hover_raised.name(), p.text_primary.name()));
+                    "QPushButton { background: transparent; color: %1; border: none; "
+                    "padding: 4px 14px; border-radius: 6px; font-size: 12px; }"
+                    "QPushButton:hover { background: %2; color: %3; }")
+                .arg(p.text_muted.name(), p.hover_raised.name(), p.text_primary.name()));
     };
     setStyle(m_agentBtn, m_currentMode == "agent");
     setStyle(m_askBtn, m_currentMode == "ask");

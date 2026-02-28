@@ -1,4 +1,5 @@
 #include "ui/WorkspaceTree.h"
+#include "ui/FileIconProvider.h"
 #include "ui/ThemeManager.h"
 #include "ui/ToastManager.h"
 #include <QVBoxLayout>
@@ -125,6 +126,7 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
     layout->addWidget(m_header);
 
     m_model = new QFileSystemModel(this);
+    m_model->setIconProvider(new FileIconProvider);
     m_model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
     m_model->setNameFilterDisables(false);
 

@@ -359,6 +359,7 @@ void MainWindow::setupMenuBar()
 
     struct ThemeEntry { QString key; QString label; };
     for (const auto &entry : std::initializer_list<ThemeEntry>{
+            {"cursor", "Cursor Dark"},
             {"mocha", "Mocha"}, {"macchiato", "Macchiato"},
             {"frappe", QString::fromUtf8("Frapp\xc3\xa9")}, {"latte", "Latte"}}) {
         auto *action = themeMenu->addAction(entry.label);
@@ -519,6 +520,7 @@ void MainWindow::openWorkspace(const QString &path)
     m_snapshotMgr->setWorkingDirectory(path);
     m_snapshotMgr->setDatabase(m_database);
     m_gitManager->setWorkingDirectory(path);
+    m_codeViewer->setRootPath(path);
 
     if (!m_gitManager->isGitRepo())
         m_gitPanel->showNotARepo();

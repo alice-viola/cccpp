@@ -14,7 +14,7 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     , m_rawContent(content)
 {
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(8, 3, 8, 3);
+    m_layout->setContentsMargins(10, 6, 10, 6);
     m_layout->setSpacing(0);
 
     // Header: role label + buttons
@@ -217,7 +217,7 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
 
     auto *summaryLabel = new QLabel(summary, this);
     summaryLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: %1; font-size: 11px; font-family: Menlo, monospace; }")
+        QStringLiteral("QLabel { color: %1; font-size: 11px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; }")
         .arg(tm.hex("text_muted")));
     summaryLabel->setWordWrap(true);
     summaryLayout->addWidget(summaryLabel, 1);
@@ -234,7 +234,7 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     detailBrowser->setStyleSheet(
         QStringLiteral(
         "QTextBrowser { background: %1; color: %2; border: none; "
-        "font-family: Menlo, monospace; font-size: 11px; padding: 4px; }")
+        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 11px; padding: 4px; }")
         .arg(tm.hex("bg_base"), tm.hex("text_secondary")));
     detailBrowser->setMaximumHeight(120);
     detailBrowser->setPlainText(summary);
@@ -274,15 +274,15 @@ void ChatMessageWidget::applyStyle()
         setStyleSheet(
             QStringLiteral(
             "ChatMessageWidget { background: %1; border: 1px solid %2; "
-            "border-radius: 6px; }")
+            "border-radius: 8px; }")
             .arg(tm.hex("bg_surface"), tm.hex("border_standard")));
         break;
     case Assistant:
         setStyleSheet(
             QStringLiteral(
-            "ChatMessageWidget { background: %1; border-left: 2px solid %2; "
-            "border-radius: 0; }")
-            .arg(tm.hex("bg_base"), tm.hex("blue")));
+            "ChatMessageWidget { background: %1; "
+            "border-radius: 8px; }")
+            .arg(tm.hex("bg_surface")));
         break;
     case Tool:
         setStyleSheet(

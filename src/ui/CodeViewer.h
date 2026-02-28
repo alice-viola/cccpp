@@ -14,6 +14,7 @@
 #include "ui/ThemeManager.h"
 
 class DiffSplitView;
+class BreadcrumbBar;
 
 #ifndef NO_QSCINTILLA
 #include <Qsci/qsciscintilla.h>
@@ -63,6 +64,7 @@ public:
     void copy();
     void paste();
 
+    void setRootPath(const QString &path);
     void setGitManager(GitManager *mgr) { m_gitManager = mgr; }
     void showSplitDiff(const QString &filePath, const QString &oldContent,
                        const QString &newContent, const QString &leftLabel,
@@ -99,8 +101,10 @@ private:
     QTabWidget *m_tabWidget;
     QPushButton *m_diffToggleBtn;
     QWidget *m_emptyState = nullptr;
+    BreadcrumbBar *m_breadcrumb = nullptr;
     QMap<int, FileTab> m_tabs;
     QFileSystemWatcher *m_fileWatcher;
     QSet<QString> m_savingFiles;
     GitManager *m_gitManager = nullptr;
+    QString m_rootPath;
 };

@@ -1,4 +1,6 @@
 #include "ui/CodeViewer.h"
+#include "ui/FileIconProvider.h"
+#include "ui/BreadcrumbBar.h"
 #include "ui/DiffSplitView.h"
 #include "ui/ThemeManager.h"
 #include "util/MarkdownRenderer.h"
@@ -121,6 +123,9 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_emptyState = new CodeViewerEmptyState(this);
     layout->addWidget(m_emptyState);
 
+    m_breadcrumb = new BreadcrumbBar(this);
+    layout->addWidget(m_breadcrumb);
+
     // Tab widget with diff toggle button in corner
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabsClosable(true);
@@ -164,6 +169,8 @@ CodeViewer::CodeViewer(QWidget *parent)
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         if (m_tabs.contains(idx))
             m_diffToggleBtn->setChecked(m_tabs[idx].inDiffMode);
+        if (m_tabs.contains(idx) && m_breadcrumb)
+            m_breadcrumb->setFilePath(m_tabs[idx].filePath, m_rootPath);
     });
 
     // Apply theme colors and listen for changes
@@ -184,7 +191,7 @@ static void applyThemeToLexer(QsciLexer *lexer)
 
     const auto &pal = ThemeManager::instance().palette();
 
-    QFont monoFont("Menlo", 13);
+    QFont monoFont("SF Mono", 13);
     lexer->setFont(monoFont);
     lexer->setDefaultFont(monoFont);
     lexer->setPaper(pal.bg_window);
@@ -488,8 +495,8 @@ QsciScintilla *CodeViewer::createEditor()
     ed->setReadOnly(false);
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsFont(QFont("Menlo", 12));
-    ed->setFont(QFont("Menlo", 13));
+    ed->setMarginsFont(QFont("SF Mono", 12));
+    ed->setFont(QFont("SF Mono", 13));
     ed->setTabWidth(4);
     ed->setIndentationsUseTabs(false);
     ed->setAutoIndent(true);
@@ -541,7 +548,7 @@ QPlainTextEdit *CodeViewer::createEditor()
     ed->setTabStopDistance(32);
     ed->setStyleSheet(
         QStringLiteral("QPlainTextEdit { background: %1; color: %2; border: none; "
-        "font-family: Menlo, monospace; font-size: 13px; }")
+        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 13px; }")
             .arg(pal.bg_window.name(), pal.text_primary.name()));
     return ed;
 }
@@ -633,7 +640,10 @@ void CodeViewer::updateEmptyState()
     bool empty = m_tabs.isEmpty();
     m_emptyState->setVisible(empty);
     m_tabWidget->setVisible(!empty);
+    if (m_breadcrumb) m_breadcrumb->setVisible(!empty);
 }
+
+void CodeViewer::setRootPath(const QString &path) { m_rootPath = path; }
 
 // ---------------------------------------------------------------------------
 // File loading / refreshing
@@ -674,6 +684,7 @@ void CodeViewer::loadFile(const QString &filePath)
 
     QFileInfo fi(filePath);
     int idx = m_tabWidget->addTab(stack, fi.fileName());
+    m_tabWidget->setTabIcon(idx, FileIconProvider::iconForFile(fi.fileName()));
     m_tabWidget->setTabToolTip(idx, filePath);
 
     FileTab tab;
@@ -749,7 +760,7 @@ void CodeViewer::openMarkdown(const QString &filePath)
         QStringLiteral(
         "QTextBrowser {"
         "  background: %1; color: %2;"
-        "  font-family: 'SF Pro Text', 'Segoe UI', sans-serif;"
+        "  font-family: -apple-system,'SF Pro Text','Inter','Segoe UI',system-ui,sans-serif;"
         "  font-size: 13px; padding: 16px 24px;"
         "  selection-background-color: %3;"
         "}")
@@ -761,9 +772,9 @@ void CodeViewer::openMarkdown(const QString &filePath)
         "h3 { color: %3; font-size: 15px; margin: 14px 0 4px 0; }"
         "h4 { color: %4; font-size: 14px; margin: 12px 0 4px 0; }"
         "code { background: %5; color: %6; padding: 1px 4px;"
-        "       border-radius: 3px; font-family: Menlo, monospace; font-size: 12px; }"
+        "       border-radius: 3px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 12px; }"
         "pre  { background: %7; border: 1px solid %8; border-radius: 6px;"
-        "       padding: 10px 12px; font-family: Menlo, monospace; font-size: 12px;"
+        "       padding: 10px 12px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 12px;"
         "       color: %9; }"
         "a    { color: %2; }"
         "table { border-collapse: collapse; margin: 8px 0; }"
@@ -793,6 +804,7 @@ void CodeViewer::openMarkdown(const QString &filePath)
 
     QFileInfo fi(filePath);
     int idx = m_tabWidget->addTab(stack, fi.fileName());
+    m_tabWidget->setTabIcon(idx, FileIconProvider::iconForFile(fi.fileName()));
     m_tabWidget->setTabToolTip(idx, filePath);
 
     FileTab tab;

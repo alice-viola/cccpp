@@ -67,6 +67,7 @@ set(UI_SOURCES
     src/ui/SettingsDialog.cpp
     src/ui/ThemeManager.cpp
     src/ui/SearchPanel.cpp
+    src/ui/BreadcrumbBar.cpp
 )
 
 set(UTIL_SOURCES

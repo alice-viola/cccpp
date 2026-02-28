@@ -672,12 +672,12 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         // Header bar with file name
         "<div style='background:%6;padding:4px 8px;border-bottom:1px solid %5;'>"
         "<a href='cccpp://open?file=%1&line=%3' style='color:%7;text-decoration:none;font-size:11px;"
-        "font-family:Menlo,monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
+        "font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
         .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine),
              thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"), thm.hex("blue"));
 
     // Code diff area
-    html += "<div style='padding:2px 0;font-family:Menlo,monospace;font-size:12px;line-height:1.4;'>";
+    html += "<div style='padding:2px 0;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;font-size:12px;line-height:1.4;'>";
 
     if (!oldStr.isEmpty()) {
         QStringList oldLines = oldStr.split('\n');

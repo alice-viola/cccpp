@@ -145,7 +145,7 @@ void DiffSplitView::applyThemeColors()
 #else
     auto edStyle = QStringLiteral(
         "QPlainTextEdit { background: %1; color: %2; border: none; "
-        "font-family: Menlo, monospace; font-size: 13px; }")
+        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 13px; }")
         .arg(pal.bg_window.name(), pal.text_primary.name());
     m_leftEditor->setStyleSheet(edStyle);
     m_rightEditor->setStyleSheet(edStyle);
@@ -168,12 +168,12 @@ QsciScintilla *DiffSplitView::createDiffEditor()
     ed->setMarginWidth(0, "00000");
     ed->setMarginsForegroundColor(pal.overlay0);
     ed->setMarginsBackgroundColor(pal.bg_base);
-    ed->setMarginsFont(QFont("Menlo", 12));
+    ed->setMarginsFont(QFont("SF Mono", 12));
     ed->setCaretForegroundColor(pal.text_primary);
     ed->setCaretLineVisible(false);
     ed->setPaper(pal.bg_window);
     ed->setColor(pal.text_primary);
-    ed->setFont(QFont("Menlo", 13));
+    ed->setFont(QFont("SF Mono", 13));
     ed->setTabWidth(4);
     ed->setFolding(QsciScintilla::NoFoldStyle);
     ed->setEolMode(QsciScintilla::EolUnix);
@@ -205,7 +205,7 @@ QPlainTextEdit *DiffSplitView::createDiffEditor()
     ed->setLineWrapMode(QPlainTextEdit::NoWrap);
     ed->setStyleSheet(QStringLiteral(
         "QPlainTextEdit { background: %1; color: %2; border: none; "
-        "font-family: Menlo, monospace; font-size: 13px; }")
+        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 13px; }")
         .arg(ThemeManager::instance().palette().bg_window.name(),
              ThemeManager::instance().palette().text_primary.name()));
     return ed;

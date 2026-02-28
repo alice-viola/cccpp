@@ -20,7 +20,7 @@ void StreamParser::feed(const QByteArray &line)
 
     json j;
     try {
-        j = json::parse(line.toStdString());
+        j = json::parse(line.begin(), line.end());
     } catch (const json::parse_error &) {
         return;
     }

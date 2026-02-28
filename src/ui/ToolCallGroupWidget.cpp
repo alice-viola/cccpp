@@ -9,8 +9,8 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 6px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("green")));
+        "border-left: 3px solid %3; border-radius: 8px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("blue")));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(8, 6, 8, 6);
@@ -97,8 +97,8 @@ void ToolCallGroupWidget::applyThemeColors()
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 6px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("green")));
+        "border-left: 3px solid %3; border-radius: 8px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("blue")));
 
     m_expandBtn->setStyleSheet(
         QStringLiteral(
@@ -188,7 +188,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
     browser->setFrameShape(QFrame::NoFrame);
     browser->setStyleSheet(
         QStringLiteral(
-        "QTextBrowser { background: %1; border: none; font-family: Menlo, monospace; "
+        "QTextBrowser { background: %1; border: none; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; "
         "font-size: 12px; }")
         .arg(tm.hex("bg_base")));
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);

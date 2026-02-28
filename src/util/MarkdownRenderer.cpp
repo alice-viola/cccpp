@@ -36,8 +36,8 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     }
 
     return QStringLiteral(
-        "<div style='font-family:\"Helvetica Neue\",sans-serif;"
-        "font-size:13px;line-height:1.3;color:%2;'>"
+        "<div style='font-family:-apple-system,\"SF Pro Text\",\"Inter\",\"Segoe UI\",system-ui,sans-serif;"
+        "font-size:13px;line-height:1.5;color:%2;'>"
         "<p style='margin:0;'>%1</p></div>")
         .arg(final, ThemeManager::instance().hex("text_primary"));
 }
@@ -78,7 +78,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
 
         QString replacement = QStringLiteral(
             "%1<pre style='background:%4;color:%5;padding:6px 8px;"
-            "border-radius:%2;font-family:Menlo,monospace;"
+            "border-radius:%2;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
             "font-size:12px;overflow-x:auto;margin:2px 0 4px;line-height:1.3;"
             "border:1px solid %6;'><code>%3</code></pre>")
             .arg(langTag,
@@ -100,7 +100,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
         result.replace(inlineCode,
             QStringLiteral(
             "<code style='background:%1;color:%2;padding:2px 5px;"
-            "border-radius:4px;font-family:\"Menlo\",monospace;font-size:12px;'>\\1</code>")
+            "border-radius:4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;font-size:12px;'>\\1</code>")
             .arg(tm.hex("bg_raised"), tm.hex("mauve")));
     }
 

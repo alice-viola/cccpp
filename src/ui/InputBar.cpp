@@ -49,10 +49,10 @@ void InputBar::applyThemeColors()
     auto &p = ThemeManager::instance().palette();
     m_sendBtn->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 16px; font-size: 16px; font-weight: bold; }"
+        "border-radius: 14px; font-size: 16px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }")
-        .arg(p.mauve.name(), p.on_accent.name(), p.lavender.name(),
+        .arg(p.blue.name(), p.on_accent.name(), p.lavender.name(),
              p.bg_raised.name(), p.text_faint.name()));
 }
 
@@ -61,7 +61,7 @@ void InputBar::applyBorderColor(const QColor &c)
     auto &p = ThemeManager::instance().palette();
     m_input->setStyleSheet(
         QStringLiteral("QTextEdit#chatInput { background: %1; color: %2; "
-                       "border: 1px solid %3; border-radius: 8px; padding: 6px 10px; "
+                       "border: 1px solid %3; border-radius: 12px; padding: 6px 10px; "
                        "font-size: 13px; }").arg(p.bg_surface.name(), p.text_primary.name(), c.name()));
 }
 

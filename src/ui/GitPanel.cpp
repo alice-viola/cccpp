@@ -1,4 +1,5 @@
 #include "ui/GitPanel.h"
+#include "ui/FileIconProvider.h"
 #include "ui/ThemeManager.h"
 #include "ui/ToastManager.h"
 #include <QVBoxLayout>
@@ -147,7 +148,7 @@ void GitPanel::applyThemeColors()
 
     m_commitMsg->setStyleSheet(QStringLiteral(
         "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: 'Helvetica Neue', sans-serif; }"
+        "border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: -apple-system,'SF Pro Text','Inter','Segoe UI',system-ui,sans-serif; }"
         "QTextEdit:focus { border-color: %4; }")
         .arg(pal.bg_window.name(), pal.text_primary.name(),
              pal.border_standard.name(), pal.border_focus.name()));
@@ -241,6 +242,7 @@ void GitPanel::rebuildTree(const QList<GitFileEntry> &entries)
                             .arg(statusChar(e.indexStatus))
                             .arg(e.filePath);
         item->setText(0, label);
+        item->setIcon(0, FileIconProvider::iconForFile(e.filePath));
         item->setForeground(0, statusColor(e.indexStatus));
         item->setData(0, Qt::UserRole, e.filePath);
         item->setData(0, Qt::UserRole + 1, true); // staged flag
@@ -267,6 +269,7 @@ void GitPanel::rebuildTree(const QList<GitFileEntry> &entries)
                             .arg(statusChar(displayStatus))
                             .arg(e.filePath);
         item->setText(0, label);
+        item->setIcon(0, FileIconProvider::iconForFile(e.filePath));
         item->setForeground(0, statusColor(displayStatus));
         item->setData(0, Qt::UserRole, e.filePath);
         item->setData(0, Qt::UserRole + 1, false); // not staged
