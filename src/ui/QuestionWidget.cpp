@@ -1,4 +1,5 @@
 #include "ui/QuestionWidget.h"
+#include "ui/ThemeManager.h"
 
 static QString jstr(const nlohmann::json &j, const std::string &key) {
     if (j.contains(key) && j[key].is_string())
@@ -9,16 +10,22 @@ static QString jstr(const nlohmann::json &j, const std::string &key) {
 QuestionWidget::QuestionWidget(const nlohmann::json &input, QWidget *parent)
     : QFrame(parent)
 {
+    const auto &p = ThemeManager::instance().palette();
+
     setStyleSheet(
-        "QuestionWidget { background: #1c1c1c; border: 1px solid #333; "
-        "border-radius: 6px; }");
+        QStringLiteral(
+            "QuestionWidget { background: %1; border: 1px solid %2; "
+            "border-radius: 6px; }")
+        .arg(p.bg_surface.name(), p.hover_raised.name()));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(12, 8, 12, 8);
     m_layout->setSpacing(6);
 
     auto *title = new QLabel("Claude has a question:", this);
-    title->setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; font-size: 12px; }");
+    title->setStyleSheet(
+        QStringLiteral("QLabel { color: %1; font-weight: bold; font-size: 12px; }")
+        .arg(p.blue.name()));
     m_layout->addWidget(title);
 
     buildUI(input);
@@ -26,9 +33,11 @@ QuestionWidget::QuestionWidget(const nlohmann::json &input, QWidget *parent)
     m_submitBtn = new QPushButton("Submit Answer", this);
     m_submitBtn->setFixedHeight(28);
     m_submitBtn->setStyleSheet(
-        "QPushButton { background: #a6e3a1; color: #0e0e0e; border: none; "
-        "border-radius: 4px; font-weight: bold; font-size: 12px; }"
-        "QPushButton:hover { background: #c6f0c2; }");
+        QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-weight: bold; font-size: 12px; }"
+            "QPushButton:hover { background: %3; }")
+        .arg(p.green.name(), p.on_accent.name(), p.teal.name()));
     connect(m_submitBtn, &QPushButton::clicked, this, &QuestionWidget::submitAnswer);
     m_layout->addWidget(m_submitBtn);
 }
@@ -37,6 +46,8 @@ void QuestionWidget::buildUI(const nlohmann::json &input)
 {
     if (!input.contains("questions") || !input["questions"].is_array())
         return;
+
+    const auto &p = ThemeManager::instance().palette();
 
     for (const auto &q : input["questions"]) {
         QuestionData qd;
@@ -47,7 +58,8 @@ void QuestionWidget::buildUI(const nlohmann::json &input)
         if (!qd.header.isEmpty()) {
             auto *headerLabel = new QLabel(qd.header, this);
             headerLabel->setStyleSheet(
-                "QLabel { color: #cdd6f4; font-weight: bold; font-size: 13px; padding-top: 4px; }");
+                QStringLiteral("QLabel { color: %1; font-weight: bold; font-size: 13px; padding-top: 4px; }")
+                .arg(p.text_primary.name()));
             headerLabel->setWordWrap(true);
             m_layout->addWidget(headerLabel);
         }
@@ -91,12 +103,16 @@ void QuestionWidget::buildUI(const nlohmann::json &input)
 
                 if (qd.multiSelect) {
                     auto *cb = new QCheckBox(label, optionContainer);
-                    cb->setStyleSheet("QCheckBox { color: #bac2de; font-size: 12px; }");
+                    cb->setStyleSheet(
+                        QStringLiteral("QCheckBox { color: %1; font-size: 12px; }")
+                        .arg(p.subtext1.name()));
                     cb->setProperty("optValue", value);
                     optionLayout->addWidget(cb);
                 } else {
                     auto *rb = new QRadioButton(label, optionContainer);
-                    rb->setStyleSheet("QRadioButton { color: #bac2de; font-size: 12px; }");
+                    rb->setStyleSheet(
+                        QStringLiteral("QRadioButton { color: %1; font-size: 12px; }")
+                        .arg(p.subtext1.name()));
                     rb->setProperty("optValue", value);
                     if (group) group->addButton(rb);
                     optionLayout->addWidget(rb);
@@ -136,11 +152,15 @@ void QuestionWidget::submitAnswer()
 
     QString response = answers.isEmpty() ? "Continue with defaults" : answers.join("; ");
 
+    const auto &p = ThemeManager::instance().palette();
+
     m_submitBtn->setEnabled(false);
     m_submitBtn->setText("Submitted");
     m_submitBtn->setStyleSheet(
-        "QPushButton { background: #333; color: #666; border: none; "
-        "border-radius: 4px; font-size: 12px; }");
+        QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 12px; }")
+        .arg(p.hover_raised.name(), p.text_muted.name()));
 
     // Disable all options
     for (auto *rb : findChildren<QRadioButton *>()) rb->setEnabled(false);

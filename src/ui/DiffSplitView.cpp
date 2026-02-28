@@ -1,4 +1,5 @@
 #include "ui/DiffSplitView.h"
+#include "ui/ThemeManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollBar>
@@ -28,29 +29,37 @@ void DiffSplitView::setupUI()
     // --- Header bar ---
     auto *headerBar = new QWidget(this);
     headerBar->setFixedHeight(26);
-    headerBar->setStyleSheet("QWidget { background: #0e0e0e; border-bottom: 1px solid #2a2a2a; }");
+    headerBar->setStyleSheet(QStringLiteral("QWidget { background: %1; border-bottom: 1px solid %2; }")
+        .arg(ThemeManager::instance().palette().bg_base.name(),
+             ThemeManager::instance().palette().border_standard.name()));
 
     auto *headerLayout = new QHBoxLayout(headerBar);
     headerLayout->setContentsMargins(8, 0, 4, 0);
     headerLayout->setSpacing(6);
 
     m_leftHeader = new QLabel(this);
-    m_leftHeader->setStyleSheet("QLabel { color: #f38ba8; font-size: 11px; background: transparent; }");
+    m_leftHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(ThemeManager::instance().palette().red.name()));
     headerLayout->addWidget(m_leftHeader);
 
     auto *arrow = new QLabel("\xe2\x86\x92", this);
-    arrow->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; background: transparent; }");
+    arrow->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(ThemeManager::instance().palette().text_muted.name()));
     headerLayout->addWidget(arrow);
 
     m_rightHeader = new QLabel(this);
-    m_rightHeader->setStyleSheet("QLabel { color: #a6e3a1; font-size: 11px; background: transparent; }");
+    m_rightHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(ThemeManager::instance().palette().green.name()));
     headerLayout->addWidget(m_rightHeader);
 
     headerLayout->addStretch();
 
     auto btnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12px; padding: 2px 6px; }"
-        "QPushButton:hover { color: #cdd6f4; background: #252525; border-radius: 4px; }");
+        "QPushButton { background: transparent; color: %1; border: none; font-size: 12px; padding: 2px 6px; }"
+        "QPushButton:hover { color: %2; background: %3; border-radius: 4px; }")
+        .arg(ThemeManager::instance().palette().text_muted.name(),
+             ThemeManager::instance().palette().text_primary.name(),
+             ThemeManager::instance().palette().bg_raised.name());
 
     m_prevHunkBtn = new QPushButton("\xe2\x86\x91", this);
     m_prevHunkBtn->setToolTip("Previous Hunk");
@@ -83,7 +92,8 @@ void DiffSplitView::setupUI()
     auto *bpLayout = new QVBoxLayout(m_binaryPlaceholder);
     bpLayout->setAlignment(Qt::AlignCenter);
     auto *bpLabel = new QLabel("Binary file differs", m_binaryPlaceholder);
-    bpLabel->setStyleSheet("color: #6c7086; font-size: 13px;");
+    bpLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;")
+        .arg(ThemeManager::instance().palette().text_muted.name()));
     bpLabel->setAlignment(Qt::AlignCenter);
     bpLayout->addWidget(bpLabel);
     m_binaryPlaceholder->hide();
@@ -125,35 +135,37 @@ void DiffSplitView::setupUI()
 
 QsciScintilla *DiffSplitView::createDiffEditor()
 {
+    const auto &pal = ThemeManager::instance().palette();
+
     auto *ed = new QsciScintilla(this);
     ed->setReadOnly(true);
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsForegroundColor(QColor("#4a4a4a"));
-    ed->setMarginsBackgroundColor(QColor("#0e0e0e"));
+    ed->setMarginsForegroundColor(pal.overlay0);
+    ed->setMarginsBackgroundColor(pal.bg_base);
     ed->setMarginsFont(QFont("Menlo", 12));
-    ed->setCaretForegroundColor(QColor("#cdd6f4"));
+    ed->setCaretForegroundColor(pal.text_primary);
     ed->setCaretLineVisible(false);
-    ed->setPaper(QColor("#1a1a1a"));
-    ed->setColor(QColor("#cdd6f4"));
+    ed->setPaper(pal.bg_window);
+    ed->setColor(pal.text_primary);
     ed->setFont(QFont("Menlo", 13));
     ed->setTabWidth(4);
     ed->setFolding(QsciScintilla::NoFoldStyle);
     ed->setEolMode(QsciScintilla::EolUnix);
     ed->setUtf8(true);
     ed->setWrapMode(QsciScintilla::WrapNone);
-    ed->setSelectionBackgroundColor(QColor("#3a3a3a"));
-    ed->setSelectionForegroundColor(QColor("#cdd6f4"));
+    ed->setSelectionBackgroundColor(pal.pressed_raised);
+    ed->setSelectionForegroundColor(pal.text_primary);
 
     // Define background markers — unified palette
     ed->markerDefine(QsciScintilla::Background, MARKER_ADDED);
-    ed->setMarkerBackgroundColor(QColor(0x1a, 0x2e, 0x1a), MARKER_ADDED);   // #1a2e1a
+    ed->setMarkerBackgroundColor(pal.diff_add_bg, MARKER_ADDED);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_REMOVED);
-    ed->setMarkerBackgroundColor(QColor(0x2e, 0x1a, 0x1e), MARKER_REMOVED); // #2e1a1e
+    ed->setMarkerBackgroundColor(pal.diff_del_bg, MARKER_REMOVED);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_PHANTOM);
-    ed->setMarkerBackgroundColor(QColor(0x1e, 0x1e, 0x2e), MARKER_PHANTOM); // #1e1e2e
+    ed->setMarkerBackgroundColor(pal.diff_phantom_bg, MARKER_PHANTOM);
 
     return ed;
 }
@@ -166,9 +178,11 @@ QPlainTextEdit *DiffSplitView::createDiffEditor()
     ed->setReadOnly(true);
     ed->setTabStopDistance(32);
     ed->setLineWrapMode(QPlainTextEdit::NoWrap);
-    ed->setStyleSheet(
-        "QPlainTextEdit { background: #1a1a1a; color: #cdd6f4; border: none; "
-        "font-family: Menlo, monospace; font-size: 13px; }");
+    ed->setStyleSheet(QStringLiteral(
+        "QPlainTextEdit { background: %1; color: %2; border: none; "
+        "font-family: Menlo, monospace; font-size: 13px; }")
+        .arg(ThemeManager::instance().palette().bg_window.name(),
+             ThemeManager::instance().palette().text_primary.name()));
     return ed;
 }
 

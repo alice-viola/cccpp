@@ -6,6 +6,7 @@
 #include "ui/GitPanel.h"
 #include "ui/ModelSelector.h"
 #include "ui/ToastManager.h"
+#include "ui/ThemeManager.h"
 #include "core/SessionManager.h"
 #include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
@@ -91,12 +92,7 @@ void MainWindow::setupUI()
     m_leftTabs->setTabPosition(QTabWidget::South);
     m_leftTabs->addTab(m_workspaceTree, "Files");
     m_leftTabs->addTab(m_gitPanel, "Git");
-    m_leftTabs->setStyleSheet(
-        "QTabWidget::pane { border: none; background: #0e0e0e; }"
-        "QTabBar { background: #0e0e0e; border-top: 1px solid #2a2a2a; border-bottom: none; }"
-        "QTabBar::tab { background: transparent; color: #6c7086; border: none; padding: 4px 12px; font-size: 11px; }"
-        "QTabBar::tab:selected { color: #cdd6f4; border-top: 2px solid #cba6f7; }"
-        "QTabBar::tab:hover:!selected { color: #a6adc8; }");
+    // Styles applied by applyThemeColors()
 
     // Center column: CodeViewer on top, TerminalPanel on bottom
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
@@ -144,6 +140,19 @@ void MainWindow::setupUI()
         if (line > 0)
             m_codeViewer->scrollToLine(line);
     });
+    connect(m_chatPanel, &ChatPanel::planFileDetected, this,
+            [this](const QString &filePath) {
+        if (!m_codeViewer->isVisible()) {
+            m_codeViewer->show();
+            int total = m_splitter->width();
+            int treeW = 150;
+            int editorW = static_cast<int>(total * 0.4);
+            int chatW = total - treeW - editorW;
+            m_splitter->setSizes({treeW, editorW, chatW});
+            updateToggleButtons();
+        }
+        m_codeViewer->openMarkdown(filePath);
+    });
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
             this, &MainWindow::onBeforeTurnBegins);
 
@@ -188,7 +197,8 @@ void MainWindow::setupStatusBar()
     // Wire processing state from ChatPanel
     connect(m_chatPanel, &ChatPanel::processingChanged, this, [this](bool processing) {
         if (processing) {
-            m_statusProcessing->setStyleSheet("QLabel { color: #cba6f7; }");
+            m_statusProcessing->setStyleSheet(
+                QStringLiteral("QLabel { color: %1; }").arg(ThemeManager::instance().hex("mauve")));
             m_statusProcessing->setText("\u25CF Processing");
         } else {
             m_statusProcessing->setStyleSheet("");
@@ -295,6 +305,27 @@ void MainWindow::setupMenuBar()
     toggleTermAction->setShortcut(QKeySequence("Ctrl+`"));
     connect(toggleTermAction, &QAction::triggered, this, &MainWindow::onToggleTerminal);
 
+    viewMenu->addSeparator();
+
+    // Theme submenu
+    auto *themeMenu = viewMenu->addMenu("&Theme");
+    m_themeGroup = new QActionGroup(this);
+    m_themeGroup->setExclusive(true);
+
+    struct ThemeEntry { QString key; QString label; };
+    for (const auto &entry : std::initializer_list<ThemeEntry>{
+            {"mocha", "Mocha"}, {"macchiato", "Macchiato"},
+            {"frappe", QString::fromUtf8("Frapp\xc3\xa9")}, {"latte", "Latte"}}) {
+        auto *action = themeMenu->addAction(entry.label);
+        action->setCheckable(true);
+        action->setData(entry.key);
+        action->setChecked(entry.key == ThemeManager::instance().currentThemeName());
+        m_themeGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [key = entry.key] {
+            ThemeManager::instance().setTheme(key);
+        });
+    }
+
     // --- Terminal menu ---
     auto *termMenu = menuBar()->addMenu("T&erminal");
 
@@ -315,19 +346,12 @@ void MainWindow::setupToolBar()
     // Styled via QSS
     addToolBar(Qt::TopToolBarArea, m_toolBar);
 
-    auto toggleStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: #6c7086; border: none; "
-        "border-radius: 4px; font-size: 11px; padding: 0; margin: 0; }"
-        "QPushButton:hover { color: #a6adc8; }"
-        "QPushButton:checked { color: #cdd6f4; }");
-
-    auto makeToggle = [this, &toggleStyle](const QString &label, const QString &tip) -> QPushButton* {
+    auto makeToggle = [this](const QString &label, const QString &tip) -> QPushButton* {
         auto *btn = new QPushButton(label, this);
         btn->setFixedSize(24, 18);
         btn->setToolTip(tip);
         btn->setCheckable(true);
         btn->setChecked(true);
-        btn->setStyleSheet(toggleStyle);
         return btn;
     };
 
@@ -337,12 +361,8 @@ void MainWindow::setupToolBar()
     m_toggleTerminal = makeToggle("\xe2\x96\xbc", "Toggle Terminal (Ctrl+`)");
     m_toggleTerminal->setChecked(false);
     m_toggleTerminal->setFixedSize(42, 18);
-    m_toggleTerminal->setStyleSheet(
-        "QPushButton { background: transparent; color: #6c7086; border: none; "
-        "border-radius: 4px; font-size: 11px; padding: 0 4px; margin: 0; }"
-        "QPushButton:hover { color: #a6adc8; }"
-        "QPushButton:checked { color: #cdd6f4; }");
     m_toggleTerminal->setText("\xe2\x96\xbc tty");
+    // Styles applied by applyThemeColors()
 
     auto *spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -382,66 +402,65 @@ void MainWindow::updateToggleButtons()
 
 void MainWindow::loadStylesheet()
 {
-    QStringList searchPaths = {
-        QApplication::applicationDirPath() + "/../resources/themes/dark.qss",
-        QApplication::applicationDirPath() + "/../../resources/themes/dark.qss",
-        QDir::homePath() + "/.cccpp/themes/dark.qss",
-    };
+    auto &tm = ThemeManager::instance();
+    tm.initialize();
 
-    for (const QString &path : searchPaths) {
-        QFile file(path);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
-            qDebug() << "[cccpp] Loaded theme from:" << path;
-            return;
+    QString savedTheme = Config::instance().theme();
+    tm.setTheme(savedTheme);  // handles "dark" -> "mocha" mapping
+
+    connect(&tm, &ThemeManager::themeChanged, this, &MainWindow::onThemeChanged);
+    applyThemeColors();
+}
+
+void MainWindow::applyThemeColors()
+{
+    auto &p = ThemeManager::instance().palette();
+
+    // Left tabs (bottom position)
+    m_leftTabs->setStyleSheet(QStringLiteral(
+        "QTabWidget::pane { border: none; background: %1; }"
+        "QTabBar { background: %1; border-top: 1px solid %2; border-bottom: none; }"
+        "QTabBar::tab { background: transparent; color: %3; border: none; padding: 4px 12px; font-size: 11px; }"
+        "QTabBar::tab:selected { color: %4; border-top: 2px solid %5; }"
+        "QTabBar::tab:hover:!selected { color: %6; }")
+        .arg(p.bg_base.name(), p.border_standard.name(), p.text_muted.name(),
+             p.text_primary.name(), p.mauve.name(), p.text_secondary.name()));
+
+    // Toggle buttons in toolbar
+    auto toggleStyle = QStringLiteral(
+        "QPushButton { background: transparent; color: %1; border: none; "
+        "border-radius: 4px; font-size: 11px; padding: 0; margin: 0; }"
+        "QPushButton:hover { color: %2; }"
+        "QPushButton:checked { color: %3; }")
+        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name());
+
+    m_toggleTree->setStyleSheet(toggleStyle);
+    m_toggleEditor->setStyleSheet(toggleStyle);
+    m_toggleChat->setStyleSheet(toggleStyle);
+    m_toggleTerminal->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { background: transparent; color: %1; border: none; "
+            "border-radius: 4px; font-size: 11px; padding: 0 4px; margin: 0; }"
+            "QPushButton:hover { color: %2; }"
+            "QPushButton:checked { color: %3; }")
+        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name()));
+
+    // Status bar processing label (re-apply if active)
+    if (!m_statusProcessing->text().isEmpty())
+        m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.mauve.name()));
+}
+
+void MainWindow::onThemeChanged(const QString &name)
+{
+    applyThemeColors();
+    Config::instance().setTheme(name);
+
+    // Update theme menu checkmarks
+    if (m_themeGroup) {
+        for (auto *action : m_themeGroup->actions()) {
+            action->setChecked(action->data().toString() == name);
         }
     }
-
-    // Inline fallback — mirrors dark.qss tokens exactly
-    qDebug() << "[cccpp] QSS file not found, using inline fallback";
-    qApp->setStyleSheet(R"(
-        * { font-family: "Helvetica Neue", sans-serif; font-size: 13px; }
-        QMainWindow, QWidget { background: #1a1a1a; color: #cdd6f4; }
-        QScrollBar:vertical { background: transparent; width: 5px; border: none; }
-        QScrollBar::handle:vertical { background: #333; border-radius: 2px; min-height: 20px; }
-        QScrollBar::handle:vertical:hover { background: #444; }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height: 0; border: none; }
-        QScrollBar:horizontal { background: transparent; height: 5px; border: none; }
-        QScrollBar::handle:horizontal { background: #333; border-radius: 2px; min-width: 20px; }
-        QScrollBar::handle:horizontal:hover { background: #444; }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
-        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { width: 0; border: none; }
-        QMenuBar { background: #0e0e0e; color: #a6adc8; border-bottom: 1px solid #2a2a2a; }
-        QMenuBar::item { padding: 3px 8px; border-radius: 4px; }
-        QMenuBar::item:selected { background: #252525; color: #cdd6f4; }
-        QMenu { background: #141414; color: #cdd6f4; border: 1px solid #2a2a2a; border-radius: 4px; padding: 4px; }
-        QMenu::item { padding: 5px 16px 5px 10px; border-radius: 4px; }
-        QMenu::item:selected { background: #252525; }
-        QMenu::separator { height: 1px; background: #2a2a2a; margin: 3px 6px; }
-        QSplitter::handle { background: #2a2a2a; width: 1px; }
-        QToolTip { background: #252525; color: #cdd6f4; border: 1px solid #2a2a2a; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
-        QTabWidget::pane { border: none; background: #1a1a1a; }
-        QTabBar { background: #0e0e0e; border-bottom: 1px solid #2a2a2a; }
-        QTabBar::tab { background: transparent; color: #6c7086; border: none; padding: 4px 12px; font-size: 11px; min-width: 40px; }
-        QTabBar::tab:selected { color: #cdd6f4; border-bottom: 2px solid #cba6f7; }
-        QTabBar::tab:hover:!selected { color: #a6adc8; }
-        QScrollArea { background: #1a1a1a; border: none; }
-        QTreeView, QTreeWidget { background: #0e0e0e; color: #a6adc8; border: none; border-right: 1px solid #2a2a2a; font-size: 12px; outline: none; }
-        QTreeView::item, QTreeWidget::item { padding: 2px 0; }
-        QTreeView::item:selected, QTreeWidget::item:selected { background: #252525; color: #cdd6f4; }
-        QTreeView::item:hover, QTreeWidget::item:hover { background: #1e1e1e; }
-        QTreeView::branch, QTreeWidget::branch { background: #0e0e0e; }
-        QTextBrowser { background: transparent; color: #cdd6f4; border: none; font-size: 13px; selection-background-color: #333; }
-        QTextEdit#chatInput { background: #141414; color: #cdd6f4; border: 1px solid #2a2a2a; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
-        QTextEdit#chatInput:focus { border-color: #444; }
-        QLabel { background: transparent; }
-        QPushButton { background: #252525; color: #cdd6f4; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; }
-        QPushButton:hover { background: #333; }
-        QPushButton:pressed { background: #3a3a3a; }
-        QPushButton:disabled { background: #1a1a1a; color: #45475a; }
-        QToolBar { background: #0e0e0e; border: none; border-bottom: 1px solid #2a2a2a; spacing: 1px; }
-    )");
 }
 
 void MainWindow::openWorkspace(const QString &path)

@@ -1,4 +1,5 @@
 #include "ui/ModelSelector.h"
+#include "ui/ThemeManager.h"
 #include <QHBoxLayout>
 #include <QLabel>
 
@@ -23,15 +24,11 @@ ModelSelector::ModelSelector(QWidget *parent)
     layout->setSpacing(6);
 
     auto *label = new QLabel("Model", this);
-    label->setStyleSheet("color: #6c7086; font-size: 11px;");
     layout->addWidget(label);
 
     m_combo = new QComboBox(this);
     m_combo->setFixedHeight(24);
     m_combo->setMinimumWidth(130);
-    // Styled via QSS — only override the dropdown list selection color
-    m_combo->setStyleSheet(
-        "QComboBox QAbstractItemView { selection-background-color: #252525; }");
 
     for (const auto &m : MODELS)
         m_combo->addItem(m.label, QString(m.id));
@@ -42,6 +39,18 @@ ModelSelector::ModelSelector(QWidget *parent)
 
     layout->addWidget(m_combo);
     layout->addStretch();
+
+    auto applyTheme = [label, this] {
+        const auto &p = ThemeManager::instance().palette();
+        label->setStyleSheet(
+            QStringLiteral("color: %1; font-size: 11px;").arg(p.text_muted.name()));
+        m_combo->setStyleSheet(
+            QStringLiteral("QComboBox QAbstractItemView { selection-background-color: %1; }")
+                .arg(p.bg_raised.name()));
+    };
+    applyTheme();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, applyTheme);
 }
 
 QString ModelSelector::currentModelId() const

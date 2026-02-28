@@ -1,4 +1,5 @@
 #include "ui/ToastNotification.h"
+#include "ui/ThemeManager.h"
 #include <QPainter>
 #include <QPropertyAnimation>
 #include <QTimer>
@@ -57,6 +58,8 @@ void ToastNotification::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
+    const auto &pal = ThemeManager::instance().palette();
+
     QRect r = rect().adjusted(1, 1, -1, -1);
 
     // Drop shadow (cheap: slightly offset filled rect)
@@ -65,17 +68,17 @@ void ToastNotification::paintEvent(QPaintEvent *)
     p.drawRoundedRect(r.adjusted(2, 2, 2, 2), 8, 8);
 
     // Card background + border
-    p.setBrush(QColor("#1e1e1e"));
-    p.setPen(QPen(QColor("#333333"), 1));
+    p.setBrush(pal.bg_surface);
+    p.setPen(QPen(pal.hover_raised, 1));
     p.drawRoundedRect(r, 8, 8);
 
     // Left accent bar
     QColor accent;
     switch (m_type) {
-    case ToastType::Success: accent = QColor("#a6e3a1"); break;
-    case ToastType::Error:   accent = QColor("#f38ba8"); break;
-    case ToastType::Warning: accent = QColor("#f9e2af"); break;
-    default:                 accent = QColor("#89b4fa"); break;
+    case ToastType::Success: accent = pal.green; break;
+    case ToastType::Error:   accent = pal.red; break;
+    case ToastType::Warning: accent = pal.yellow; break;
+    default:                 accent = pal.blue; break;
     }
     p.setPen(Qt::NoPen);
     p.setBrush(accent);
@@ -86,7 +89,7 @@ void ToastNotification::paintEvent(QPaintEvent *)
     QFont f = font();
     f.setPixelSize(12);
     p.setFont(f);
-    p.setPen(QColor("#cdd6f4"));
+    p.setPen(pal.text_primary);
     QRect textRect = r.adjusted(16, 0, -8, 0);
     p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, m_message);
 }

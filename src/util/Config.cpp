@@ -71,6 +71,12 @@ QString Config::theme() const
     return "dark";
 }
 
+void Config::setTheme(const QString &theme)
+{
+    m_data["theme"] = theme.toStdString();
+    save();
+}
+
 QString Config::lastWorkspace() const
 {
     if (m_data.contains("last_workspace") && m_data["last_workspace"].is_string())

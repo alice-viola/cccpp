@@ -1,4 +1,5 @@
 #include "ui/InputBar.h"
+#include "ui/ThemeManager.h"
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QFocusEvent>
@@ -19,11 +20,6 @@ InputBar::InputBar(QWidget *parent)
 
     m_sendBtn = new QPushButton("\xe2\x86\x91", this); // up arrow
     m_sendBtn->setFixedSize(32, 32);
-    m_sendBtn->setStyleSheet(
-        "QPushButton { background: #cba6f7; color: #0e0e0e; border: none; "
-        "border-radius: 16px; font-size: 16px; font-weight: bold; }"
-        "QPushButton:hover { background: #dbb9ff; }"
-        "QPushButton:disabled { background: #252525; color: #45475a; }");
 
     layout->addWidget(m_input, 1);
     layout->addWidget(m_sendBtn, 0, Qt::AlignBottom);
@@ -43,14 +39,30 @@ InputBar::InputBar(QWidget *parent)
     connect(m_focusAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
         applyBorderColor(v.value<QColor>());
     });
+
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, &InputBar::applyThemeColors);
+}
+
+void InputBar::applyThemeColors()
+{
+    auto &p = ThemeManager::instance().palette();
+    m_sendBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; "
+        "border-radius: 16px; font-size: 16px; font-weight: bold; }"
+        "QPushButton:hover { background: %3; }"
+        "QPushButton:disabled { background: %4; color: %5; }")
+        .arg(p.mauve.name(), p.on_accent.name(), p.lavender.name(),
+             p.bg_raised.name(), p.text_faint.name()));
 }
 
 void InputBar::applyBorderColor(const QColor &c)
 {
+    auto &p = ThemeManager::instance().palette();
     m_input->setStyleSheet(
-        QStringLiteral("QTextEdit#chatInput { background: #141414; color: #cdd6f4; "
-                       "border: 1px solid %1; border-radius: 8px; padding: 6px 10px; "
-                       "font-size: 13px; }").arg(c.name()));
+        QStringLiteral("QTextEdit#chatInput { background: %1; color: %2; "
+                       "border: 1px solid %3; border-radius: 8px; padding: 6px 10px; "
+                       "font-size: 13px; }").arg(p.bg_surface.name(), p.text_primary.name(), c.name()));
 }
 
 QString InputBar::text() const
@@ -84,17 +96,19 @@ bool InputBar::eventFilter(QObject *obj, QEvent *event)
                 return true;
             }
         } else if (event->type() == QEvent::FocusIn) {
+            auto &p = ThemeManager::instance().palette();
             m_focusAnim->stop();
-            m_focusAnim->setStartValue(QColor("#2a2a2a"));
-            m_focusAnim->setEndValue(QColor("#cba6f7"));
+            m_focusAnim->setStartValue(p.border_standard);
+            m_focusAnim->setEndValue(p.mauve);
             m_focusAnim->start();
         } else if (event->type() == QEvent::FocusOut) {
+            auto &p = ThemeManager::instance().palette();
             m_focusAnim->stop();
             m_focusAnim->setStartValue(
                 m_focusAnim->currentValue().isValid()
                     ? m_focusAnim->currentValue().value<QColor>()
-                    : QColor("#cba6f7"));
-            m_focusAnim->setEndValue(QColor("#2a2a2a"));
+                    : p.mauve);
+            m_focusAnim->setEndValue(p.border_standard);
             m_focusAnim->start();
         }
     }

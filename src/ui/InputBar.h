@@ -22,6 +22,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
+    void applyThemeColors();
     void applyBorderColor(const QColor &c);
 
     QTextEdit *m_input;

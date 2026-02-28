@@ -1,4 +1,5 @@
 #include "ui/TerminalWidget.h"
+#include "ui/ThemeManager.h"
 #include "core/PtyProcess.h"
 #include <QPainter>
 #include <QKeyEvent>
@@ -135,10 +136,11 @@ void TerminalWidget::initVterm(int rows, int cols)
     vterm_screen_set_callbacks(m_vtermScreen, &screenCbs, this);
     vterm_screen_reset(m_vtermScreen, 1);
 
-    // Set default colors to match the app's dark theme
+    // Set default colors to match the app's theme
+    const auto &pal = ThemeManager::instance().palette();
     VTermColor fg, bg;
-    vterm_color_rgb(&fg, 205, 214, 244); // #cdd6f4
-    vterm_color_rgb(&bg, 14, 14, 14);    // #0e0e0e
+    vterm_color_rgb(&fg, pal.text_primary.red(), pal.text_primary.green(), pal.text_primary.blue());
+    vterm_color_rgb(&bg, pal.bg_base.red(), pal.bg_base.green(), pal.bg_base.blue());
     vterm_state_set_default_colors(vterm_obtain_state(m_vterm), &fg, &bg);
 }
 
@@ -166,9 +168,9 @@ void TerminalWidget::recalculateGridSize()
 QColor TerminalWidget::vtermColorToQColor(VTermColor c) const
 {
     if (VTERM_COLOR_IS_DEFAULT_FG(&c))
-        return QColor(205, 214, 244);
+        return ThemeManager::instance().palette().text_primary;
     if (VTERM_COLOR_IS_DEFAULT_BG(&c))
-        return QColor(14, 14, 14);
+        return ThemeManager::instance().palette().bg_base;
 
     if (VTERM_COLOR_IS_INDEXED(&c)) {
         VTermState *state = vterm_obtain_state(m_vterm);
@@ -199,7 +201,8 @@ void TerminalWidget::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setFont(m_font);
 
-    QColor defaultBg(14, 14, 14);
+    const auto &pal = ThemeManager::instance().palette();
+    QColor defaultBg = pal.bg_base;
     p.fillRect(rect(), defaultBg);
 
     if (!m_vtermScreen)
@@ -286,7 +289,7 @@ void TerminalWidget::paintEvent(QPaintEvent *)
     if (m_scrollOffset == 0) {
         int cx = m_cursorPos.col * m_cellWidth;
         int cy = m_cursorPos.row * m_cellHeight;
-        QColor cursorColor("#cba6f7");
+        QColor cursorColor = pal.mauve;
 
         if (hasFocus()) {
             if (m_cursorBlinkState || !m_cursorBlink) {
@@ -298,7 +301,7 @@ void TerminalWidget::paintEvent(QPaintEvent *)
                 VTermScreenCell cell;
                 vterm_screen_get_cell(m_vtermScreen, pos, &cell);
                 if (cell.chars[0] != 0 && cell.chars[0] != ' ') {
-                    p.setPen(QColor(14, 14, 14));
+                    p.setPen(pal.bg_base);
                     p.setFont(m_font);
                     p.drawText(cx, cy + m_cellHeight - p.fontMetrics().descent(),
                                QString::fromUcs4(&cell.chars[0], 1));

@@ -1,4 +1,5 @@
 #include "ui/ModeSelector.h"
+#include "ui/ThemeManager.h"
 
 ModeSelector::ModeSelector(QWidget *parent)
     : QWidget(parent)
@@ -26,6 +27,9 @@ ModeSelector::ModeSelector(QWidget *parent)
     connect(m_askBtn, &QPushButton::clicked, this, [this] { setMode("ask"); });
     connect(m_planBtn, &QPushButton::clicked, this, [this] { setMode("plan"); });
 
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, [this] { updateButtonStyles(); });
+
     updateButtonStyles();
 }
 
@@ -40,17 +44,23 @@ void ModeSelector::setMode(const QString &mode)
 
 void ModeSelector::updateButtonStyles()
 {
-    auto setStyle = [](QPushButton *btn, bool active) {
+    const auto &p = ThemeManager::instance().palette();
+    auto setStyle = [&p](QPushButton *btn, bool active) {
         if (active)
             btn->setStyleSheet(
-                "QPushButton { background: #a6e3a1; color: #0e0e0e; border: none; "
-                "padding: 2px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; }"
-                "QPushButton:hover { background: #b6f0b1; }");
+                QStringLiteral(
+                    "QPushButton { background: %1; color: %2; border: none; "
+                    "padding: 2px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; }"
+                    "QPushButton:hover { background: %3; }")
+                .arg(p.green.name(), p.on_accent.name(), p.teal.name()));
         else
             btn->setStyleSheet(
-                "QPushButton { background: #252525; color: #6c7086; border: none; "
-                "padding: 2px 12px; border-radius: 4px; font-size: 11px; }"
-                "QPushButton:hover { background: #333; color: #cdd6f4; }");
+                QStringLiteral(
+                    "QPushButton { background: %1; color: %2; border: none; "
+                    "padding: 2px 12px; border-radius: 4px; font-size: 11px; }"
+                    "QPushButton:hover { background: %3; color: %4; }")
+                .arg(p.bg_raised.name(), p.text_muted.name(),
+                     p.hover_raised.name(), p.text_primary.name()));
     };
     setStyle(m_agentBtn, m_currentMode == "agent");
     setStyle(m_askBtn, m_currentMode == "ask");

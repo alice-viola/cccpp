@@ -1,4 +1,5 @@
 #include "ui/ThinkingIndicator.h"
+#include "ui/ThemeManager.h"
 #include <QPainter>
 #include <cmath>
 
@@ -13,6 +14,10 @@ ThinkingIndicator::ThinkingIndicator(QWidget *parent)
     m_anim->setDuration(1400);
     m_anim->setEasingCurve(QEasingCurve::Linear);
     m_anim->setLoopCount(-1);
+
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, [this] { update(); });
+
     hide();
 }
 
@@ -52,7 +57,8 @@ void ThinkingIndicator::paintEvent(QPaintEvent *)
         float alpha  = 0.20f + 0.80f * wave;
         int   bounce = static_cast<int>(5.0f * wave);      // 0..5 px upward
 
-        QColor c(0xcb, 0xa6, 0xf7, static_cast<int>(alpha * 255.0f)); // #cba6f7
+        QColor mc = ThemeManager::instance().palette().mauve;
+        QColor c(mc.red(), mc.green(), mc.blue(), static_cast<int>(alpha * 255.0f));
         p.setBrush(c);
         p.setPen(Qt::NoPen);
 

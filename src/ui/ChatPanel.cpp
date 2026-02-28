@@ -6,6 +6,7 @@
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThinkingIndicator.h"
 #include "ui/QuestionWidget.h"
+#include "ui/ThemeManager.h"
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "core/SessionManager.h"
@@ -32,10 +33,12 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setDocumentMode(true);
 
+    auto &thm = ThemeManager::instance();
     auto cornerBtnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: #6c7086; border: none; "
+        "QPushButton { background: transparent; color: %1; border: none; "
         "font-size: 11px; padding: 0 8px; }"
-        "QPushButton:hover { color: #a6adc8; }");
+        "QPushButton:hover { color: %2; }")
+        .arg(thm.hex("text_muted"), thm.hex("text_secondary"));
 
     auto *cornerWidget = new QWidget(this);
     auto *cornerLayout = new QHBoxLayout(cornerWidget);
@@ -77,6 +80,9 @@ ChatPanel::ChatPanel(QWidget *parent)
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+        refreshInputBarForCurrentTab();
+    });
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_tabs.size() <= 1) return;
         m_tabs.remove(idx);
@@ -175,6 +181,9 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                     QStringLiteral("(%1 lines written)").arg(lineCount));
                 t.currentAssistantMsg->appendContent(diffHtml);
             }
+
+            if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
+                emit planFileDetected(info.filePath);
         }
 
         // AskUserQuestion — show interactive question widget
@@ -197,7 +206,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                     int count = tab.messagesLayout->count();
                     tab.messagesLayout->insertWidget(count - 1, tab.currentAssistantMsg);
                 }
-                setProcessingState(true);
+                setTabProcessingState(tabIdx, true);
                 tab.process->sendMessage(response);
             });
             scrollTabToBottom(t);
@@ -298,8 +307,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.currentAssistantMsg->showRevertButton(true);
             t.currentAssistantMsg = nullptr;
         }
-        setProcessingState(false);
-        setTabProcessing(tabIdx, false);
+        setTabProcessingState(tabIdx, false);
         scrollTabToBottom(t);
     });
 
@@ -311,8 +319,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (t.currentAssistantMsg)
             t.currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Error:** %1").arg(err));
-        setProcessingState(false);
-        setTabProcessing(tabIdx, false);
+        setTabProcessingState(tabIdx, false);
     });
 
     // Stream parser errors
@@ -346,12 +353,15 @@ QString ChatPanel::newChat()
     auto *welcome = new QLabel(scrollContent);
     welcome->setObjectName("chatWelcome");
     welcome->setAlignment(Qt::AlignCenter);
+    auto &thm2 = ThemeManager::instance();
     welcome->setText(
-        "<div style='color:#3a3a5c;font-size:32px;margin-bottom:16px;'>&#x2726;</div>"
-        "<div style='color:#45475a;font-size:14px;font-weight:500;"
+        QStringLiteral(
+        "<div style='color:%1;font-size:32px;margin-bottom:16px;'>&#x2726;</div>"
+        "<div style='color:%2;font-size:14px;font-weight:500;"
         "margin-bottom:6px;'>Start a conversation</div>"
-        "<div style='color:#313244;font-size:11px;'>"
-        "Type a message or choose a mode below</div>");
+        "<div style='color:%3;font-size:11px;'>"
+        "Type a message or choose a mode below</div>")
+        .arg(thm2.hex("surface0"), thm2.hex("text_faint"), thm2.hex("surface0")));
     welcome->setTextFormat(Qt::RichText);
     welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     // Insert as first item (index 0); stretch is at 0, so we prepend a spacer
@@ -458,6 +468,18 @@ void ChatPanel::restoreSession(const QString &sessionId)
     wireProcessSignals(m_tabs[idx]);
 
     m_tabWidget->setCurrentIndex(idx);
+
+    // Check for plan files referenced in tool messages
+    QString lastPlanFile;
+    for (const auto &msg : messages) {
+        if (msg.role == "tool" && msg.content.startsWith("Write: ")) {
+            QString path = msg.content.mid(7).trimmed();
+            if (path.contains("/.claude/plans/") && path.endsWith(".md"))
+                lastPlanFile = path;
+        }
+    }
+    if (!lastPlanFile.isEmpty() && QFile::exists(lastPlanFile))
+        emit planFileDetected(lastPlanFile);
 }
 
 void ChatPanel::sendMessage(const QString &text)
@@ -501,8 +523,7 @@ void ChatPanel::onSendRequested(const QString &text)
     if (!tab.sessionId.startsWith("pending-"))
         tab.process->setSessionId(tab.sessionId);
 
-    setProcessingState(true);
-    setTabProcessing(tab.tabIndex, true);
+    setTabProcessingState(tab.tabIndex, true);
     tab.process->sendMessage(text);
 }
 
@@ -586,23 +607,36 @@ void ChatPanel::scrollTabToBottom(ChatTab &tab)
     });
 }
 
-void ChatPanel::setProcessingState(bool processing)
-{
-    m_inputBar->setEnabled(!processing);
-    m_inputBar->setPlaceholder(processing ? "Claude is thinking..." : "Ask Claude anything...");
-    emit processingChanged(processing);
-}
-
-void ChatPanel::setTabProcessing(int tabIdx, bool processing)
+void ChatPanel::setTabProcessingState(int tabIdx, bool processing)
 {
     if (!m_tabs.contains(tabIdx)) return;
     auto &tab = m_tabs[tabIdx];
+    tab.processing = processing;
+
     if (tab.thinkingIndicator) {
         if (processing)
             tab.thinkingIndicator->startAnimation();
         else
             tab.thinkingIndicator->stopAnimation();
     }
+
+    if (tabIdx == m_tabWidget->currentIndex())
+        refreshInputBarForCurrentTab();
+
+    // Emit global processingChanged (true if ANY tab is processing)
+    bool anyProcessing = false;
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
+        if (it->processing) { anyProcessing = true; break; }
+    }
+    emit processingChanged(anyProcessing);
+}
+
+void ChatPanel::refreshInputBarForCurrentTab()
+{
+    int idx = m_tabWidget->currentIndex();
+    bool busy = m_tabs.contains(idx) && m_tabs[idx].processing;
+    m_inputBar->setEnabled(!busy);
+    m_inputBar->setPlaceholder(busy ? "Claude is thinking..." : "Ask Claude anything...");
 }
 
 QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr)
@@ -622,15 +656,18 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         }
     }
 
+    auto &thm = ThemeManager::instance();
+
     // Card container
     html += QStringLiteral(
         "\n\n<table cellspacing='0' cellpadding='0' style='width:100%%;margin:6px 0;'><tr><td>"
-        "<div style='background:#0e0e0e;border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;'>"
+        "<div style='background:%4;border:1px solid %5;border-radius:6px;overflow:hidden;'>"
         // Header bar with file name
-        "<div style='background:#141414;padding:4px 8px;border-bottom:1px solid #2a2a2a;'>"
-        "<a href='cccpp://open?file=%1&line=%3' style='color:#89b4fa;text-decoration:none;font-size:11px;"
+        "<div style='background:%6;padding:4px 8px;border-bottom:1px solid %5;'>"
+        "<a href='cccpp://open?file=%1&line=%3' style='color:%7;text-decoration:none;font-size:11px;"
         "font-family:Menlo,monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
-        .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine));
+        .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine),
+             thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"), thm.hex("blue"));
 
     // Code diff area
     html += "<div style='padding:2px 0;font-family:Menlo,monospace;font-size:12px;line-height:1.4;'>";
@@ -640,12 +677,12 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         int maxLines = qMin(oldLines.size(), 10);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:#2e1a1e;color:#f38ba8;padding:0 8px;white-space:pre;'>-%1</div>")
-                .arg(oldLines[i].toHtmlEscaped());
+                "<div style='background:%2;color:%3;padding:0 8px;white-space:pre;'>-%1</div>")
+                .arg(oldLines[i].toHtmlEscaped(), thm.hex("diff_del_bg"), thm.hex("red"));
         if (oldLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:#45475a;padding:0 8px;font-size:11px;'>... %1 more</div>")
-                .arg(oldLines.size() - maxLines);
+                "<div style='color:%2;padding:0 8px;font-size:11px;'>... %1 more</div>")
+                .arg(oldLines.size() - maxLines).arg(thm.hex("text_faint"));
     }
 
     if (!newStr.isEmpty()) {
@@ -653,12 +690,12 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         int maxLines = qMin(newLines.size(), 10);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:#1a2e1a;color:#a6e3a1;padding:0 8px;white-space:pre;'>+%1</div>")
-                .arg(newLines[i].toHtmlEscaped());
+                "<div style='background:%2;color:%3;padding:0 8px;white-space:pre;'>+%1</div>")
+                .arg(newLines[i].toHtmlEscaped(), thm.hex("diff_add_bg"), thm.hex("green"));
         if (newLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:#45475a;padding:0 8px;font-size:11px;'>... %1 more</div>")
-                .arg(newLines.size() - maxLines);
+                "<div style='color:%2;padding:0 8px;font-size:11px;'>... %1 more</div>")
+                .arg(newLines.size() - maxLines).arg(thm.hex("text_faint"));
     }
 
     html += "</div></div></td></tr></table>";

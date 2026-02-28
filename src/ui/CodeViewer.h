@@ -8,8 +8,10 @@
 #include <QFileSystemWatcher>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QTextBrowser>
 #include "core/DiffEngine.h"
 #include "core/GitManager.h"
+#include "ui/ThemeManager.h"
 
 class DiffSplitView;
 
@@ -23,6 +25,7 @@ struct FileTab {
     QString filePath;
     bool dirty = false;
     bool inDiffMode = false;
+    bool isMarkdown = false;
 #ifndef NO_QSCINTILLA
     QsciScintilla *editor = nullptr;
 #else
@@ -30,6 +33,7 @@ struct FileTab {
 #endif
     QStackedWidget *stack = nullptr;
     DiffSplitView *diffView = nullptr;
+    QTextBrowser *markdownView = nullptr;
 };
 
 class CodeViewer : public QWidget {
@@ -38,6 +42,7 @@ public:
     explicit CodeViewer(QWidget *parent = nullptr);
 
     void loadFile(const QString &filePath);
+    void openMarkdown(const QString &filePath);
     void refreshFile(const QString &filePath);
     void showDiff(const FileDiff &diff);
     void clearDiffMarkers();
@@ -72,9 +77,11 @@ private:
 #ifndef NO_QSCINTILLA
     QsciScintilla *createEditor();
     void setLexerForFile(const QString &filePath, QsciScintilla *editor);
+    void applyEditorThemeColors(QsciScintilla *editor);
 #else
     QPlainTextEdit *createEditor();
 #endif
+    void applyThemeColors();
     void applyDiffMarkers(const FileDiff &diff);
     FileTab *currentTab();
     FileTab *tabForFile(const QString &filePath);

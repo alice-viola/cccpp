@@ -1,4 +1,5 @@
 #include "ui/ChatMessageWidget.h"
+#include "ui/ThemeManager.h"
 #include "util/MarkdownRenderer.h"
 #include <QUrl>
 #include <QUrlQuery>
@@ -21,11 +22,12 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     headerLayout->setSpacing(4);
     headerLayout->setContentsMargins(0, 0, 0, 0);
 
+    auto &tm = ThemeManager::instance();
     QString roleName, roleColor;
     switch (role) {
-    case User:     roleName = "You";    roleColor = "#cba6f7"; break;
-    case Assistant: roleName = "Claude"; roleColor = "#89b4fa"; break;
-    case Tool:     roleName = "Tool";   roleColor = "#a6e3a1"; break;
+    case User:     roleName = "You";    roleColor = tm.hex("mauve"); break;
+    case Assistant: roleName = "Claude"; roleColor = tm.hex("blue"); break;
+    case Tool:     roleName = "Tool";   roleColor = tm.hex("green"); break;
     }
 
     m_roleLabel = new QLabel(roleName, this);
@@ -37,9 +39,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     m_acceptBtn = new QPushButton("Accept", this);
     m_acceptBtn->setFixedHeight(20);
     m_acceptBtn->setStyleSheet(
-        "QPushButton { background: #a6e3a1; color: #0e0e0e; border: none; "
+        QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; "
         "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
-        "QPushButton:hover { background: #b6f0b1; }");
+        "QPushButton:hover { background: %3; }")
+        .arg(tm.hex("green"), tm.hex("on_accent"), tm.hex("teal")));
     m_acceptBtn->setVisible(false);
     connect(m_acceptBtn, &QPushButton::clicked, this, [this] { emit acceptRequested(m_turnId); });
     headerLayout->addWidget(m_acceptBtn);
@@ -47,9 +51,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     m_rejectBtn = new QPushButton("Reject", this);
     m_rejectBtn->setFixedHeight(20);
     m_rejectBtn->setStyleSheet(
-        "QPushButton { background: #f38ba8; color: #0e0e0e; border: none; "
+        QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; "
         "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
-        "QPushButton:hover { background: #f5a0b6; }");
+        "QPushButton:hover { background: %3; }")
+        .arg(tm.hex("red"), tm.hex("on_accent"), tm.hex("maroon")));
     m_rejectBtn->setVisible(false);
     connect(m_rejectBtn, &QPushButton::clicked, this, [this] { emit rejectRequested(m_turnId); });
     headerLayout->addWidget(m_rejectBtn);
@@ -57,9 +63,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     m_revertBtn = new QPushButton("Revert", this);
     m_revertBtn->setFixedHeight(20);
     m_revertBtn->setStyleSheet(
-        "QPushButton { background: #252525; color: #f38ba8; border: none; "
+        QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; "
         "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
-        "QPushButton:hover { background: #f38ba8; color: #0e0e0e; }");
+        "QPushButton:hover { background: %2; color: %3; }")
+        .arg(tm.hex("bg_raised"), tm.hex("red"), tm.hex("on_accent")));
     m_revertBtn->setVisible(false);
     connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
     headerLayout->addWidget(m_revertBtn);
@@ -82,7 +90,8 @@ void ChatMessageWidget::setupUserContent(const QString &content)
     m_userLabel = new QLabel(content, this);
     m_userLabel->setWordWrap(true);
     m_userLabel->setStyleSheet(
-        "QLabel { color: #cdd6f4; font-size: 13px; padding: 2px 0; }");
+        QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 2px 0; }")
+        .arg(ThemeManager::instance().hex("text_primary")));
     m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_layout->addWidget(m_userLabel);
 }
@@ -178,7 +187,9 @@ void ChatMessageWidget::appendHtmlOnly(const QString &html, const QString &plain
 void ChatMessageWidget::setToolInfo(const QString &toolName, const QString &summary)
 {
     m_roleLabel->setText(QStringLiteral("Tool: %1").arg(toolName));
-    m_roleLabel->setStyleSheet("QLabel { font-weight: bold; font-size: 11px; color: #a6e3a1; }");
+    m_roleLabel->setStyleSheet(
+        QStringLiteral("QLabel { font-weight: bold; font-size: 11px; color: %1; }")
+        .arg(ThemeManager::instance().hex("green")));
     setupToolWidget(toolName, summary);
 }
 
@@ -191,15 +202,20 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     summaryLayout->setSpacing(4);
     summaryLayout->setContentsMargins(0, 0, 0, 0);
 
+    auto &tm = ThemeManager::instance();
     m_expandBtn = new QPushButton(QStringLiteral("\u25B6"), this);
     m_expandBtn->setFixedSize(16, 16);
     m_expandBtn->setStyleSheet(
-        "QPushButton { background: none; color: #6c7086; border: none; font-size: 9px; padding: 0; }"
-        "QPushButton:hover { color: #cdd6f4; }");
+        QStringLiteral(
+        "QPushButton { background: none; color: %1; border: none; font-size: 9px; padding: 0; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(tm.hex("text_muted"), tm.hex("text_primary")));
     summaryLayout->addWidget(m_expandBtn);
 
     auto *summaryLabel = new QLabel(summary, this);
-    summaryLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; font-family: Menlo, monospace; }");
+    summaryLabel->setStyleSheet(
+        QStringLiteral("QLabel { color: %1; font-size: 11px; font-family: Menlo, monospace; }")
+        .arg(tm.hex("text_muted")));
     summaryLabel->setWordWrap(true);
     summaryLayout->addWidget(summaryLabel, 1);
 
@@ -213,8 +229,10 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     auto *detailBrowser = new QTextBrowser(m_toolDetailWidget);
     detailBrowser->setFrameShape(QFrame::NoFrame);
     detailBrowser->setStyleSheet(
-        "QTextBrowser { background: #0e0e0e; color: #a6adc8; border: none; "
-        "font-family: Menlo, monospace; font-size: 11px; padding: 4px; }");
+        QStringLiteral(
+        "QTextBrowser { background: %1; color: %2; border: none; "
+        "font-family: Menlo, monospace; font-size: 11px; padding: 4px; }")
+        .arg(tm.hex("bg_base"), tm.hex("text_secondary")));
     detailBrowser->setMaximumHeight(120);
     detailBrowser->setPlainText(summary);
     detailLayout->addWidget(detailBrowser);
@@ -237,7 +255,9 @@ void ChatMessageWidget::showAcceptRejectButtons(bool show) {
 void ChatMessageWidget::setReverted(bool reverted)
 {
     if (reverted) {
-        setStyleSheet("ChatMessageWidget { background: #0e0e0e; border-radius: 6px; }");
+        setStyleSheet(
+            QStringLiteral("ChatMessageWidget { background: %1; border-radius: 6px; }")
+            .arg(ThemeManager::instance().hex("bg_base")));
         m_revertBtn->setEnabled(false);
         m_revertBtn->setText("Reverted");
     }
@@ -245,16 +265,21 @@ void ChatMessageWidget::setReverted(bool reverted)
 
 void ChatMessageWidget::applyStyle()
 {
+    auto &tm = ThemeManager::instance();
     switch (m_role) {
     case User:
         setStyleSheet(
-            "ChatMessageWidget { background: #141414; border: 1px solid #2a2a2a; "
-            "border-radius: 6px; }");
+            QStringLiteral(
+            "ChatMessageWidget { background: %1; border: 1px solid %2; "
+            "border-radius: 6px; }")
+            .arg(tm.hex("bg_surface"), tm.hex("border_standard")));
         break;
     case Assistant:
         setStyleSheet(
-            "ChatMessageWidget { background: #0e0e0e; border-left: 2px solid #89b4fa; "
-            "border-radius: 0; }");
+            QStringLiteral(
+            "ChatMessageWidget { background: %1; border-left: 2px solid %2; "
+            "border-radius: 0; }")
+            .arg(tm.hex("bg_base"), tm.hex("blue")));
         break;
     case Tool:
         setStyleSheet(

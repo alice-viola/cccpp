@@ -33,6 +33,7 @@ struct ChatTab {
     QString pendingEditFile;   // file path from last Edit/Write tool (for deferred refresh)
     int turnId = 0;
     int tabIndex = -1;
+    bool processing = false;
 };
 
 class ChatPanel : public QWidget {
@@ -58,6 +59,7 @@ public:
 signals:
     void fileChanged(const QString &filePath);
     void navigateToFile(const QString &filePath, int line);
+    void planFileDetected(const QString &filePath);
     void aboutToSendMessage();
     void processingChanged(bool processing);
 
@@ -72,8 +74,8 @@ private:
     QWidget *createChatContent();
     void addMessageToTab(ChatTab &tab, ChatMessageWidget *msg);
     void scrollTabToBottom(ChatTab &tab);
-    void setProcessingState(bool processing);
-    void setTabProcessing(int tabIdx, bool processing);
+    void setTabProcessingState(int tabIdx, bool processing);
+    void refreshInputBarForCurrentTab();
     void showHistoryMenu();
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
 

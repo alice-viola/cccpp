@@ -18,6 +18,7 @@ public:
     QStringList askModeFlags() const;
     QStringList planModeFlags() const;
     QString theme() const;
+    void setTheme(const QString &theme);
     QString lastWorkspace() const;
     void setLastWorkspace(const QString &path);
 

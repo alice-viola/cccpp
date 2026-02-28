@@ -1,12 +1,16 @@
 #include "ui/ToolCallGroupWidget.h"
+#include "ui/ThemeManager.h"
 #include <QScrollArea>
 
 ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     : QFrame(parent)
 {
+    auto &tm = ThemeManager::instance();
     setStyleSheet(
-        "ToolCallGroupWidget { background: #141414; border: 1px solid #2a2a2a; "
-        "border-left: 2px solid #a6e3a1; border-radius: 6px; }");
+        QStringLiteral(
+        "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
+        "border-left: 2px solid %3; border-radius: 6px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("green")));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(8, 6, 8, 6);
@@ -19,13 +23,16 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     m_expandBtn = new QPushButton(QStringLiteral("\u25B6"), this);
     m_expandBtn->setFixedSize(18, 18);
     m_expandBtn->setStyleSheet(
-        "QPushButton { background: none; color: #6c7086; border: none; font-size: 9px; padding: 0; }"
-        "QPushButton:hover { color: #cdd6f4; }");
+        QStringLiteral(
+        "QPushButton { background: none; color: %1; border: none; font-size: 9px; padding: 0; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(tm.hex("text_muted"), tm.hex("text_primary")));
     m_headerLayout->addWidget(m_expandBtn);
 
     m_summaryLabel = new QLabel(this);
     m_summaryLabel->setStyleSheet(
-        "QLabel { color: #a6adc8; font-size: 11px; }");
+        QStringLiteral("QLabel { color: %1; font-size: 11px; }")
+        .arg(tm.hex("text_secondary")));
     m_summaryLabel->setWordWrap(true);
     m_headerLayout->addWidget(m_summaryLabel, 1);
 
@@ -94,16 +101,18 @@ void ToolCallGroupWidget::updateSummaryLabel()
     for (const auto &c : m_calls)
         if (c.isEdit) editCount++;
 
+    auto &tm = ThemeManager::instance();
     QString editNote;
     if (editCount > 0)
-        editNote = QStringLiteral(" &mdash; <span style='color:#a6e3a1;'>%1 file(s) modified</span>")
-                       .arg(editCount);
+        editNote = QStringLiteral(" &mdash; <span style='color:%2;'>%1 file(s) modified</span>")
+                       .arg(editCount).arg(tm.hex("green"));
 
     m_summaryLabel->setText(
-        QStringLiteral("<span style='color:#6c7086;'>%1 tool calls:</span> %2%3")
+        QStringLiteral("<span style='color:%4;'>%1 tool calls:</span> %2%3")
             .arg(m_calls.size())
             .arg(parts.join(", "))
-            .arg(editNote));
+            .arg(editNote)
+            .arg(tm.hex("text_muted")));
 }
 
 void ToolCallGroupWidget::rebuildDetailView()
@@ -115,18 +124,21 @@ void ToolCallGroupWidget::rebuildDetailView()
         delete item;
     }
 
+    auto &tm = ThemeManager::instance();
     for (const auto &call : m_calls) {
         auto *row = new QFrame(m_detailContainer);
-        row->setStyleSheet("QFrame { background: #0e0e0e; border-radius: 4px; }");
+        row->setStyleSheet(
+            QStringLiteral("QFrame { background: %1; border-radius: 4px; }")
+            .arg(tm.hex("bg_base")));
         auto *rowLayout = new QVBoxLayout(row);
         rowLayout->setContentsMargins(8, 4, 8, 4);
         rowLayout->setSpacing(2);
 
         // Tool name + file path
-        QString header = QStringLiteral("<span style='color:#a6e3a1;font-weight:bold;'>%1</span>")
-                             .arg(call.toolName);
+        QString header = QStringLiteral("<span style='color:%2;font-weight:bold;'>%1</span>")
+                             .arg(call.toolName, tm.hex("green"));
         if (!call.filePath.isEmpty())
-            header += QStringLiteral(" <span style='color:#89b4fa;'>%1</span>").arg(call.filePath);
+            header += QStringLiteral(" <span style='color:%2;'>%1</span>").arg(call.filePath, tm.hex("blue"));
 
         auto *headerLabel = new QLabel(header, row);
         headerLabel->setStyleSheet("QLabel { font-size: 11px; }");
@@ -145,11 +157,14 @@ void ToolCallGroupWidget::rebuildDetailView()
 
 QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QString &newStr)
 {
+    auto &tm = ThemeManager::instance();
     auto *browser = new QTextBrowser;
     browser->setFrameShape(QFrame::NoFrame);
     browser->setStyleSheet(
-        "QTextBrowser { background: #0e0e0e; border: none; font-family: Menlo, monospace; "
-        "font-size: 12px; }");
+        QStringLiteral(
+        "QTextBrowser { background: %1; border: none; font-family: Menlo, monospace; "
+        "font-size: 12px; }")
+        .arg(tm.hex("bg_base")));
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     browser->setMaximumHeight(200);
 
@@ -161,8 +176,8 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         for (const QString &line : oldLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
-                "<div style='background:#2e1a1e;color:#f38ba8;padding:1px 4px;'>"
-                "- %1</div>").arg(escaped);
+                "<div style='background:%2;color:%3;padding:1px 4px;'>"
+                "- %1</div>").arg(escaped, tm.hex("diff_del_bg"), tm.hex("red"));
         }
     }
 
@@ -172,8 +187,8 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         for (const QString &line : newLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
-                "<div style='background:#1a2e1a;color:#a6e3a1;padding:1px 4px;'>"
-                "+ %1</div>").arg(escaped);
+                "<div style='background:%2;color:%3;padding:1px 4px;'>"
+                "+ %1</div>").arg(escaped, tm.hex("diff_add_bg"), tm.hex("green"));
         }
     }
 

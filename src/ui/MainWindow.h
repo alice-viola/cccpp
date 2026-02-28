@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QTabWidget>
 #include <QLabel>
+#include <QActionGroup>
 
 class WorkspaceTree;
 class CodeViewer;
@@ -38,6 +39,7 @@ private slots:
     void onNewTerminal();
     void onClearTerminal();
     void onGitRefresh();
+    void onThemeChanged(const QString &name);
 
 private:
     void setupMenuBar();
@@ -45,6 +47,7 @@ private:
     void setupUI();
     void setupStatusBar();
     void loadStylesheet();
+    void applyThemeColors();
     void restoreSessions();
     void updateToggleButtons();
     void connectGitSignals();
@@ -76,4 +79,7 @@ private:
     QLabel *m_statusBranch     = nullptr;
     QLabel *m_statusModel      = nullptr;
     QLabel *m_statusProcessing = nullptr;
+
+    // Theme menu actions
+    QActionGroup *m_themeGroup = nullptr;
 };

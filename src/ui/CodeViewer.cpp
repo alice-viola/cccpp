@@ -1,5 +1,7 @@
 #include "ui/CodeViewer.h"
 #include "ui/DiffSplitView.h"
+#include "ui/ThemeManager.h"
+#include "util/MarkdownRenderer.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QDir>
@@ -19,34 +21,35 @@ public:
     }
 protected:
     void paintEvent(QPaintEvent *) override {
+        const auto &pal = ThemeManager::instance().palette();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
-        p.fillRect(rect(), QColor("#1a1a1a"));
+        p.fillRect(rect(), pal.bg_window);
 
         QPoint c = rect().center();
 
         // File icon — two stacked rounded rects
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor("#252525"));
+        p.setBrush(pal.bg_raised);
         p.drawRoundedRect(c.x() - 12, c.y() - 52, 34, 44, 3, 3);
-        p.setBrush(QColor("#2d2d2d"));
+        p.setBrush(pal.surface0);
         p.drawRoundedRect(c.x() - 18, c.y() - 58, 34, 44, 3, 3);
         // Folded corner cutout
-        p.setBrush(QColor("#1a1a1a"));
+        p.setBrush(pal.bg_window);
         QPolygon corner;
         corner << QPoint(c.x() + 6,  c.y() - 58)
                << QPoint(c.x() + 16, c.y() - 48)
                << QPoint(c.x() + 16, c.y() - 58);
         p.drawPolygon(corner);
         // Folded corner fill
-        p.setBrush(QColor("#3d3d3d"));
+        p.setBrush(pal.hover_raised);
         QPolygon fold;
         fold << QPoint(c.x() + 6,  c.y() - 58)
              << QPoint(c.x() + 16, c.y() - 48)
              << QPoint(c.x() + 6,  c.y() - 48);
         p.drawPolygon(fold);
         // Text line hints inside icon
-        p.setBrush(QColor("#3a3a3a"));
+        p.setBrush(pal.pressed_raised);
         for (int i = 0; i < 3; ++i) {
             int lw = (i == 2) ? 14 : 22;
             p.drawRoundedRect(c.x() - 14, c.y() - 46 + i * 9, lw, 3, 1, 1);
@@ -57,14 +60,14 @@ protected:
         tf.setPixelSize(14);
         tf.setWeight(QFont::Medium);
         p.setFont(tf);
-        p.setPen(QColor("#45475a"));
+        p.setPen(pal.text_faint);
         p.drawText(QRect(c.x() - 150, c.y() - 4, 300, 22), Qt::AlignCenter, "No file open");
 
         // Hint line
         QFont hf = font();
         hf.setPixelSize(11);
         p.setFont(hf);
-        p.setPen(QColor("#2d2d40"));
+        p.setPen(pal.surface0);
         p.drawText(QRect(c.x() - 220, c.y() + 22, 440, 18), Qt::AlignCenter,
                    "Select a file from the explorer or ask Claude to open one");
     }
@@ -128,11 +131,6 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_diffToggleBtn->setCheckable(true);
     m_diffToggleBtn->setFixedSize(40, 20);
     m_diffToggleBtn->setToolTip("Toggle side-by-side diff view");
-    m_diffToggleBtn->setStyleSheet(
-        "QPushButton { background: #252525; color: #6c7086; border: none; border-radius: 4px; "
-        "font-size: 11px; margin: 2px 4px; }"
-        "QPushButton:hover { color: #cdd6f4; background: #333; }"
-        "QPushButton:checked { background: #2d5a27; color: #a6e3a1; }");
     m_tabWidget->setCornerWidget(m_diffToggleBtn, Qt::TopRightCorner);
     connect(m_diffToggleBtn, &QPushButton::clicked, this, &CodeViewer::toggleDiffMode);
 
@@ -167,6 +165,11 @@ CodeViewer::CodeViewer(QWidget *parent)
         if (m_tabs.contains(idx))
             m_diffToggleBtn->setChecked(m_tabs[idx].inDiffMode);
     });
+
+    // Apply theme colors and listen for changes
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &CodeViewer::applyThemeColors);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,304 +178,306 @@ CodeViewer::CodeViewer(QWidget *parent)
 
 #ifndef NO_QSCINTILLA
 
-static void applyDarkThemeToLexer(QsciLexer *lexer)
+static void applyThemeToLexer(QsciLexer *lexer)
 {
     if (!lexer) return;
+
+    const auto &pal = ThemeManager::instance().palette();
 
     QFont monoFont("Menlo", 13);
     lexer->setFont(monoFont);
     lexer->setDefaultFont(monoFont);
-    lexer->setPaper(QColor("#1a1a1a"));
-    lexer->setDefaultPaper(QColor("#1a1a1a"));
-    lexer->setColor(QColor("#cdd6f4"));
-    lexer->setDefaultColor(QColor("#cdd6f4"));
+    lexer->setPaper(pal.bg_window);
+    lexer->setDefaultPaper(pal.bg_window);
+    lexer->setColor(pal.text_primary);
+    lexer->setDefaultColor(pal.text_primary);
 
     for (int i = 0; i <= 255; ++i) {
-        lexer->setPaper(QColor("#1a1a1a"), i);
-        lexer->setColor(QColor("#cdd6f4"), i);
+        lexer->setPaper(pal.bg_window, i);
+        lexer->setColor(pal.text_primary, i);
         lexer->setFont(monoFont, i);
     }
 
     // --- C / C++ / Objective-C (also covers Java, C# which inherit QsciLexerCPP) ---
     if (auto *L = qobject_cast<QsciLexerCPP *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerCPP::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCPP::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCPP::DoubleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerCPP::Comment);
-        L->setColor(QColor("#6c7086"), QsciLexerCPP::CommentLine);
-        L->setColor(QColor("#6c7086"), QsciLexerCPP::CommentDoc);
-        L->setColor(QColor("#fab387"), QsciLexerCPP::Number);
-        L->setColor(QColor("#89b4fa"), QsciLexerCPP::PreProcessor);
-        L->setColor(QColor("#f38ba8"), QsciLexerCPP::Operator);
-        L->setColor(QColor("#cdd6f4"), QsciLexerCPP::Identifier);
-        L->setColor(QColor("#cba6f7"), QsciLexerCPP::KeywordSet2);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCPP::RawString);
+        L->setColor(pal.mauve, QsciLexerCPP::Keyword);
+        L->setColor(pal.green, QsciLexerCPP::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerCPP::DoubleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerCPP::Comment);
+        L->setColor(pal.overlay0, QsciLexerCPP::CommentLine);
+        L->setColor(pal.overlay0, QsciLexerCPP::CommentDoc);
+        L->setColor(pal.peach, QsciLexerCPP::Number);
+        L->setColor(pal.blue, QsciLexerCPP::PreProcessor);
+        L->setColor(pal.red, QsciLexerCPP::Operator);
+        L->setColor(pal.text_primary, QsciLexerCPP::Identifier);
+        L->setColor(pal.mauve, QsciLexerCPP::KeywordSet2);
+        L->setColor(pal.green, QsciLexerCPP::RawString);
         return;
     }
 
     // --- Python ---
     if (auto *L = qobject_cast<QsciLexerPython *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerPython::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPython::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPython::DoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPython::TripleSingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPython::TripleDoubleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerPython::Comment);
-        L->setColor(QColor("#fab387"), QsciLexerPython::Number);
-        L->setColor(QColor("#89b4fa"), QsciLexerPython::Decorator);
-        L->setColor(QColor("#f9e2af"), QsciLexerPython::FunctionMethodName);
-        L->setColor(QColor("#f38ba8"), QsciLexerPython::Operator);
+        L->setColor(pal.mauve, QsciLexerPython::Keyword);
+        L->setColor(pal.green, QsciLexerPython::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerPython::DoubleQuotedString);
+        L->setColor(pal.green, QsciLexerPython::TripleSingleQuotedString);
+        L->setColor(pal.green, QsciLexerPython::TripleDoubleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerPython::Comment);
+        L->setColor(pal.peach, QsciLexerPython::Number);
+        L->setColor(pal.blue, QsciLexerPython::Decorator);
+        L->setColor(pal.yellow, QsciLexerPython::FunctionMethodName);
+        L->setColor(pal.red, QsciLexerPython::Operator);
         return;
     }
 
     // --- JavaScript / TypeScript ---
     if (auto *L = qobject_cast<QsciLexerJavaScript *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerJavaScript::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerJavaScript::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerJavaScript::DoubleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerJavaScript::Comment);
-        L->setColor(QColor("#6c7086"), QsciLexerJavaScript::CommentLine);
-        L->setColor(QColor("#6c7086"), QsciLexerJavaScript::CommentDoc);
-        L->setColor(QColor("#fab387"), QsciLexerJavaScript::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerJavaScript::Operator);
-        L->setColor(QColor("#cdd6f4"), QsciLexerJavaScript::Identifier);
+        L->setColor(pal.mauve, QsciLexerJavaScript::Keyword);
+        L->setColor(pal.green, QsciLexerJavaScript::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerJavaScript::DoubleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerJavaScript::Comment);
+        L->setColor(pal.overlay0, QsciLexerJavaScript::CommentLine);
+        L->setColor(pal.overlay0, QsciLexerJavaScript::CommentDoc);
+        L->setColor(pal.peach, QsciLexerJavaScript::Number);
+        L->setColor(pal.red, QsciLexerJavaScript::Operator);
+        L->setColor(pal.text_primary, QsciLexerJavaScript::Identifier);
         return;
     }
 
     // --- Ruby ---
     if (auto *L = qobject_cast<QsciLexerRuby *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerRuby::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerRuby::DoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerRuby::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerRuby::HereDocument);
-        L->setColor(QColor("#6c7086"), QsciLexerRuby::Comment);
-        L->setColor(QColor("#fab387"), QsciLexerRuby::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerRuby::Operator);
-        L->setColor(QColor("#f9e2af"), QsciLexerRuby::FunctionMethodName);
-        L->setColor(QColor("#89b4fa"), QsciLexerRuby::ClassName);
-        L->setColor(QColor("#f38ba8"), QsciLexerRuby::Symbol);
-        L->setColor(QColor("#fab387"), QsciLexerRuby::Regex);
+        L->setColor(pal.mauve, QsciLexerRuby::Keyword);
+        L->setColor(pal.green, QsciLexerRuby::DoubleQuotedString);
+        L->setColor(pal.green, QsciLexerRuby::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerRuby::HereDocument);
+        L->setColor(pal.overlay0, QsciLexerRuby::Comment);
+        L->setColor(pal.peach, QsciLexerRuby::Number);
+        L->setColor(pal.red, QsciLexerRuby::Operator);
+        L->setColor(pal.yellow, QsciLexerRuby::FunctionMethodName);
+        L->setColor(pal.blue, QsciLexerRuby::ClassName);
+        L->setColor(pal.red, QsciLexerRuby::Symbol);
+        L->setColor(pal.peach, QsciLexerRuby::Regex);
         return;
     }
 
     // --- HTML (also handles embedded JS/CSS/PHP) ---
     if (auto *L = qobject_cast<QsciLexerHTML *>(lexer)) {
-        L->setColor(QColor("#f38ba8"), QsciLexerHTML::Tag);
-        L->setColor(QColor("#f38ba8"), QsciLexerHTML::UnknownTag);
-        L->setColor(QColor("#fab387"), QsciLexerHTML::Attribute);
-        L->setColor(QColor("#fab387"), QsciLexerHTML::UnknownAttribute);
-        L->setColor(QColor("#a6e3a1"), QsciLexerHTML::HTMLDoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerHTML::HTMLSingleQuotedString);
-        L->setColor(QColor("#fab387"), QsciLexerHTML::HTMLNumber);
-        L->setColor(QColor("#6c7086"), QsciLexerHTML::HTMLComment);
-        L->setColor(QColor("#89dceb"), QsciLexerHTML::Entity);
-        L->setColor(QColor("#cdd6f4"), QsciLexerHTML::OtherInTag);
+        L->setColor(pal.red, QsciLexerHTML::Tag);
+        L->setColor(pal.red, QsciLexerHTML::UnknownTag);
+        L->setColor(pal.peach, QsciLexerHTML::Attribute);
+        L->setColor(pal.peach, QsciLexerHTML::UnknownAttribute);
+        L->setColor(pal.green, QsciLexerHTML::HTMLDoubleQuotedString);
+        L->setColor(pal.green, QsciLexerHTML::HTMLSingleQuotedString);
+        L->setColor(pal.peach, QsciLexerHTML::HTMLNumber);
+        L->setColor(pal.overlay0, QsciLexerHTML::HTMLComment);
+        L->setColor(pal.sky, QsciLexerHTML::Entity);
+        L->setColor(pal.text_primary, QsciLexerHTML::OtherInTag);
         return;
     }
 
     // --- CSS ---
     if (auto *L = qobject_cast<QsciLexerCSS *>(lexer)) {
-        L->setColor(QColor("#f38ba8"), QsciLexerCSS::Tag);
-        L->setColor(QColor("#89b4fa"), QsciLexerCSS::ClassSelector);
-        L->setColor(QColor("#fab387"), QsciLexerCSS::IDSelector);
-        L->setColor(QColor("#cba6f7"), QsciLexerCSS::PseudoClass);
-        L->setColor(QColor("#89dceb"), QsciLexerCSS::CSS1Property);
-        L->setColor(QColor("#89dceb"), QsciLexerCSS::CSS2Property);
-        L->setColor(QColor("#89dceb"), QsciLexerCSS::CSS3Property);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCSS::DoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCSS::SingleQuotedString);
-        L->setColor(QColor("#fab387"), QsciLexerCSS::Value);
-        L->setColor(QColor("#6c7086"), QsciLexerCSS::Comment);
-        L->setColor(QColor("#f38ba8"), QsciLexerCSS::Important);
-        L->setColor(QColor("#f38ba8"), QsciLexerCSS::AtRule);
+        L->setColor(pal.red, QsciLexerCSS::Tag);
+        L->setColor(pal.blue, QsciLexerCSS::ClassSelector);
+        L->setColor(pal.peach, QsciLexerCSS::IDSelector);
+        L->setColor(pal.mauve, QsciLexerCSS::PseudoClass);
+        L->setColor(pal.sky, QsciLexerCSS::CSS1Property);
+        L->setColor(pal.sky, QsciLexerCSS::CSS2Property);
+        L->setColor(pal.sky, QsciLexerCSS::CSS3Property);
+        L->setColor(pal.green, QsciLexerCSS::DoubleQuotedString);
+        L->setColor(pal.green, QsciLexerCSS::SingleQuotedString);
+        L->setColor(pal.peach, QsciLexerCSS::Value);
+        L->setColor(pal.overlay0, QsciLexerCSS::Comment);
+        L->setColor(pal.red, QsciLexerCSS::Important);
+        L->setColor(pal.red, QsciLexerCSS::AtRule);
         return;
     }
 
     // --- XML ---
     if (auto *L = qobject_cast<QsciLexerXML *>(lexer)) {
-        L->setColor(QColor("#f38ba8"), QsciLexerHTML::Tag);
-        L->setColor(QColor("#fab387"), QsciLexerHTML::Attribute);
-        L->setColor(QColor("#a6e3a1"), QsciLexerHTML::HTMLDoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerHTML::HTMLSingleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerHTML::HTMLComment);
-        L->setColor(QColor("#89dceb"), QsciLexerHTML::Entity);
+        L->setColor(pal.red, QsciLexerHTML::Tag);
+        L->setColor(pal.peach, QsciLexerHTML::Attribute);
+        L->setColor(pal.green, QsciLexerHTML::HTMLDoubleQuotedString);
+        L->setColor(pal.green, QsciLexerHTML::HTMLSingleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerHTML::HTMLComment);
+        L->setColor(pal.sky, QsciLexerHTML::Entity);
         return;
     }
 
     // --- YAML ---
     if (auto *L = qobject_cast<QsciLexerYAML *>(lexer)) {
-        L->setColor(QColor("#89b4fa"), QsciLexerYAML::Identifier);
-        L->setColor(QColor("#cba6f7"), QsciLexerYAML::Keyword);
-        L->setColor(QColor("#fab387"), QsciLexerYAML::Number);
-        L->setColor(QColor("#6c7086"), QsciLexerYAML::Comment);
-        L->setColor(QColor("#f38ba8"), QsciLexerYAML::Reference);
-        L->setColor(QColor("#f38ba8"), QsciLexerYAML::Operator);
-        L->setColor(QColor("#89dceb"), QsciLexerYAML::DocumentDelimiter);
-        L->setColor(QColor("#f9e2af"), QsciLexerYAML::TextBlockMarker);
+        L->setColor(pal.blue, QsciLexerYAML::Identifier);
+        L->setColor(pal.mauve, QsciLexerYAML::Keyword);
+        L->setColor(pal.peach, QsciLexerYAML::Number);
+        L->setColor(pal.overlay0, QsciLexerYAML::Comment);
+        L->setColor(pal.red, QsciLexerYAML::Reference);
+        L->setColor(pal.red, QsciLexerYAML::Operator);
+        L->setColor(pal.sky, QsciLexerYAML::DocumentDelimiter);
+        L->setColor(pal.yellow, QsciLexerYAML::TextBlockMarker);
         return;
     }
 
     // --- SQL ---
     if (auto *L = qobject_cast<QsciLexerSQL *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerSQL::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerSQL::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerSQL::DoubleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerSQL::Comment);
-        L->setColor(QColor("#6c7086"), QsciLexerSQL::CommentLine);
-        L->setColor(QColor("#6c7086"), QsciLexerSQL::CommentDoc);
-        L->setColor(QColor("#fab387"), QsciLexerSQL::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerSQL::Operator);
-        L->setColor(QColor("#89b4fa"), QsciLexerSQL::KeywordSet5);
-        L->setColor(QColor("#89b4fa"), QsciLexerSQL::KeywordSet6);
+        L->setColor(pal.mauve, QsciLexerSQL::Keyword);
+        L->setColor(pal.green, QsciLexerSQL::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerSQL::DoubleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerSQL::Comment);
+        L->setColor(pal.overlay0, QsciLexerSQL::CommentLine);
+        L->setColor(pal.overlay0, QsciLexerSQL::CommentDoc);
+        L->setColor(pal.peach, QsciLexerSQL::Number);
+        L->setColor(pal.red, QsciLexerSQL::Operator);
+        L->setColor(pal.blue, QsciLexerSQL::KeywordSet5);
+        L->setColor(pal.blue, QsciLexerSQL::KeywordSet6);
         return;
     }
 
     // --- JSON ---
     if (auto *L = qobject_cast<QsciLexerJSON *>(lexer)) {
-        L->setColor(QColor("#89b4fa"), QsciLexerJSON::Property);
-        L->setColor(QColor("#a6e3a1"), QsciLexerJSON::String);
-        L->setColor(QColor("#fab387"), QsciLexerJSON::Number);
-        L->setColor(QColor("#cba6f7"), QsciLexerJSON::Keyword);
-        L->setColor(QColor("#f38ba8"), QsciLexerJSON::Operator);
-        L->setColor(QColor("#89dceb"), QsciLexerJSON::EscapeSequence);
-        L->setColor(QColor("#6c7086"), QsciLexerJSON::CommentLine);
-        L->setColor(QColor("#6c7086"), QsciLexerJSON::CommentBlock);
-        L->setColor(QColor("#f38ba8"), QsciLexerJSON::Error);
+        L->setColor(pal.blue, QsciLexerJSON::Property);
+        L->setColor(pal.green, QsciLexerJSON::String);
+        L->setColor(pal.peach, QsciLexerJSON::Number);
+        L->setColor(pal.mauve, QsciLexerJSON::Keyword);
+        L->setColor(pal.red, QsciLexerJSON::Operator);
+        L->setColor(pal.sky, QsciLexerJSON::EscapeSequence);
+        L->setColor(pal.overlay0, QsciLexerJSON::CommentLine);
+        L->setColor(pal.overlay0, QsciLexerJSON::CommentBlock);
+        L->setColor(pal.red, QsciLexerJSON::Error);
         return;
     }
 
     // --- Markdown ---
     if (auto *L = qobject_cast<QsciLexerMarkdown *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerMarkdown::Header1);
-        L->setColor(QColor("#89b4fa"), QsciLexerMarkdown::Header2);
-        L->setColor(QColor("#89dceb"), QsciLexerMarkdown::Header3);
-        L->setColor(QColor("#a6e3a1"), QsciLexerMarkdown::Header4);
-        L->setColor(QColor("#f9e2af"), QsciLexerMarkdown::Header5);
-        L->setColor(QColor("#fab387"), QsciLexerMarkdown::Header6);
+        L->setColor(pal.mauve, QsciLexerMarkdown::Header1);
+        L->setColor(pal.blue, QsciLexerMarkdown::Header2);
+        L->setColor(pal.sky, QsciLexerMarkdown::Header3);
+        L->setColor(pal.green, QsciLexerMarkdown::Header4);
+        L->setColor(pal.yellow, QsciLexerMarkdown::Header5);
+        L->setColor(pal.peach, QsciLexerMarkdown::Header6);
         // Strong/StrongEmphasis not available in all QScintilla versions
-        L->setColor(QColor("#89b4fa"), QsciLexerMarkdown::Link);
-        L->setColor(QColor("#a6e3a1"), QsciLexerMarkdown::CodeBackticks);
-        L->setColor(QColor("#a6e3a1"), QsciLexerMarkdown::CodeDoubleBackticks);
-        L->setColor(QColor("#a6e3a1"), QsciLexerMarkdown::CodeBlock);
-        L->setColor(QColor("#6c7086"), QsciLexerMarkdown::BlockQuote);
-        L->setColor(QColor("#f38ba8"), QsciLexerMarkdown::HorizontalRule);
-        L->setColor(QColor("#fab387"), QsciLexerMarkdown::UnorderedListItem);
-        L->setColor(QColor("#fab387"), QsciLexerMarkdown::OrderedListItem);
-        L->setColor(QColor("#f38ba8"), QsciLexerMarkdown::StrikeOut);
+        L->setColor(pal.blue, QsciLexerMarkdown::Link);
+        L->setColor(pal.green, QsciLexerMarkdown::CodeBackticks);
+        L->setColor(pal.green, QsciLexerMarkdown::CodeDoubleBackticks);
+        L->setColor(pal.green, QsciLexerMarkdown::CodeBlock);
+        L->setColor(pal.overlay0, QsciLexerMarkdown::BlockQuote);
+        L->setColor(pal.red, QsciLexerMarkdown::HorizontalRule);
+        L->setColor(pal.peach, QsciLexerMarkdown::UnorderedListItem);
+        L->setColor(pal.peach, QsciLexerMarkdown::OrderedListItem);
+        L->setColor(pal.red, QsciLexerMarkdown::StrikeOut);
         return;
     }
 
     // --- Lua ---
     if (auto *L = qobject_cast<QsciLexerLua *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerLua::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerLua::String);
-        L->setColor(QColor("#a6e3a1"), QsciLexerLua::LiteralString);
-        L->setColor(QColor("#6c7086"), QsciLexerLua::Comment);
-        L->setColor(QColor("#6c7086"), QsciLexerLua::LineComment);
-        L->setColor(QColor("#fab387"), QsciLexerLua::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerLua::Operator);
-        L->setColor(QColor("#89b4fa"), QsciLexerLua::BasicFunctions);
+        L->setColor(pal.mauve, QsciLexerLua::Keyword);
+        L->setColor(pal.green, QsciLexerLua::String);
+        L->setColor(pal.green, QsciLexerLua::LiteralString);
+        L->setColor(pal.overlay0, QsciLexerLua::Comment);
+        L->setColor(pal.overlay0, QsciLexerLua::LineComment);
+        L->setColor(pal.peach, QsciLexerLua::Number);
+        L->setColor(pal.red, QsciLexerLua::Operator);
+        L->setColor(pal.blue, QsciLexerLua::BasicFunctions);
         return;
     }
 
     // --- Perl ---
     if (auto *L = qobject_cast<QsciLexerPerl *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerPerl::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPerl::DoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPerl::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerPerl::HereDocumentDelimiter);
-        L->setColor(QColor("#6c7086"), QsciLexerPerl::Comment);
-        L->setColor(QColor("#fab387"), QsciLexerPerl::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerPerl::Operator);
-        L->setColor(QColor("#fab387"), QsciLexerPerl::Regex);
-        L->setColor(QColor("#89b4fa"), QsciLexerPerl::Array);
-        L->setColor(QColor("#89dceb"), QsciLexerPerl::Hash);
+        L->setColor(pal.mauve, QsciLexerPerl::Keyword);
+        L->setColor(pal.green, QsciLexerPerl::DoubleQuotedString);
+        L->setColor(pal.green, QsciLexerPerl::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerPerl::HereDocumentDelimiter);
+        L->setColor(pal.overlay0, QsciLexerPerl::Comment);
+        L->setColor(pal.peach, QsciLexerPerl::Number);
+        L->setColor(pal.red, QsciLexerPerl::Operator);
+        L->setColor(pal.peach, QsciLexerPerl::Regex);
+        L->setColor(pal.blue, QsciLexerPerl::Array);
+        L->setColor(pal.sky, QsciLexerPerl::Hash);
         return;
     }
 
     // --- Bash / Shell ---
     if (auto *L = qobject_cast<QsciLexerBash *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerBash::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerBash::DoubleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerBash::SingleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerBash::Comment);
-        L->setColor(QColor("#fab387"), QsciLexerBash::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerBash::Operator);
-        L->setColor(QColor("#89b4fa"), QsciLexerBash::Backticks);
-        L->setColor(QColor("#89dceb"), QsciLexerBash::Scalar);
-        L->setColor(QColor("#f9e2af"), QsciLexerBash::ParameterExpansion);
+        L->setColor(pal.mauve, QsciLexerBash::Keyword);
+        L->setColor(pal.green, QsciLexerBash::DoubleQuotedString);
+        L->setColor(pal.green, QsciLexerBash::SingleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerBash::Comment);
+        L->setColor(pal.peach, QsciLexerBash::Number);
+        L->setColor(pal.red, QsciLexerBash::Operator);
+        L->setColor(pal.blue, QsciLexerBash::Backticks);
+        L->setColor(pal.sky, QsciLexerBash::Scalar);
+        L->setColor(pal.yellow, QsciLexerBash::ParameterExpansion);
         return;
     }
 
     // --- Makefile ---
     if (auto *L = qobject_cast<QsciLexerMakefile *>(lexer)) {
-        L->setColor(QColor("#89b4fa"), QsciLexerMakefile::Target);
-        L->setColor(QColor("#a6e3a1"), QsciLexerMakefile::Variable);
-        L->setColor(QColor("#6c7086"), QsciLexerMakefile::Comment);
-        L->setColor(QColor("#89dceb"), QsciLexerMakefile::Preprocessor);
-        L->setColor(QColor("#f38ba8"), QsciLexerMakefile::Operator);
+        L->setColor(pal.blue, QsciLexerMakefile::Target);
+        L->setColor(pal.green, QsciLexerMakefile::Variable);
+        L->setColor(pal.overlay0, QsciLexerMakefile::Comment);
+        L->setColor(pal.sky, QsciLexerMakefile::Preprocessor);
+        L->setColor(pal.red, QsciLexerMakefile::Operator);
         return;
     }
 
     // --- CMake ---
     if (auto *L = qobject_cast<QsciLexerCMake *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerCMake::KeywordSet3);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCMake::String);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCMake::StringLeftQuote);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCMake::StringRightQuote);
-        L->setColor(QColor("#6c7086"), QsciLexerCMake::Comment);
-        L->setColor(QColor("#89b4fa"), QsciLexerCMake::Function);
-        L->setColor(QColor("#89dceb"), QsciLexerCMake::Variable);
-        L->setColor(QColor("#fab387"), QsciLexerCMake::Number);
+        L->setColor(pal.mauve, QsciLexerCMake::KeywordSet3);
+        L->setColor(pal.green, QsciLexerCMake::String);
+        L->setColor(pal.green, QsciLexerCMake::StringLeftQuote);
+        L->setColor(pal.green, QsciLexerCMake::StringRightQuote);
+        L->setColor(pal.overlay0, QsciLexerCMake::Comment);
+        L->setColor(pal.blue, QsciLexerCMake::Function);
+        L->setColor(pal.sky, QsciLexerCMake::Variable);
+        L->setColor(pal.peach, QsciLexerCMake::Number);
         return;
     }
 
     // --- Diff / Patch ---
     if (auto *L = qobject_cast<QsciLexerDiff *>(lexer)) {
-        L->setColor(QColor("#a6e3a1"), QsciLexerDiff::LineAdded);
-        L->setColor(QColor("#f38ba8"), QsciLexerDiff::LineRemoved);
-        L->setColor(QColor("#89b4fa"), QsciLexerDiff::Header);
-        L->setColor(QColor("#cba6f7"), QsciLexerDiff::Position);
-        L->setColor(QColor("#6c7086"), QsciLexerDiff::Comment);
+        L->setColor(pal.green, QsciLexerDiff::LineAdded);
+        L->setColor(pal.red, QsciLexerDiff::LineRemoved);
+        L->setColor(pal.blue, QsciLexerDiff::Header);
+        L->setColor(pal.mauve, QsciLexerDiff::Position);
+        L->setColor(pal.overlay0, QsciLexerDiff::Comment);
         return;
     }
 
     // --- Properties / INI / .env ---
     if (auto *L = qobject_cast<QsciLexerProperties *>(lexer)) {
-        L->setColor(QColor("#89b4fa"), QsciLexerProperties::Section);
-        L->setColor(QColor("#f9e2af"), QsciLexerProperties::Assignment);
-        L->setColor(QColor("#a6e3a1"), QsciLexerProperties::DefaultValue);
-        L->setColor(QColor("#6c7086"), QsciLexerProperties::Comment);
+        L->setColor(pal.blue, QsciLexerProperties::Section);
+        L->setColor(pal.yellow, QsciLexerProperties::Assignment);
+        L->setColor(pal.green, QsciLexerProperties::DefaultValue);
+        L->setColor(pal.overlay0, QsciLexerProperties::Comment);
         return;
     }
 
     // --- TeX / LaTeX ---
     if (auto *L = qobject_cast<QsciLexerTeX *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerTeX::Command);
-        L->setColor(QColor("#89b4fa"), QsciLexerTeX::Group);
-        L->setColor(QColor("#f38ba8"), QsciLexerTeX::Special);
-        L->setColor(QColor("#a6e3a1"), QsciLexerTeX::Text);
+        L->setColor(pal.mauve, QsciLexerTeX::Command);
+        L->setColor(pal.blue, QsciLexerTeX::Group);
+        L->setColor(pal.red, QsciLexerTeX::Special);
+        L->setColor(pal.green, QsciLexerTeX::Text);
         return;
     }
 
     // --- Batch (Windows CMD) ---
     if (auto *L = qobject_cast<QsciLexerBatch *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerBatch::Keyword);
-        L->setColor(QColor("#6c7086"), QsciLexerBatch::Comment);
-        L->setColor(QColor("#89dceb"), QsciLexerBatch::Variable);
-        L->setColor(QColor("#f38ba8"), QsciLexerBatch::Operator);
+        L->setColor(pal.mauve, QsciLexerBatch::Keyword);
+        L->setColor(pal.overlay0, QsciLexerBatch::Comment);
+        L->setColor(pal.sky, QsciLexerBatch::Variable);
+        L->setColor(pal.red, QsciLexerBatch::Operator);
         return;
     }
 
     // --- CoffeeScript ---
     if (auto *L = qobject_cast<QsciLexerCoffeeScript *>(lexer)) {
-        L->setColor(QColor("#cba6f7"), QsciLexerCoffeeScript::Keyword);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCoffeeScript::SingleQuotedString);
-        L->setColor(QColor("#a6e3a1"), QsciLexerCoffeeScript::DoubleQuotedString);
-        L->setColor(QColor("#6c7086"), QsciLexerCoffeeScript::Comment);
-        L->setColor(QColor("#6c7086"), QsciLexerCoffeeScript::CommentLine);
-        L->setColor(QColor("#fab387"), QsciLexerCoffeeScript::Number);
-        L->setColor(QColor("#f38ba8"), QsciLexerCoffeeScript::Operator);
+        L->setColor(pal.mauve, QsciLexerCoffeeScript::Keyword);
+        L->setColor(pal.green, QsciLexerCoffeeScript::SingleQuotedString);
+        L->setColor(pal.green, QsciLexerCoffeeScript::DoubleQuotedString);
+        L->setColor(pal.overlay0, QsciLexerCoffeeScript::Comment);
+        L->setColor(pal.overlay0, QsciLexerCoffeeScript::CommentLine);
+        L->setColor(pal.peach, QsciLexerCoffeeScript::Number);
+        L->setColor(pal.red, QsciLexerCoffeeScript::Operator);
         return;
     }
 }
@@ -483,49 +488,61 @@ QsciScintilla *CodeViewer::createEditor()
     ed->setReadOnly(false);
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsForegroundColor(QColor("#4a4a4a"));
-    ed->setMarginsBackgroundColor(QColor("#0e0e0e"));
     ed->setMarginsFont(QFont("Menlo", 12));
-    ed->setCaretForegroundColor(QColor("#cdd6f4"));
-    ed->setCaretLineVisible(true);
-    ed->setCaretLineBackgroundColor(QColor("#1e1e1e"));
-    ed->setPaper(QColor("#1a1a1a"));
-    ed->setColor(QColor("#cdd6f4"));
     ed->setFont(QFont("Menlo", 13));
     ed->setTabWidth(4);
     ed->setIndentationsUseTabs(false);
     ed->setAutoIndent(true);
     ed->setIndentationGuides(true);
-    ed->setIndentationGuidesForegroundColor(QColor("#2a2a2a"));
     ed->setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
-    ed->setFoldMarginColors(QColor("#0e0e0e"), QColor("#0e0e0e"));
     ed->setBraceMatching(QsciScintilla::SloppyBraceMatch);
-    ed->setMatchedBraceForegroundColor(QColor("#f9e2af"));
-    ed->setMatchedBraceBackgroundColor(QColor("#3a3a3a"));
-    ed->setSelectionBackgroundColor(QColor("#3a3a3a"));
-    ed->setSelectionForegroundColor(QColor("#cdd6f4"));
+    ed->setCaretLineVisible(true);
     ed->setEolMode(QsciScintilla::EolUnix);
     ed->setUtf8(true);
 
-    // Diff markers (green = added, red = removed) — unified palette
+    // Diff markers (green = added, red = removed)
     ed->markerDefine(QsciScintilla::Background, 1);
-    ed->setMarkerBackgroundColor(QColor(0x1a, 0x2e, 0x1a), 1);  // #1a2e1a
     ed->markerDefine(QsciScintilla::Background, 2);
-    ed->setMarkerBackgroundColor(QColor(0x2e, 0x1a, 0x1e), 2);  // #2e1a1e
+
+    applyEditorThemeColors(ed);
 
     return ed;
+}
+
+void CodeViewer::applyEditorThemeColors(QsciScintilla *ed)
+{
+    const auto &pal = ThemeManager::instance().palette();
+
+    ed->setMarginsForegroundColor(pal.overlay0);
+    ed->setMarginsBackgroundColor(pal.bg_base);
+    ed->setCaretForegroundColor(pal.text_primary);
+    ed->setCaretLineBackgroundColor(pal.border_subtle);
+    ed->setPaper(pal.bg_window);
+    ed->setColor(pal.text_primary);
+    ed->setIndentationGuidesForegroundColor(pal.border_standard);
+    ed->setFoldMarginColors(pal.bg_base, pal.bg_base);
+    ed->setMatchedBraceForegroundColor(pal.yellow);
+    ed->setMatchedBraceBackgroundColor(pal.pressed_raised);
+    ed->setSelectionBackgroundColor(pal.pressed_raised);
+    ed->setSelectionForegroundColor(pal.text_primary);
+
+    // Diff marker backgrounds
+    ed->setMarkerBackgroundColor(pal.diff_add_bg, 1);
+    ed->setMarkerBackgroundColor(pal.diff_del_bg, 2);
 }
 
 #else // NO_QSCINTILLA fallback
 
 QPlainTextEdit *CodeViewer::createEditor()
 {
+    const auto &pal = ThemeManager::instance().palette();
     auto *ed = new QPlainTextEdit(this);
     ed->setReadOnly(false);
     ed->setTabStopDistance(32);
     ed->setStyleSheet(
-        "QPlainTextEdit { background: #1a1a1a; color: #cdd6f4; border: none; "
-        "font-family: Menlo, monospace; font-size: 13px; }");
+        QStringLiteral("QPlainTextEdit { background: %1; color: %2; border: none; "
+        "font-family: Menlo, monospace; font-size: 13px; }")
+            .arg(pal.bg_window.name(), pal.text_primary.name()));
     return ed;
 }
 
@@ -564,6 +581,47 @@ void CodeViewer::connectEditorSignals(FileTab &tab)
         }
     });
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Theme color application
+// ---------------------------------------------------------------------------
+
+void CodeViewer::applyThemeColors()
+{
+    const auto &pal = ThemeManager::instance().palette();
+
+    // Diff toggle button
+    m_diffToggleBtn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
+            "font-size: 11px; margin: 2px 4px; }"
+            "QPushButton:hover { color: %3; background: %4; }"
+            "QPushButton:checked { background: %5; color: %6; }")
+            .arg(pal.bg_raised.name(), pal.text_muted.name(),
+                 pal.text_primary.name(), pal.hover_raised.name(),
+                 pal.success_btn_bg.name(), pal.green.name()));
+
+    // Re-apply editor colors for all open tabs
+#ifndef NO_QSCINTILLA
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->editor) {
+            applyEditorThemeColors(it->editor);
+            // Re-apply lexer colors if a lexer is set
+            QsciLexer *lexer = it->editor->lexer();
+            if (lexer) {
+                applyThemeToLexer(lexer);
+            } else {
+                it->editor->setPaper(pal.bg_window);
+                it->editor->setColor(pal.text_primary);
+            }
+        }
+    }
+#endif
+
+    // Force repaint of empty state
+    if (m_emptyState)
+        m_emptyState->update();
 }
 
 // ---------------------------------------------------------------------------
@@ -640,6 +698,95 @@ void CodeViewer::loadFile(const QString &filePath)
     editor->setPlainText(content);
     editor->document()->setModified(false);
 #endif
+
+    watchFile(filePath);
+}
+
+void CodeViewer::openMarkdown(const QString &filePath)
+{
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->filePath == filePath) {
+            m_tabWidget->setCurrentIndex(it.key());
+            if (it->isMarkdown && it->markdownView) {
+                QFile file(filePath);
+                if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    MarkdownRenderer renderer;
+                    it->markdownView->setHtml(renderer.toHtml(QString::fromUtf8(file.readAll())));
+                }
+            }
+            return;
+        }
+    }
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+
+    QString content = QString::fromUtf8(file.readAll());
+
+    const auto &pal = ThemeManager::instance().palette();
+    auto *browser = new QTextBrowser(this);
+    browser->setOpenExternalLinks(true);
+    browser->setFrameShape(QFrame::NoFrame);
+    browser->setStyleSheet(
+        QStringLiteral(
+        "QTextBrowser {"
+        "  background: %1; color: %2;"
+        "  font-family: 'SF Pro Text', 'Segoe UI', sans-serif;"
+        "  font-size: 13px; padding: 16px 24px;"
+        "  selection-background-color: %3;"
+        "}")
+            .arg(pal.bg_window.name(), pal.text_primary.name(), pal.surface1.name()));
+    browser->document()->setDefaultStyleSheet(
+        QStringLiteral(
+        "h1 { color: %1; font-size: 20px; margin: 18px 0 8px 0; }"
+        "h2 { color: %2; font-size: 17px; margin: 16px 0 6px 0; }"
+        "h3 { color: %3; font-size: 15px; margin: 14px 0 4px 0; }"
+        "h4 { color: %4; font-size: 14px; margin: 12px 0 4px 0; }"
+        "code { background: %5; color: %6; padding: 1px 4px;"
+        "       border-radius: 3px; font-family: Menlo, monospace; font-size: 12px; }"
+        "pre  { background: %7; border: 1px solid %8; border-radius: 6px;"
+        "       padding: 10px 12px; font-family: Menlo, monospace; font-size: 12px;"
+        "       color: %9; }"
+        "a    { color: %2; }"
+        "table { border-collapse: collapse; margin: 8px 0; }"
+        "th   { background: %5; color: %1; padding: 4px 10px;"
+        "       border: 1px solid %8; font-size: 12px; }"
+        "td   { padding: 4px 10px; border: 1px solid %8; font-size: 12px; }"
+        "strong { color: %10; }"
+        "ul, ol { margin: 4px 0; }"
+        )
+            .arg(pal.mauve.name(),      // %1
+                 pal.blue.name(),        // %2
+                 pal.sky.name(),         // %3
+                 pal.green.name(),       // %4
+                 pal.bg_raised.name(),   // %5
+                 pal.peach.name(),       // %6
+                 pal.bg_base.name(),     // %7
+                 pal.border_standard.name(), // %8
+                 pal.text_primary.name()) // %9
+            .arg(pal.pink.name())        // %10
+    );
+
+    MarkdownRenderer renderer;
+    browser->setHtml(renderer.toHtml(content));
+
+    auto *stack = new QStackedWidget(this);
+    stack->addWidget(browser);
+
+    QFileInfo fi(filePath);
+    int idx = m_tabWidget->addTab(stack, fi.fileName());
+    m_tabWidget->setTabToolTip(idx, filePath);
+
+    FileTab tab;
+    tab.filePath = filePath;
+    tab.isMarkdown = true;
+    tab.markdownView = browser;
+    tab.stack = stack;
+    m_tabs[idx] = tab;
+
+    m_tabWidget->setCurrentIndex(idx);
+    updateEmptyState();
 
     watchFile(filePath);
 }
@@ -938,12 +1085,13 @@ void CodeViewer::setLexerForFile(const QString &filePath, QsciScintilla *editor)
     }
 
     if (lexer) {
-        applyDarkThemeToLexer(lexer);
+        applyThemeToLexer(lexer);
         editor->setLexer(lexer);
     } else {
+        const auto &pal = ThemeManager::instance().palette();
         editor->setLexer(nullptr);
-        editor->setPaper(QColor("#1a1a1a"));
-        editor->setColor(QColor("#cdd6f4"));
+        editor->setPaper(pal.bg_window);
+        editor->setColor(pal.text_primary);
     }
 }
 #endif // NO_QSCINTILLA
@@ -1042,6 +1190,15 @@ void CodeViewer::onExternalFileChanged(const QString &filePath)
     // Re-add to watcher (some systems drop the watch after a change)
     if (QFile::exists(filePath))
         m_fileWatcher->addPath(filePath);
+
+    if (tab->isMarkdown && tab->markdownView) {
+        QFile file(filePath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            MarkdownRenderer renderer;
+            tab->markdownView->setHtml(renderer.toHtml(QString::fromUtf8(file.readAll())));
+        }
+        return;
+    }
 
     if (tab->dirty) {
         QFileInfo fi(filePath);

@@ -1,4 +1,5 @@
 #include "ui/WorkspaceTree.h"
+#include "ui/ThemeManager.h"
 #include <QVBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -21,14 +22,15 @@ static QChar gitStatusLetter(GitFileStatus s)
 
 static QColor gitStatusColor(GitFileStatus s)
 {
+    const auto &p = ThemeManager::instance().palette();
     switch (s) {
-    case GitFileStatus::Modified:   return QColor("#f9e2af");
-    case GitFileStatus::Added:      return QColor("#a6e3a1");
-    case GitFileStatus::Deleted:    return QColor("#f38ba8");
-    case GitFileStatus::Renamed:    return QColor("#89b4fa");
-    case GitFileStatus::Copied:     return QColor("#89b4fa");
-    case GitFileStatus::Untracked:  return QColor("#6c7086");
-    case GitFileStatus::Conflicted: return QColor("#fab387");
+    case GitFileStatus::Modified:   return p.yellow;
+    case GitFileStatus::Added:      return p.green;
+    case GitFileStatus::Deleted:    return p.red;
+    case GitFileStatus::Renamed:    return p.blue;
+    case GitFileStatus::Copied:     return p.blue;
+    case GitFileStatus::Untracked:  return p.text_muted;
+    case GitFileStatus::Conflicted: return p.peach;
     default:                        return QColor();
     }
 }
@@ -88,10 +90,11 @@ void ChangedFileDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
         auto it = m_files->find(path);
         if (it != m_files->end()) {
             QColor dotColor;
+            const auto &pal = ThemeManager::instance().palette();
             switch (it.value()) {
-            case FileChangeType::Modified: dotColor = QColor("#a6e3a1"); break;
-            case FileChangeType::Created:  dotColor = QColor("#fab387"); break;
-            case FileChangeType::Deleted:  dotColor = QColor("#f38ba8"); break;
+            case FileChangeType::Modified: dotColor = pal.green; break;
+            case FileChangeType::Created:  dotColor = pal.peach; break;
+            case FileChangeType::Deleted:  dotColor = pal.red; break;
             }
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing);
@@ -114,10 +117,13 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 
     auto *header = new QLabel("  EXPLORER", this);
     header->setFixedHeight(26);
-    header->setStyleSheet(
-        "QLabel { background: #0e0e0e; color: #6c7086; font-size: 11px; "
+    header->setStyleSheet(QStringLiteral(
+        "QLabel { background: %1; color: %2; font-size: 11px; "
         "font-weight: bold; letter-spacing: 1px; padding-left: 8px; "
-        "border-bottom: 1px solid #2a2a2a; }");
+        "border-bottom: 1px solid %3; }")
+        .arg(ThemeManager::instance().palette().bg_base.name(),
+             ThemeManager::instance().palette().text_muted.name(),
+             ThemeManager::instance().palette().border_standard.name()));
     layout->addWidget(header);
 
     m_model = new QFileSystemModel(this);

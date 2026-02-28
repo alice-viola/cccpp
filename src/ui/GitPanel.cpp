@@ -1,4 +1,5 @@
 #include "ui/GitPanel.h"
+#include "ui/ThemeManager.h"
 #include "ui/ToastManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -38,7 +39,8 @@ void GitPanel::setupUI()
     auto *phLayout = new QVBoxLayout(m_noRepoPlaceholder);
     phLayout->setAlignment(Qt::AlignCenter);
     auto *phLabel = new QLabel("Not a git repository", m_noRepoPlaceholder);
-    phLabel->setStyleSheet("color: #6c7086; font-size: 12px;");
+    phLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+        .arg(ThemeManager::instance().palette().text_muted.name()));
     phLabel->setAlignment(Qt::AlignCenter);
     phLayout->addWidget(phLabel);
     rootLayout->addWidget(m_noRepoPlaceholder);
@@ -53,15 +55,18 @@ void GitPanel::setupUI()
     // Header: branch + refresh
     auto *headerWidget = new QWidget(m_mainContent);
     headerWidget->setFixedHeight(26);
-    headerWidget->setStyleSheet(
-        "QWidget { background: #0e0e0e; border-bottom: 1px solid #2a2a2a; }");
+    headerWidget->setStyleSheet(QStringLiteral(
+        "QWidget { background: %1; border-bottom: 1px solid %2; }")
+        .arg(ThemeManager::instance().palette().bg_base.name(),
+             ThemeManager::instance().palette().border_standard.name()));
     auto *headerLayout = new QHBoxLayout(headerWidget);
     headerLayout->setContentsMargins(8, 0, 4, 0);
     headerLayout->setSpacing(4);
 
     m_branchLabel = new QLabel("", headerWidget);
-    m_branchLabel->setStyleSheet(
-        "QLabel { color: #a6e3a1; font-size: 11px; font-weight: bold; background: transparent; }");
+    m_branchLabel->setStyleSheet(QStringLiteral(
+        "QLabel { color: %1; font-size: 11px; font-weight: bold; background: transparent; }")
+        .arg(ThemeManager::instance().palette().green.name()));
     headerLayout->addWidget(m_branchLabel);
 
     headerLayout->addStretch();
@@ -69,9 +74,11 @@ void GitPanel::setupUI()
     m_refreshBtn = new QPushButton("\xe2\x86\xbb", headerWidget);
     m_refreshBtn->setFixedSize(20, 18);
     m_refreshBtn->setToolTip("Refresh");
-    m_refreshBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 14px; }"
-        "QPushButton:hover { color: #cdd6f4; }");
+    m_refreshBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(ThemeManager::instance().palette().text_muted.name(),
+             ThemeManager::instance().palette().text_primary.name()));
     headerLayout->addWidget(m_refreshBtn);
     connect(m_refreshBtn, &QPushButton::clicked, this, [this] {
         if (m_git) m_git->refreshStatus();
@@ -94,7 +101,8 @@ void GitPanel::setupUI()
 
     // Commit area
     auto *commitArea = new QWidget(m_mainContent);
-    commitArea->setStyleSheet("QWidget { background: #141414; }");
+    commitArea->setStyleSheet(QStringLiteral("QWidget { background: %1; }")
+        .arg(ThemeManager::instance().palette().bg_surface.name()));
     auto *commitLayout = new QVBoxLayout(commitArea);
     commitLayout->setContentsMargins(6, 6, 6, 6);
     commitLayout->setSpacing(4);
@@ -102,10 +110,14 @@ void GitPanel::setupUI()
     m_commitMsg = new QTextEdit(commitArea);
     m_commitMsg->setPlaceholderText("Commit message...");
     m_commitMsg->setFixedHeight(60);
-    m_commitMsg->setStyleSheet(
-        "QTextEdit { background: #1a1a1a; color: #cdd6f4; border: 1px solid #2a2a2a; "
+    m_commitMsg->setStyleSheet(QStringLiteral(
+        "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: 'Helvetica Neue', sans-serif; }"
-        "QTextEdit:focus { border-color: #444; }");
+        "QTextEdit:focus { border-color: %4; }")
+        .arg(ThemeManager::instance().palette().bg_window.name(),
+             ThemeManager::instance().palette().text_primary.name(),
+             ThemeManager::instance().palette().border_standard.name(),
+             ThemeManager::instance().palette().border_focus.name()));
     commitLayout->addWidget(m_commitMsg);
 
     auto *btnRow1 = new QHBoxLayout();
@@ -117,11 +129,16 @@ void GitPanel::setupUI()
     connect(m_stageAllBtn, &QPushButton::clicked, this, &GitPanel::onStageAll);
 
     m_commitBtn = new QPushButton("Commit", commitArea);
-    m_commitBtn->setStyleSheet(
-        "QPushButton { background: #2d5a27; color: #cdd6f4; border: none; border-radius: 4px; "
+    m_commitBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
         "padding: 4px 10px; font-size: 11px; font-weight: bold; }"
-        "QPushButton:hover { background: #3a6e32; }"
-        "QPushButton:disabled { background: #1a1a1a; color: #45475a; }");
+        "QPushButton:hover { background: %3; }"
+        "QPushButton:disabled { background: %4; color: %5; }")
+        .arg(ThemeManager::instance().palette().success_btn_bg.name(),
+             ThemeManager::instance().palette().text_primary.name(),
+             ThemeManager::instance().palette().success_btn_hover.name(),
+             ThemeManager::instance().palette().bg_window.name(),
+             ThemeManager::instance().palette().text_faint.name()));
     btnRow1->addWidget(m_commitBtn);
     connect(m_commitBtn, &QPushButton::clicked, this, &GitPanel::onCommit);
 
@@ -136,10 +153,13 @@ void GitPanel::setupUI()
     connect(m_unstageAllBtn, &QPushButton::clicked, this, &GitPanel::onUnstageAll);
 
     m_discardAllBtn = new QPushButton("Discard All", commitArea);
-    m_discardAllBtn->setStyleSheet(
-        "QPushButton { background: #5a2727; color: #cdd6f4; border: none; border-radius: 4px; "
+    m_discardAllBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
         "padding: 4px 10px; font-size: 11px; }"
-        "QPushButton:hover { background: #6e3232; }");
+        "QPushButton:hover { background: %3; }")
+        .arg(ThemeManager::instance().palette().error_btn_bg.name(),
+             ThemeManager::instance().palette().text_primary.name(),
+             ThemeManager::instance().palette().error_btn_hover.name()));
     btnRow2->addWidget(m_discardAllBtn);
     connect(m_discardAllBtn, &QPushButton::clicked, this, &GitPanel::onDiscardAll);
 
@@ -211,7 +231,7 @@ void GitPanel::rebuildTree(const QList<GitFileEntry> &entries)
     sectionFont.setPointSize(10);
     sectionFont.setBold(true);
     m_stagedRoot->setFont(0, sectionFont);
-    m_stagedRoot->setForeground(0, QColor("#6c7086"));
+    m_stagedRoot->setForeground(0, ThemeManager::instance().palette().text_muted);
     m_stagedRoot->setExpanded(true);
 
     for (const auto &e : entries) {
@@ -235,7 +255,7 @@ void GitPanel::rebuildTree(const QList<GitFileEntry> &entries)
     m_changesRoot->setText(0, QStringLiteral("CHANGES (%1)").arg(changesCount));
     m_changesRoot->setFlags(Qt::ItemIsEnabled);
     m_changesRoot->setFont(0, sectionFont);
-    m_changesRoot->setForeground(0, QColor("#6c7086"));
+    m_changesRoot->setForeground(0, ThemeManager::instance().palette().text_muted);
     m_changesRoot->setExpanded(true);
 
     for (const auto &e : entries) {
@@ -274,15 +294,16 @@ QString GitPanel::statusChar(GitFileStatus status) const
 
 QColor GitPanel::statusColor(GitFileStatus status) const
 {
+    const auto &p = ThemeManager::instance().palette();
     switch (status) {
-    case GitFileStatus::Modified:   return QColor("#f9e2af"); // yellow
-    case GitFileStatus::Added:      return QColor("#a6e3a1"); // green
-    case GitFileStatus::Deleted:    return QColor("#f38ba8"); // red
-    case GitFileStatus::Renamed:    return QColor("#89b4fa"); // blue
-    case GitFileStatus::Copied:     return QColor("#89b4fa");
-    case GitFileStatus::Untracked:  return QColor("#6c7086"); // grey
-    case GitFileStatus::Conflicted: return QColor("#fab387"); // orange
-    default:                        return QColor("#a6adc8");
+    case GitFileStatus::Modified:   return p.yellow;
+    case GitFileStatus::Added:      return p.green;
+    case GitFileStatus::Deleted:    return p.red;
+    case GitFileStatus::Renamed:    return p.blue;
+    case GitFileStatus::Copied:     return p.blue;
+    case GitFileStatus::Untracked:  return p.text_muted;
+    case GitFileStatus::Conflicted: return p.peach;
+    default:                        return p.text_secondary;
     }
 }
 
@@ -394,14 +415,21 @@ void GitPanel::onCommit()
         m_commitMsg->clear();
 
         // Flash the commit button green
-        const QString successStyle =
-            "QPushButton { background: #1a3d16; color: #a6e3a1; border: none; "
-            "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: bold; }";
-        const QString normalStyle =
-            "QPushButton { background: #2d5a27; color: #cdd6f4; border: none; border-radius: 4px; "
+        const auto &pal = ThemeManager::instance().palette();
+        const QString successStyle = QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: bold; }")
+            .arg(pal.success_btn_bg.name(), pal.green.name());
+        const QString normalStyle = QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
             "padding: 4px 10px; font-size: 11px; font-weight: bold; }"
-            "QPushButton:hover { background: #3a6e32; }"
-            "QPushButton:disabled { background: #1a1a1a; color: #45475a; }";
+            "QPushButton:hover { background: %3; }"
+            "QPushButton:disabled { background: %4; color: %5; }")
+            .arg(pal.success_btn_bg.name(),
+                 pal.text_primary.name(),
+                 pal.success_btn_hover.name(),
+                 pal.bg_window.name(),
+                 pal.text_faint.name());
 
         m_commitBtn->setText(QStringLiteral("\u2713  Committed!"));
         m_commitBtn->setStyleSheet(successStyle);
