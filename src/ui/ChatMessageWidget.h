@@ -31,6 +31,9 @@ signals:
     void rejectRequested(int turnId);
     void fileNavigationRequested(const QString &filePath, int line);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     void applyStyle();
     void setupAssistantContent(const QString &content);
@@ -51,4 +54,5 @@ private:
     QVBoxLayout *m_layout;
     QString m_rawContent;
     bool m_isCollapsed = true;
+    bool m_resizePending = false;
 };

@@ -3,7 +3,9 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QDesktopServices>
+#include <QResizeEvent>
 #include <QTimer>
+#include <QtMath>
 
 ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget *parent)
     : QFrame(parent)
@@ -96,17 +98,16 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
     m_contentBrowser->document()->setDocumentMargin(0);
     m_contentBrowser->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
+    connect(m_contentBrowser->document(), &QTextDocument::contentsChanged,
+            this, &ChatMessageWidget::resizeBrowser);
+
     if (!content.isEmpty()) {
         MarkdownRenderer renderer;
         m_contentBrowser->setHtml(renderer.toHtml(content));
     } else {
-        // Start collapsed — will grow when content arrives
         m_contentBrowser->setMaximumHeight(0);
         m_contentBrowser->setMinimumHeight(0);
     }
-
-    connect(m_contentBrowser->document(), &QTextDocument::contentsChanged,
-            this, &ChatMessageWidget::resizeBrowser);
 
     connect(m_contentBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
         if (url.scheme() == "cccpp" && url.host() == "open") {
@@ -126,15 +127,30 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
 void ChatMessageWidget::resizeBrowser()
 {
     if (!m_contentBrowser) return;
+    if (m_resizePending) return;
+    m_resizePending = true;
     QTimer::singleShot(0, this, [this] {
+        m_resizePending = false;
         if (!m_contentBrowser) return;
         int vpWidth = m_contentBrowser->viewport()->width();
-        if (vpWidth > 0)
-            m_contentBrowser->document()->setTextWidth(vpWidth);
-        int h = static_cast<int>(m_contentBrowser->document()->size().height());
+        if (vpWidth <= 0)
+            vpWidth = m_contentBrowser->width() - 4;
+        if (vpWidth <= 0) {
+            // Widget not laid out yet — retry after layout settles
+            QTimer::singleShot(50, this, [this] { resizeBrowser(); });
+            return;
+        }
+        m_contentBrowser->document()->setTextWidth(vpWidth);
+        int h = qCeil(m_contentBrowser->document()->size().height()) + 2;
         m_contentBrowser->setMinimumHeight(qMax(h, 14));
         m_contentBrowser->setMaximumHeight(qMax(h, 14));
     });
+}
+
+void ChatMessageWidget::resizeEvent(QResizeEvent *event)
+{
+    QFrame::resizeEvent(event);
+    resizeBrowser();
 }
 
 void ChatMessageWidget::appendContent(const QString &text)
