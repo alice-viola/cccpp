@@ -170,7 +170,7 @@ void WorkspaceTree::applyThemeColors()
         "QLabel { background: %1; color: %2; font-size: 11px; "
         "font-weight: 600; letter-spacing: 0.5px; padding-left: 10px; "
         "border-bottom: 1px solid %3; }")
-        .arg(pal.bg_window.name(), pal.text_muted.name(), pal.border_subtle.name()));
+        .arg(pal.bg_window.name(), pal.text_secondary.name(), pal.border_subtle.name()));
 }
 
 void WorkspaceTree::setRootPath(const QString &path)
@@ -179,8 +179,9 @@ void WorkspaceTree::setRootPath(const QString &path)
     m_model->setRootPath(path);
     m_tree->setRootIndex(m_model->index(path));
 
-    QFileInfo fi(path);
-    m_header->setText(QStringLiteral("  %1").arg(fi.fileName().toUpper()));
+    QString cleanPath = QDir::cleanPath(path);
+    QString folderName = QDir(cleanPath).dirName();
+    m_header->setText(QStringLiteral("  %1").arg(folderName.toUpper()));
     m_delegate->setRootPath(path);
 }
 

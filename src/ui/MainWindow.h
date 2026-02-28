@@ -14,6 +14,7 @@ class ChatPanel;
 class TerminalPanel;
 class GitPanel;
 class SearchPanel;
+class CheckpointTimeline;
 class SessionManager;
 class SnapshotManager;
 class DiffEngine;
@@ -41,6 +42,7 @@ private slots:
     void onClearTerminal();
     void onGitRefresh();
     void onThemeChanged(const QString &name);
+    void onInlineEdit();
 
 private:
     void setupMenuBar();
@@ -52,6 +54,7 @@ private:
     void restoreSessions();
     void updateToggleButtons();
     void connectGitSignals();
+    void syncEditorContextToChat();
 
     QToolBar *m_toolBar = nullptr;
     QPushButton *m_toggleTree = nullptr;
@@ -67,6 +70,7 @@ private:
     ChatPanel *m_chatPanel;
     GitPanel *m_gitPanel;
     SearchPanel *m_searchPanel;
+    CheckpointTimeline *m_checkpointTimeline;
 
     SessionManager *m_sessionMgr;
     SnapshotManager *m_snapshotMgr;
@@ -76,12 +80,10 @@ private:
 
     QString m_workspacePath;
 
-    // Status bar labels (right-to-left: model | branch | processing | file)
     QLabel *m_statusFile       = nullptr;
     QLabel *m_statusBranch     = nullptr;
     QLabel *m_statusModel      = nullptr;
     QLabel *m_statusProcessing = nullptr;
 
-    // Theme menu actions
     QActionGroup *m_themeGroup = nullptr;
 };

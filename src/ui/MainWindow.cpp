@@ -5,10 +5,12 @@
 #include "ui/TerminalPanel.h"
 #include "ui/GitPanel.h"
 #include "ui/SearchPanel.h"
+#include "ui/CheckpointTimeline.h"
 #include "ui/ModelSelector.h"
 #include "ui/ToastManager.h"
 #include "ui/ThemeManager.h"
 #include "ui/SettingsDialog.h"
+#include "ui/InputBar.h"
 #include "core/SessionManager.h"
 #include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
@@ -26,6 +28,7 @@
 #include <QTimer>
 #include <QDebug>
 #include <QMessageBox>
+#include <QShortcut>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -54,7 +57,6 @@ MainWindow::MainWindow(QWidget *parent)
         resize(screenSize.width() * 4 / 5, screenSize.height() * 4 / 5);
     }
 
-    // Initial sizes: tree=150, editor=0 (hidden), chat=rest
     QTimer::singleShot(0, this, [this] {
         m_splitter->setSizes({150, 0, m_splitter->width() - 150});
     });
@@ -86,22 +88,24 @@ void MainWindow::setupUI()
     m_gitPanel = new GitPanel(this);
     m_gitPanel->setGitManager(m_gitManager);
     m_searchPanel = new SearchPanel(this);
+    m_checkpointTimeline = new CheckpointTimeline(this);
+    m_checkpointTimeline->setDatabase(m_database);
+    m_checkpointTimeline->setSnapshotManager(m_snapshotMgr);
 
     m_chatPanel->setSessionManager(m_sessionMgr);
     m_chatPanel->setSnapshotManager(m_snapshotMgr);
     m_chatPanel->setDiffEngine(m_diffEngine);
     m_chatPanel->setDatabase(m_database);
+    m_chatPanel->setCodeViewer(m_codeViewer);
 
-    // Left column: tabbed panel with Files, Search, and Git
     m_leftTabs = new QTabWidget(this);
     m_leftTabs->setDocumentMode(true);
     m_leftTabs->setTabPosition(QTabWidget::South);
     m_leftTabs->addTab(m_workspaceTree, "Files");
     m_leftTabs->addTab(m_searchPanel, "Search");
     m_leftTabs->addTab(m_gitPanel, "Git");
-    // Styles applied by applyThemeColors()
+    m_leftTabs->addTab(m_checkpointTimeline, "History");
 
-    // Center column: CodeViewer on top, TerminalPanel on bottom
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
     m_centerSplitter->setHandleWidth(1);
     m_centerSplitter->addWidget(m_codeViewer);
@@ -109,14 +113,18 @@ void MainWindow::setupUI()
     m_centerSplitter->setStretchFactor(0, 3);
     m_centerSplitter->setStretchFactor(1, 1);
 
-    // Terminal starts hidden
     m_terminalPanel->hide();
 
     m_splitter->addWidget(m_leftTabs);
     m_splitter->addWidget(m_centerSplitter);
     m_splitter->addWidget(m_chatPanel);
 
-    // Default: tree=150px, editor hidden, chat takes the rest
+    m_splitter->setCollapsible(0, false);
+    m_splitter->setCollapsible(1, false);
+    m_splitter->setCollapsible(2, false);
+    m_leftTabs->setMinimumWidth(100);
+    m_chatPanel->setMinimumWidth(200);
+
     m_codeViewer->hide();
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 2);
@@ -184,6 +192,55 @@ void MainWindow::setupUI()
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
             this, &MainWindow::onBeforeTurnBegins);
 
+    connect(m_codeViewer, &CodeViewer::fileSaved, this, [this](const QString &) {
+        syncEditorContextToChat();
+    });
+
+    // Show inline diff overlay when Claude edits a file
+    connect(m_chatPanel, &ChatPanel::editApplied, this,
+            [this](const QString &filePath, const QString &oldText, const QString &newText, int startLine) {
+        if (!oldText.isEmpty() || !newText.isEmpty())
+            m_codeViewer->showInlineDiffOverlay(filePath, oldText, newText, startLine);
+    });
+
+    // Apply code from chat to editor
+    connect(m_chatPanel, &ChatPanel::applyCodeRequested, this,
+            [this](const QString &code, const QString &language, const QString &) {
+        Q_UNUSED(language);
+        QString currentFile = m_codeViewer->currentFile();
+        if (!currentFile.isEmpty())
+            m_codeViewer->showInlineDiffOverlay(currentFile, "", code, 0);
+    });
+
+    // Inline edit from CodeViewer -> ChatPanel
+    connect(m_codeViewer, &CodeViewer::inlineEditSubmitted, this,
+            [this](const QString &filePath, const QString &selectedCode, const QString &instruction) {
+        QString prompt = QStringLiteral(
+            "Edit the following code in %1:\n```\n%2\n```\n\nInstruction: %3")
+            .arg(filePath, selectedCode, instruction);
+        m_chatPanel->sendMessage(prompt);
+        m_codeViewer->hideInlineEditBar();
+    });
+
+    // Inline diff accept/reject
+    connect(m_codeViewer, &CodeViewer::inlineDiffAccepted, this,
+            [this](const QString &) {
+        m_codeViewer->hideInlineDiffOverlay();
+    });
+    connect(m_codeViewer, &CodeViewer::inlineDiffRejected, this,
+            [this](const QString &filePath, const QString &, const QString &) {
+        if (m_snapshotMgr)
+            m_snapshotMgr->revertTurn(m_snapshotMgr->currentTurnId());
+        m_codeViewer->hideInlineDiffOverlay();
+        m_codeViewer->refreshFile(filePath);
+    });
+
+    // Checkpoint timeline restore
+    connect(m_checkpointTimeline, &CheckpointTimeline::restoreRequested, this, [this](int turnId) {
+        if (m_snapshotMgr)
+            m_snapshotMgr->revertTurn(turnId);
+    });
+
     // Git panel: open files on request
     connect(m_gitPanel, &GitPanel::requestOpenFile, this, [this](const QString &filePath) {
         QString fullPath = m_workspacePath + "/" + filePath;
@@ -194,6 +251,24 @@ void MainWindow::setupUI()
     connect(m_gitPanel, &GitPanel::fileClicked, this, [this](const QString &filePath, bool staged) {
         m_gitManager->requestFileDiff(filePath, staged);
     });
+
+    // Cmd+K shortcut for inline edit
+    auto *inlineEditShortcut = new QShortcut(QKeySequence("Ctrl+K"), this);
+    connect(inlineEditShortcut, &QShortcut::activated, this, &MainWindow::onInlineEdit);
+}
+
+void MainWindow::syncEditorContextToChat()
+{
+    if (!m_codeViewer || !m_chatPanel) return;
+    m_chatPanel->inputBar()->setOpenFiles(m_codeViewer->openFiles());
+}
+
+void MainWindow::onInlineEdit()
+{
+    if (m_codeViewer && m_codeViewer->isVisible()) {
+        if (!m_codeViewer->selectedText().isEmpty())
+            m_codeViewer->showInlineEditBar();
+    }
 }
 
 void MainWindow::setupStatusBar()
@@ -203,26 +278,20 @@ void MainWindow::setupStatusBar()
     m_statusModel      = new QLabel("", this);
     m_statusProcessing = new QLabel("", this);
 
-    // Left: file name (stretches)
     statusBar()->addWidget(m_statusFile, 1);
-
-    // Right: permanent widgets (rightmost first)
     statusBar()->addPermanentWidget(m_statusModel);
     statusBar()->addPermanentWidget(m_statusBranch);
     statusBar()->addPermanentWidget(m_statusProcessing);
 
-    // Wire git branch updates
     connect(m_gitManager, &GitManager::branchChanged, this, [this](const QString &branch) {
         m_statusBranch->setText(QStringLiteral("\u2387 %1").arg(branch));
     });
 
-    // Wire model selector
     connect(m_chatPanel->modelSelector(), &ModelSelector::modelChanged, this,
             [this](const QString &) {
         m_statusModel->setText(m_chatPanel->modelSelector()->currentModelLabel());
     });
 
-    // Wire processing state from ChatPanel
     connect(m_chatPanel, &ChatPanel::processingChanged, this, [this](bool processing) {
         if (processing) {
             m_statusProcessing->setStyleSheet(
@@ -237,7 +306,6 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::setupMenuBar()
 {
-    // --- File menu ---
     auto *fileMenu = menuBar()->addMenu("&File");
 
     auto *openAction = fileMenu->addAction("&Open Workspace...");
@@ -264,7 +332,6 @@ void MainWindow::setupMenuBar()
     quitAction->setShortcut(QKeySequence("Ctrl+Q"));
     connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
 
-    // --- Edit menu ---
     auto *editMenu = menuBar()->addMenu("&Edit");
 
     auto *undoAction = editMenu->addAction("&Undo");
@@ -291,6 +358,12 @@ void MainWindow::setupMenuBar()
 
     editMenu->addSeparator();
 
+    auto *inlineEditAction = editMenu->addAction("&Inline Edit");
+    inlineEditAction->setShortcut(QKeySequence("Ctrl+K"));
+    connect(inlineEditAction, &QAction::triggered, this, &MainWindow::onInlineEdit);
+
+    editMenu->addSeparator();
+
     auto *settingsAction = editMenu->addAction("&Settings...");
     settingsAction->setShortcut(QKeySequence("Ctrl+,"));
     settingsAction->setMenuRole(QAction::PreferencesRole);
@@ -299,7 +372,6 @@ void MainWindow::setupMenuBar()
         dlg.exec();
     });
 
-    // --- Git menu ---
     auto *gitMenu = menuBar()->addMenu("&Git");
 
     auto *gitRefreshAction = gitMenu->addAction("&Refresh Status");
@@ -336,7 +408,6 @@ void MainWindow::setupMenuBar()
             m_gitManager->discardAll();
     });
 
-    // --- View menu ---
     auto *viewMenu = menuBar()->addMenu("&View");
 
     auto *searchAction = viewMenu->addAction("&Search in Files");
@@ -347,13 +418,21 @@ void MainWindow::setupMenuBar()
         updateToggleButtons();
     });
 
+    auto *checkpointAction = viewMenu->addAction("&Checkpoints");
+    checkpointAction->setShortcut(QKeySequence("Ctrl+Shift+H"));
+    connect(checkpointAction, &QAction::triggered, this, [this] {
+        m_leftTabs->setVisible(true);
+        m_leftTabs->setCurrentWidget(m_checkpointTimeline);
+        m_checkpointTimeline->refresh();
+        updateToggleButtons();
+    });
+
     auto *toggleTermAction = viewMenu->addAction("Toggle &Terminal");
     toggleTermAction->setShortcut(QKeySequence("Ctrl+`"));
     connect(toggleTermAction, &QAction::triggered, this, &MainWindow::onToggleTerminal);
 
     viewMenu->addSeparator();
 
-    // Theme submenu
     auto *themeMenu = viewMenu->addMenu("&Theme");
     m_themeGroup = new QActionGroup(this);
     m_themeGroup->setExclusive(true);
@@ -373,7 +452,6 @@ void MainWindow::setupMenuBar()
         });
     }
 
-    // --- Terminal menu ---
     auto *termMenu = menuBar()->addMenu("T&erminal");
 
     auto *newTermAction = termMenu->addAction("&New Terminal");
@@ -390,7 +468,6 @@ void MainWindow::setupToolBar()
     m_toolBar->setMovable(false);
     m_toolBar->setFloatable(false);
     m_toolBar->setFixedHeight(26);
-    // Styled via QSS
     addToolBar(Qt::TopToolBarArea, m_toolBar);
 
     auto makeToggle = [this](const QString &label, const QString &tip) -> QPushButton* {
@@ -407,7 +484,6 @@ void MainWindow::setupToolBar()
     m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
     m_toggleTerminal = makeToggle("Terminal", "Toggle Terminal (Ctrl+`)");
     m_toggleTerminal->setChecked(false);
-    // Styles applied by applyThemeColors()
 
     auto *spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -421,15 +497,49 @@ void MainWindow::setupToolBar()
     m_toolBar->addWidget(m_toggleChat);
 
     connect(m_toggleTree, &QPushButton::clicked, this, [this] {
-        m_leftTabs->setVisible(!m_leftTabs->isVisible());
+        bool currentlyUsable = m_leftTabs->isVisible() && m_leftTabs->width() > 10;
+        if (currentlyUsable) {
+            m_leftTabs->setVisible(false);
+        } else {
+            m_leftTabs->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[0] < 50) {
+                sizes[0] = 180;
+                m_splitter->setSizes(sizes);
+            }
+        }
         updateToggleButtons();
     });
     connect(m_toggleEditor, &QPushButton::clicked, this, [this] {
-        m_codeViewer->setVisible(!m_codeViewer->isVisible());
+        bool currentlyUsable = m_codeViewer->isVisible() && m_centerSplitter->width() > 10;
+        if (currentlyUsable) {
+            m_codeViewer->setVisible(false);
+        } else {
+            m_codeViewer->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[1] < 50) {
+                int total = m_splitter->width();
+                sizes[1] = static_cast<int>(total * 0.4);
+                sizes[2] = total - sizes[0] - sizes[1];
+                m_splitter->setSizes(sizes);
+            }
+        }
         updateToggleButtons();
     });
     connect(m_toggleChat, &QPushButton::clicked, this, [this] {
-        m_chatPanel->setVisible(!m_chatPanel->isVisible());
+        bool currentlyUsable = m_chatPanel->isVisible() && m_chatPanel->width() > 10;
+        if (currentlyUsable) {
+            m_chatPanel->setVisible(false);
+        } else {
+            m_chatPanel->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[2] < 50) {
+                int total = m_splitter->width();
+                sizes[2] = static_cast<int>(total * 0.35);
+                sizes[1] = total - sizes[0] - sizes[2];
+                m_splitter->setSizes(sizes);
+            }
+        }
         updateToggleButtons();
     });
     connect(m_toggleTerminal, &QPushButton::clicked, this, [this] {
@@ -439,9 +549,9 @@ void MainWindow::setupToolBar()
 
 void MainWindow::updateToggleButtons()
 {
-    m_toggleTree->setChecked(m_leftTabs->isVisible());
-    m_toggleEditor->setChecked(m_codeViewer->isVisible());
-    m_toggleChat->setChecked(m_chatPanel->isVisible());
+    m_toggleTree->setChecked(m_leftTabs->isVisible() && m_leftTabs->width() > 10);
+    m_toggleEditor->setChecked(m_codeViewer->isVisible() && m_centerSplitter->width() > 10);
+    m_toggleChat->setChecked(m_chatPanel->isVisible() && m_chatPanel->width() > 10);
     m_toggleTerminal->setChecked(m_terminalPanel->isVisible());
 }
 
@@ -451,7 +561,7 @@ void MainWindow::loadStylesheet()
     tm.initialize();
 
     QString savedTheme = Config::instance().theme();
-    tm.setTheme(savedTheme);  // handles "dark" -> "mocha" mapping
+    tm.setTheme(savedTheme);
 
     connect(&tm, &ThemeManager::themeChanged, this, &MainWindow::onThemeChanged);
     applyThemeColors();
@@ -466,7 +576,6 @@ void MainWindow::applyThemeColors()
 {
     auto &p = ThemeManager::instance().palette();
 
-    // Left tabs (bottom position)
     m_leftTabs->setStyleSheet(QStringLiteral(
         "QTabWidget::pane { border: none; background: %1; }"
         "QTabBar { background: %1; border-top: 1px solid %2; border-bottom: none; }"
@@ -476,7 +585,6 @@ void MainWindow::applyThemeColors()
         .arg(p.bg_window.name(), p.border_subtle.name(), p.text_muted.name(),
              p.text_primary.name(), p.blue.name(), p.text_secondary.name()));
 
-    // Toggle buttons in toolbar
     auto toggleStyle = QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: none; "
         "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 2px 8px; margin: 0 1px; }"
@@ -490,7 +598,6 @@ void MainWindow::applyThemeColors()
     m_toggleChat->setStyleSheet(toggleStyle);
     m_toggleTerminal->setStyleSheet(toggleStyle);
 
-    // Status bar processing label (re-apply if active)
     if (!m_statusProcessing->text().isEmpty())
         m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.mauve.name()));
 }
@@ -503,7 +610,6 @@ void MainWindow::onThemeChanged(const QString &name)
     const auto &pal = ThemeManager::instance().palette();
     MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_base);
 
-    // Update theme menu checkmarks
     if (m_themeGroup) {
         for (auto *action : m_themeGroup->actions()) {
             action->setChecked(action->data().toString() == name);
@@ -513,6 +619,10 @@ void MainWindow::onThemeChanged(const QString &name)
 
 void MainWindow::openWorkspace(const QString &path)
 {
+    bool workspaceChanged = !m_workspacePath.isEmpty() && m_workspacePath != path;
+    if (workspaceChanged)
+        m_chatPanel->closeAllTabs();
+
     m_workspacePath = path;
     m_workspaceTree->setRootPath(path);
     m_searchPanel->setRootPath(path);
@@ -532,14 +642,14 @@ void MainWindow::openWorkspace(const QString &path)
 
     if (m_chatPanel->tabCount() == 0)
         m_chatPanel->newChat();
+
+    syncEditorContextToChat();
 }
 
 void MainWindow::onFileSelected(const QString &filePath)
 {
-    // Auto-show editor if hidden
     if (!m_codeViewer->isVisible()) {
         m_codeViewer->show();
-        // Set proportions: tree=150, editor=40%, chat=rest
         int total = m_splitter->width();
         int treeW = 150;
         int editorW = static_cast<int>(total * 0.4);
@@ -553,6 +663,8 @@ void MainWindow::onFileSelected(const QString &filePath)
     FileDiff diff = m_diffEngine->diffForFile(filePath);
     if (!diff.hunks.isEmpty())
         m_codeViewer->showDiff(diff);
+
+    syncEditorContextToChat();
 }
 
 void MainWindow::onFileChanged(const QString &filePath)
@@ -589,6 +701,7 @@ void MainWindow::onBeforeTurnBegins()
 {
     if (m_codeViewer->hasDirtyTabs())
         m_codeViewer->saveAllFiles();
+    m_checkpointTimeline->refresh();
 }
 
 void MainWindow::onToggleTerminal()
@@ -614,14 +727,11 @@ void MainWindow::onClearTerminal()
 
 void MainWindow::connectGitSignals()
 {
-    // Git status -> WorkspaceTree badges
     connect(m_gitManager, &GitManager::statusChanged, m_workspaceTree, &WorkspaceTree::setGitFileEntries);
 
-    // Git diff ready -> show in CodeViewer split view
     connect(m_gitManager, &GitManager::fileDiffReady, this,
             [this](const QString &filePath, bool staged, const GitUnifiedDiff &diff) {
         if (diff.isBinary) {
-            // Just load the file normally
             QString fullPath = m_workspacePath + "/" + filePath;
             m_codeViewer->loadFile(fullPath);
             return;
@@ -629,7 +739,6 @@ void MainWindow::connectGitSignals()
 
         QString fullPath = m_workspacePath + "/" + filePath;
 
-        // Auto-show editor if hidden
         if (!m_codeViewer->isVisible()) {
             m_codeViewer->show();
             int total = m_splitter->width();
@@ -645,13 +754,11 @@ void MainWindow::connectGitSignals()
         m_codeViewer->showSplitDiff(fullPath, diff.oldContent, diff.newContent, leftLabel, rightLabel);
     });
 
-    // Git errors -> status bar / debug
     connect(m_gitManager, &GitManager::errorOccurred, this,
             [](const QString &op, const QString &msg) {
         qDebug() << "[cccpp] Git error in" << op << ":" << msg;
     });
 
-    // Commit feedback
     connect(m_gitManager, &GitManager::commitSucceeded, this,
             [](const QString &hash, const QString &msg) {
         qDebug() << "[cccpp] Committed" << hash << ":" << msg;
@@ -667,9 +774,9 @@ void MainWindow::connectGitSignals()
             ToastType::Error, 5000);
     });
 
-    // After SnapshotManager revert, refresh git status
     connect(m_snapshotMgr, &SnapshotManager::revertCompleted, this, [this](int) {
         m_gitManager->refreshStatus();
+        m_checkpointTimeline->refresh();
     });
 }
 
