@@ -186,11 +186,13 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     }
 
     if (m_mode == "ask") {
-        args << "--tools" << "Read,Glob,Grep";
+        args << "--permission-mode" << "bypassPermissions"
+             << "--tools" << "Read,Glob,Grep";
     } else if (m_mode == "plan") {
         args << "--permission-mode" << "plan";
     } else {
-        args << "--allowedTools"
+        args << "--permission-mode" << "bypassPermissions"
+             << "--allowedTools"
              << "Bash,Read,Edit,Write,Glob,Grep,Task";
     }
 

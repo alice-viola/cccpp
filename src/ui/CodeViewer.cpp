@@ -840,6 +840,20 @@ void CodeViewer::refreshFile(const QString &filePath)
     FileTab *tab = tabForFile(filePath);
     if (!tab) return;
 
+    // Markdown tabs have no editor — refresh the rendered view instead.
+    if (tab->isMarkdown) {
+        if (tab->markdownView) {
+            QFile file(filePath);
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                MarkdownRenderer renderer;
+                tab->markdownView->setHtml(renderer.toHtml(QString::fromUtf8(file.readAll())));
+            }
+        }
+        return;
+    }
+
+    if (!tab->editor) return;
+
     if (tab->dirty) {
         QFileInfo fi(filePath);
         auto result = QMessageBox::question(
@@ -850,6 +864,9 @@ void CodeViewer::refreshFile(const QString &filePath)
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (result != QMessageBox::Yes)
             return;
+        // Re-lookup: the modal dialog may have run the event loop and modified m_tabs.
+        tab = tabForFile(filePath);
+        if (!tab || !tab->editor) return;
     }
 
     QFile file(filePath);
