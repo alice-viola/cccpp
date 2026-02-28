@@ -4,15 +4,18 @@
 #include <QSplitter>
 #include <QToolBar>
 #include <QPushButton>
+#include <QTabWidget>
 
 class WorkspaceTree;
 class CodeViewer;
 class ChatPanel;
 class TerminalPanel;
+class GitPanel;
 class SessionManager;
 class SnapshotManager;
 class DiffEngine;
 class Database;
+class GitManager;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,6 +36,7 @@ private slots:
     void onToggleTerminal();
     void onNewTerminal();
     void onClearTerminal();
+    void onGitRefresh();
 
 private:
     void setupMenuBar();
@@ -41,6 +45,7 @@ private:
     void loadStylesheet();
     void restoreSessions();
     void updateToggleButtons();
+    void connectGitSignals();
 
     QToolBar *m_toolBar = nullptr;
     QPushButton *m_toggleTree = nullptr;
@@ -49,15 +54,18 @@ private:
     QPushButton *m_toggleTerminal = nullptr;
     QSplitter *m_splitter;
     QSplitter *m_centerSplitter;
+    QTabWidget *m_leftTabs;
     WorkspaceTree *m_workspaceTree;
     CodeViewer *m_codeViewer;
     TerminalPanel *m_terminalPanel;
     ChatPanel *m_chatPanel;
+    GitPanel *m_gitPanel;
 
     SessionManager *m_sessionMgr;
     SnapshotManager *m_snapshotMgr;
     DiffEngine *m_diffEngine;
     Database *m_database;
+    GitManager *m_gitManager;
 
     QString m_workspacePath;
 };

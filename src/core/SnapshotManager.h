@@ -3,9 +3,9 @@
 #include <QObject>
 #include <QString>
 #include <QMap>
-#include <QProcess>
 
 class Database;
+class GitManager;
 
 class SnapshotManager : public QObject {
     Q_OBJECT
@@ -15,6 +15,7 @@ public:
     void setWorkingDirectory(const QString &dir);
     void setDatabase(Database *db);
     void setSessionId(const QString &id);
+    void setGitManager(GitManager *mgr);
 
     void beginTurn(int turnId);
     void recordEditOldString(const QString &filePath, const QString &oldString);
@@ -29,14 +30,12 @@ signals:
     void revertFailed(int turnId, const QString &error);
 
 private:
-    QString runGit(const QStringList &args);
-    bool detectGitRepo();
-
     QString m_workingDir;
     Database *m_db = nullptr;
+    GitManager *m_gitManager = nullptr;
     QString m_sessionId;
     int m_currentTurnId = 0;
     bool m_isGitRepo = false;
     QString m_currentStashHash;
-    QMap<QString, QString> m_editOldStrings; // filePath -> old content accumulated
+    QMap<QString, QString> m_editOldStrings;
 };

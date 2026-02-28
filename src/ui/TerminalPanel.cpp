@@ -67,7 +67,7 @@ TerminalWidget *TerminalPanel::newTerminal()
 {
     auto *tw = new TerminalWidget(this);
     int idx = m_tabWidget->addTab(tw,
-        QStringLiteral("zsh %1").arg(m_tabWidget->count() + 1));
+        QStringLiteral("bash %1").arg(m_tabWidget->count() + 1));
     m_tabWidget->setCurrentIndex(idx);
 
     connect(tw, &TerminalWidget::titleChanged, this, [this, tw](const QString &title) {

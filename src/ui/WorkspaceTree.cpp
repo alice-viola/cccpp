@@ -3,28 +3,85 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QPainter>
+#include <QDir>
+
+static QChar gitStatusLetter(GitFileStatus s)
+{
+    switch (s) {
+    case GitFileStatus::Modified:   return 'M';
+    case GitFileStatus::Added:      return 'A';
+    case GitFileStatus::Deleted:    return 'D';
+    case GitFileStatus::Renamed:    return 'R';
+    case GitFileStatus::Copied:     return 'C';
+    case GitFileStatus::Untracked:  return '?';
+    case GitFileStatus::Conflicted: return '!';
+    default:                        return QChar();
+    }
+}
+
+static QColor gitStatusColor(GitFileStatus s)
+{
+    switch (s) {
+    case GitFileStatus::Modified:   return QColor("#f9e2af");
+    case GitFileStatus::Added:      return QColor("#a6e3a1");
+    case GitFileStatus::Deleted:    return QColor("#f38ba8");
+    case GitFileStatus::Renamed:    return QColor("#89b4fa");
+    case GitFileStatus::Copied:     return QColor("#89b4fa");
+    case GitFileStatus::Untracked:  return QColor("#6c7086");
+    case GitFileStatus::Conflicted: return QColor("#fab387");
+    default:                        return QColor();
+    }
+}
 
 void ChangedFileDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                                  const QModelIndex &index) const
 {
     QStyledItemDelegate::paint(painter, option, index);
 
-    if (m_files && m_model) {
-        QString path = m_model->filePath(index);
+    if (!m_model) return;
+    QString path = m_model->filePath(index);
+
+    int rightOffset = 8;
+
+    // --- Git status badge (letter) ---
+    if (m_gitStatus && !m_rootPath.isEmpty()) {
+        QString relPath = QDir(m_rootPath).relativeFilePath(path);
+        auto git = m_gitStatus->find(relPath);
+        if (git != m_gitStatus->end()) {
+            QChar letter = gitStatusLetter(git.value());
+            QColor color = gitStatusColor(git.value());
+            if (!letter.isNull()) {
+                painter->save();
+                QFont f = option.font;
+                f.setPointSize(9);
+                f.setBold(true);
+                painter->setFont(f);
+                painter->setPen(color);
+                int x = option.rect.right() - rightOffset - 8;
+                int y = option.rect.center().y() + 4;
+                painter->drawText(x, y, QString(letter));
+                painter->restore();
+                rightOffset += 14;
+            }
+        }
+    }
+
+    // --- Claude change dot (existing behavior) ---
+    if (m_files) {
         auto it = m_files->find(path);
         if (it != m_files->end()) {
             QColor dotColor;
             switch (it.value()) {
-            case FileChangeType::Modified: dotColor = QColor("#a6e3a1"); break; // green
-            case FileChangeType::Created:  dotColor = QColor("#fab387"); break; // orange
-            case FileChangeType::Deleted:  dotColor = QColor("#f38ba8"); break; // red
+            case FileChangeType::Modified: dotColor = QColor("#a6e3a1"); break;
+            case FileChangeType::Created:  dotColor = QColor("#fab387"); break;
+            case FileChangeType::Deleted:  dotColor = QColor("#f38ba8"); break;
             }
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing);
             painter->setBrush(dotColor);
             painter->setPen(Qt::NoPen);
             int y = option.rect.center().y();
-            int x = option.rect.right() - 10;
+            int x = option.rect.right() - rightOffset - 3;
             painter->drawEllipse(QPoint(x, y), 3, 3);
             painter->restore();
         }
@@ -61,6 +118,7 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 
     m_delegate = new ChangedFileDelegate(this);
     m_delegate->setChangedFiles(&m_changedFiles);
+    m_delegate->setGitStatus(&m_gitStatus);
     m_delegate->setModel(m_model);
     m_tree->setItemDelegate(m_delegate);
 
@@ -76,8 +134,10 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 
 void WorkspaceTree::setRootPath(const QString &path)
 {
+    m_rootPath = path;
     m_model->setRootPath(path);
     m_tree->setRootIndex(m_model->index(path));
+    m_delegate->setRootPath(path);
 }
 
 void WorkspaceTree::markFileChanged(const QString &filePath, FileChangeType type)
@@ -89,5 +149,28 @@ void WorkspaceTree::markFileChanged(const QString &filePath, FileChangeType type
 void WorkspaceTree::clearChangeMarkers()
 {
     m_changedFiles.clear();
+    m_tree->viewport()->update();
+}
+
+void WorkspaceTree::setGitFileEntries(const QList<GitFileEntry> &entries)
+{
+    m_gitStatus.clear();
+    for (const auto &e : entries) {
+        // Pick the most relevant status to display (prefer work-tree, fall back to index)
+        GitFileStatus display = GitFileStatus::Unmodified;
+        if (e.workStatus != GitFileStatus::Unmodified)
+            display = e.workStatus;
+        else if (e.indexStatus != GitFileStatus::Unmodified)
+            display = e.indexStatus;
+
+        if (display != GitFileStatus::Unmodified)
+            m_gitStatus.insert(e.filePath, display);
+    }
+    m_tree->viewport()->update();
+}
+
+void WorkspaceTree::clearGitStatus()
+{
+    m_gitStatus.clear();
     m_tree->viewport()->update();
 }

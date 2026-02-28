@@ -3,10 +3,12 @@
 #include "ui/CodeViewer.h"
 #include "ui/ChatPanel.h"
 #include "ui/TerminalPanel.h"
+#include "ui/GitPanel.h"
 #include "core/SessionManager.h"
 #include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
 #include "core/Database.h"
+#include "core/GitManager.h"
 #include "util/Config.h"
 #include <QMenuBar>
 #include <QFileDialog>
@@ -16,6 +18,7 @@
 #include <QFile>
 #include <QTimer>
 #include <QDebug>
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -27,11 +30,13 @@ MainWindow::MainWindow(QWidget *parent)
     m_diffEngine = new DiffEngine(this);
     m_database = new Database(this);
     m_database->open();
+    m_gitManager = new GitManager(this);
 
     setupUI();
     setupToolBar();
     setupMenuBar();
     loadStylesheet();
+    connectGitSignals();
 
     if (auto *screen = QApplication::primaryScreen()) {
         QSize screenSize = screen->availableSize();
@@ -64,13 +69,29 @@ void MainWindow::setupUI()
 
     m_workspaceTree = new WorkspaceTree(this);
     m_codeViewer = new CodeViewer(this);
+    m_codeViewer->setGitManager(m_gitManager);
     m_terminalPanel = new TerminalPanel(this);
     m_chatPanel = new ChatPanel(this);
+    m_gitPanel = new GitPanel(this);
+    m_gitPanel->setGitManager(m_gitManager);
 
     m_chatPanel->setSessionManager(m_sessionMgr);
     m_chatPanel->setSnapshotManager(m_snapshotMgr);
     m_chatPanel->setDiffEngine(m_diffEngine);
     m_chatPanel->setDatabase(m_database);
+
+    // Left column: tabbed panel with Files and Git
+    m_leftTabs = new QTabWidget(this);
+    m_leftTabs->setDocumentMode(true);
+    m_leftTabs->setTabPosition(QTabWidget::South);
+    m_leftTabs->addTab(m_workspaceTree, "Files");
+    m_leftTabs->addTab(m_gitPanel, "Git");
+    m_leftTabs->setStyleSheet(
+        "QTabWidget::pane { border: none; background: #0e0e0e; }"
+        "QTabBar { background: #0e0e0e; }"
+        "QTabBar::tab { background: #0e0e0e; color: #555; border: none; padding: 4px 12px; font-size: 11px; }"
+        "QTabBar::tab:selected { color: #cdd6f4; border-top: 2px solid #cba6f7; }"
+        "QTabBar::tab:hover:!selected { color: #888; }");
 
     // Center column: CodeViewer on top, TerminalPanel on bottom
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
@@ -83,7 +104,7 @@ void MainWindow::setupUI()
     // Terminal starts hidden
     m_terminalPanel->hide();
 
-    m_splitter->addWidget(m_workspaceTree);
+    m_splitter->addWidget(m_leftTabs);
     m_splitter->addWidget(m_centerSplitter);
     m_splitter->addWidget(m_chatPanel);
 
@@ -120,6 +141,17 @@ void MainWindow::setupUI()
     });
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
             this, &MainWindow::onBeforeTurnBegins);
+
+    // Git panel: open files on request
+    connect(m_gitPanel, &GitPanel::requestOpenFile, this, [this](const QString &filePath) {
+        QString fullPath = m_workspacePath + "/" + filePath;
+        onFileSelected(fullPath);
+    });
+
+    // Git panel: file clicked -> show split diff
+    connect(m_gitPanel, &GitPanel::fileClicked, this, [this](const QString &filePath, bool staged) {
+        m_gitManager->requestFileDiff(filePath, staged);
+    });
 }
 
 void MainWindow::setupMenuBar()
@@ -176,6 +208,43 @@ void MainWindow::setupMenuBar()
     pasteAction->setShortcut(QKeySequence::Paste);
     connect(pasteAction, &QAction::triggered, m_codeViewer, &CodeViewer::paste);
 
+    // --- Git menu ---
+    auto *gitMenu = menuBar()->addMenu("&Git");
+
+    auto *gitRefreshAction = gitMenu->addAction("&Refresh Status");
+    gitRefreshAction->setShortcut(QKeySequence("Ctrl+Shift+G"));
+    connect(gitRefreshAction, &QAction::triggered, this, &MainWindow::onGitRefresh);
+
+    auto *gitStageAllAction = gitMenu->addAction("Stage &All");
+    connect(gitStageAllAction, &QAction::triggered, this, [this] {
+        m_gitManager->stageAll();
+    });
+
+    auto *gitUnstageAllAction = gitMenu->addAction("&Unstage All");
+    connect(gitUnstageAllAction, &QAction::triggered, this, [this] {
+        m_gitManager->unstageAll();
+    });
+
+    gitMenu->addSeparator();
+
+    auto *gitCommitAction = gitMenu->addAction("&Commit...");
+    connect(gitCommitAction, &QAction::triggered, this, [this] {
+        m_leftTabs->setCurrentWidget(m_gitPanel);
+    });
+
+    gitMenu->addSeparator();
+
+    auto *gitDiscardAction = gitMenu->addAction("&Discard All Changes");
+    connect(gitDiscardAction, &QAction::triggered, this, [this] {
+        auto result = QMessageBox::warning(
+            this, "Discard All Changes",
+            "Discard ALL working tree changes and delete untracked files?\n\n"
+            "This cannot be undone.",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (result == QMessageBox::Yes)
+            m_gitManager->discardAll();
+    });
+
     // --- View menu ---
     auto *viewMenu = menuBar()->addMenu("&View");
 
@@ -220,8 +289,15 @@ void MainWindow::setupToolBar()
     m_toggleTree = makeToggle("\xe2\x96\x8c", "Toggle Workspace (Ctrl+1)");
     m_toggleEditor = makeToggle("\xe2\x96\x88", "Toggle Editor (Ctrl+2)");
     m_toggleChat = makeToggle("\xe2\x96\x90", "Toggle Chat (Ctrl+3)");
-    m_toggleTerminal = makeToggle("_", "Toggle Terminal (Ctrl+`)");
+    m_toggleTerminal = makeToggle("\xe2\x96\xbc", "Toggle Terminal (Ctrl+`)");
     m_toggleTerminal->setChecked(false);
+    m_toggleTerminal->setFixedSize(42, 18);
+    m_toggleTerminal->setStyleSheet(
+        "QPushButton { background: transparent; color: #555; border: none; "
+        "border-radius: 3px; font-size: 10px; padding: 0 4px; margin: 0; }"
+        "QPushButton:hover { color: #999; }"
+        "QPushButton:checked { color: #cdd6f4; }");
+    m_toggleTerminal->setText("\xe2\x96\xbc tty");
 
     auto *spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -235,7 +311,7 @@ void MainWindow::setupToolBar()
     m_toolBar->addWidget(m_toggleChat);
 
     connect(m_toggleTree, &QPushButton::clicked, this, [this] {
-        m_workspaceTree->setVisible(!m_workspaceTree->isVisible());
+        m_leftTabs->setVisible(!m_leftTabs->isVisible());
         updateToggleButtons();
     });
     connect(m_toggleEditor, &QPushButton::clicked, this, [this] {
@@ -253,7 +329,7 @@ void MainWindow::setupToolBar()
 
 void MainWindow::updateToggleButtons()
 {
-    m_toggleTree->setChecked(m_workspaceTree->isVisible());
+    m_toggleTree->setChecked(m_leftTabs->isVisible());
     m_toggleEditor->setChecked(m_codeViewer->isVisible());
     m_toggleChat->setChecked(m_chatPanel->isVisible());
     m_toggleTerminal->setChecked(m_terminalPanel->isVisible());
@@ -323,8 +399,13 @@ void MainWindow::openWorkspace(const QString &path)
     m_workspaceTree->setRootPath(path);
     m_chatPanel->setWorkingDirectory(path);
     m_terminalPanel->setWorkingDirectory(path);
+    m_snapshotMgr->setGitManager(m_gitManager);
     m_snapshotMgr->setWorkingDirectory(path);
     m_snapshotMgr->setDatabase(m_database);
+    m_gitManager->setWorkingDirectory(path);
+
+    if (!m_gitManager->isGitRepo())
+        m_gitPanel->showNotARepo();
 
     Config::instance().setLastWorkspace(path);
     setWindowTitle(QStringLiteral("CCCPP - %1").arg(path));
@@ -407,6 +488,66 @@ void MainWindow::onNewTerminal()
 void MainWindow::onClearTerminal()
 {
     m_terminalPanel->clearCurrentTerminal();
+}
+
+void MainWindow::connectGitSignals()
+{
+    // Git status -> WorkspaceTree badges
+    connect(m_gitManager, &GitManager::statusChanged, m_workspaceTree, &WorkspaceTree::setGitFileEntries);
+
+    // Git diff ready -> show in CodeViewer split view
+    connect(m_gitManager, &GitManager::fileDiffReady, this,
+            [this](const QString &filePath, bool staged, const GitUnifiedDiff &diff) {
+        if (diff.isBinary) {
+            // Just load the file normally
+            QString fullPath = m_workspacePath + "/" + filePath;
+            m_codeViewer->loadFile(fullPath);
+            return;
+        }
+
+        QString fullPath = m_workspacePath + "/" + filePath;
+
+        // Auto-show editor if hidden
+        if (!m_codeViewer->isVisible()) {
+            m_codeViewer->show();
+            int total = m_splitter->width();
+            int treeW = 150;
+            int editorW = static_cast<int>(total * 0.5);
+            int chatW = total - treeW - editorW;
+            m_splitter->setSizes({treeW, editorW, chatW});
+            updateToggleButtons();
+        }
+
+        QString leftLabel = staged ? "HEAD" : "HEAD";
+        QString rightLabel = staged ? "Staged" : "Working Tree";
+        m_codeViewer->showSplitDiff(fullPath, diff.oldContent, diff.newContent, leftLabel, rightLabel);
+    });
+
+    // Git errors -> status bar / debug
+    connect(m_gitManager, &GitManager::errorOccurred, this,
+            [](const QString &op, const QString &msg) {
+        qDebug() << "[cccpp] Git error in" << op << ":" << msg;
+    });
+
+    // Commit feedback
+    connect(m_gitManager, &GitManager::commitSucceeded, this,
+            [](const QString &hash, const QString &msg) {
+        qDebug() << "[cccpp] Committed" << hash << ":" << msg;
+    });
+    connect(m_gitManager, &GitManager::commitFailed, this,
+            [](const QString &err) {
+        qDebug() << "[cccpp] Commit failed:" << err;
+    });
+
+    // After SnapshotManager revert, refresh git status
+    connect(m_snapshotMgr, &SnapshotManager::revertCompleted, this, [this](int) {
+        m_gitManager->refreshStatus();
+    });
+}
+
+void MainWindow::onGitRefresh()
+{
+    m_gitManager->refreshStatus();
 }
 
 void MainWindow::restoreSessions()

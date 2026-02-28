@@ -1,6 +1,6 @@
 #include "core/SnapshotManager.h"
 #include "core/Database.h"
-#include <QProcess>
+#include "core/GitManager.h"
 #include <QDir>
 #include <QFile>
 #include <QDateTime>
@@ -13,7 +13,10 @@ SnapshotManager::SnapshotManager(QObject *parent)
 void SnapshotManager::setWorkingDirectory(const QString &dir)
 {
     m_workingDir = dir;
-    m_isGitRepo = detectGitRepo();
+    if (m_gitManager)
+        m_isGitRepo = m_gitManager->isGitRepo();
+    else
+        m_isGitRepo = QDir(m_workingDir + "/.git").exists();
 }
 
 void SnapshotManager::setDatabase(Database *db)
@@ -26,9 +29,9 @@ void SnapshotManager::setSessionId(const QString &id)
     m_sessionId = id;
 }
 
-bool SnapshotManager::detectGitRepo()
+void SnapshotManager::setGitManager(GitManager *mgr)
 {
-    return QDir(m_workingDir + "/.git").exists();
+    m_gitManager = mgr;
 }
 
 void SnapshotManager::beginTurn(int turnId)
@@ -37,19 +40,15 @@ void SnapshotManager::beginTurn(int turnId)
     m_editOldStrings.clear();
     m_currentStashHash.clear();
 
-    if (m_isGitRepo) {
-        // Create a stash object BEFORE Claude modifies anything
-        m_currentStashHash = runGit({"stash", "create"}).trimmed();
-        if (m_currentStashHash.isEmpty()) {
-            // No changes to stash — record HEAD instead
-            m_currentStashHash = runGit({"rev-parse", "HEAD"}).trimmed();
-        }
+    if (m_isGitRepo && m_gitManager) {
+        m_currentStashHash = m_gitManager->runGitSync({"stash", "create"}).trimmed();
+        if (m_currentStashHash.isEmpty())
+            m_currentStashHash = m_gitManager->runGitSync({"rev-parse", "HEAD"}).trimmed();
     }
 }
 
 void SnapshotManager::recordEditOldString(const QString &filePath, const QString &oldString)
 {
-    // Accumulate old_string payloads from Edit tool events
     m_editOldStrings[filePath] += oldString;
 
     if (m_db) {
@@ -66,7 +65,6 @@ void SnapshotManager::recordEditOldString(const QString &filePath, const QString
 
 void SnapshotManager::commitTurn()
 {
-    // Turn is finalized, snapshot data is already persisted
     m_editOldStrings.clear();
 }
 
@@ -81,16 +79,14 @@ bool SnapshotManager::revertTurn(int turnId)
         return false;
     }
 
-    if (m_isGitRepo && !snapshots.first().gitStash.isEmpty()) {
-        // Full revert via git: restore working tree to pre-turn state
+    if (m_isGitRepo && m_gitManager && !snapshots.first().gitStash.isEmpty()) {
         QString stash = snapshots.first().gitStash;
-        QString result = runGit({"checkout", stash, "--", "."});
+        QString result = m_gitManager->runGitSync({"checkout", stash, "--", "."});
         if (result.contains("error")) {
             emit revertFailed(turnId, result);
             return false;
         }
     } else {
-        // Non-git: restore files from stored content
         for (const auto &snap : snapshots) {
             QFile file(snap.filePath);
             if (file.open(QIODevice::WriteOnly)) {
@@ -102,14 +98,4 @@ bool SnapshotManager::revertTurn(int turnId)
 
     emit revertCompleted(turnId);
     return true;
-}
-
-QString SnapshotManager::runGit(const QStringList &args)
-{
-    QProcess proc;
-    proc.setWorkingDirectory(m_workingDir);
-    proc.start("git", args);
-    proc.waitForFinished(5000);
-    return QString::fromUtf8(proc.readAllStandardOutput()) +
-           QString::fromUtf8(proc.readAllStandardError());
 }

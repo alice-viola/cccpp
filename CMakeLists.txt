@@ -40,6 +40,7 @@ set(CORE_SOURCES
     src/core/FileSnapshot.cpp
     src/core/Database.cpp
     src/core/SnapshotManager.cpp
+    src/core/GitManager.cpp
     src/core/PtyProcess.cpp
     src/core/UnixPty.cpp
     src/core/WinPty.cpp
@@ -56,6 +57,8 @@ set(UI_SOURCES
     src/ui/ModeSelector.cpp
     src/ui/TerminalWidget.cpp
     src/ui/TerminalPanel.cpp
+    src/ui/GitPanel.cpp
+    src/ui/DiffSplitView.cpp
 )
 
 set(UTIL_SOURCES

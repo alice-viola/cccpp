@@ -73,7 +73,7 @@ void TerminalWidget::startShell(const QString &workingDir)
 #ifdef _WIN32
     shell = "powershell.exe";
 #else
-    shell = qEnvironmentVariable("SHELL", "/bin/zsh");
+    shell = qEnvironmentVariable("SHELL", "/bin/bash");
 #endif
 
     QStringList args;
@@ -81,8 +81,13 @@ void TerminalWidget::startShell(const QString &workingDir)
     args << "-l"; // login shell
 #endif
 
+    QStringList env;
+    env << "TERM=xterm-256color";
+    env << QStringLiteral("COLORTERM=truecolor");
+    env << QStringLiteral("LANG=%1").arg(qEnvironmentVariable("LANG", "en_US.UTF-8"));
+
     m_pty->resize(m_rows, m_cols);
-    m_pty->start(shell, args, workingDir);
+    m_pty->start(shell, args, workingDir, env);
     m_cursorTimer.start();
     setFocus();
 }
@@ -176,6 +181,19 @@ QColor TerminalWidget::vtermColorToQColor(VTermColor c) const
 // Rendering
 // ---------------------------------------------------------------------------
 
+bool TerminalWidget::event(QEvent *evt)
+{
+    // Intercept Tab/Backtab before Qt uses them for focus navigation
+    if (evt->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(evt);
+        if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab) {
+            keyPressEvent(ke);
+            return true;
+        }
+    }
+    return QWidget::event(evt);
+}
+
 void TerminalWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -264,28 +282,37 @@ void TerminalWidget::paintEvent(QPaintEvent *)
         }
     }
 
-    // Draw cursor (only when not scrolled up and widget has focus)
-    if (m_scrollOffset == 0 && m_cursorVisible && hasFocus() && m_cursorBlinkState) {
+    // Always draw cursor (regardless of focus) so it's never invisible
+    if (m_scrollOffset == 0) {
         int cx = m_cursorPos.col * m_cellWidth;
         int cy = m_cursorPos.row * m_cellHeight;
-        p.fillRect(cx, cy, m_cellWidth, m_cellHeight, QColor(205, 214, 244, 180));
+        QColor cursorColor("#cba6f7");
 
-        // Draw the character under the cursor with inverted colors
-        VTermPos pos = {m_cursorPos.row, m_cursorPos.col};
-        VTermScreenCell cell;
-        vterm_screen_get_cell(m_vtermScreen, pos, &cell);
-        if (cell.chars[0] != 0 && cell.chars[0] != ' ') {
-            p.setPen(QColor(14, 14, 14));
-            p.setFont(m_font);
-            p.drawText(cx, cy + m_cellHeight - p.fontMetrics().descent(),
-                       QString::fromUcs4(&cell.chars[0], 1));
+        if (hasFocus()) {
+            if (m_cursorBlinkState || !m_cursorBlink) {
+                // Focused: bright solid block cursor
+                p.fillRect(cx, cy, m_cellWidth, m_cellHeight, cursorColor);
+
+                // Draw character under cursor inverted
+                VTermPos pos = {m_cursorPos.row, m_cursorPos.col};
+                VTermScreenCell cell;
+                vterm_screen_get_cell(m_vtermScreen, pos, &cell);
+                if (cell.chars[0] != 0 && cell.chars[0] != ' ') {
+                    p.setPen(QColor(14, 14, 14));
+                    p.setFont(m_font);
+                    p.drawText(cx, cy + m_cellHeight - p.fontMetrics().descent(),
+                               QString::fromUcs4(&cell.chars[0], 1));
+                }
+            } else {
+                // Blink-off: thin I-beam so position stays visible
+                p.fillRect(cx, cy, 2, m_cellHeight, cursorColor);
+            }
+        } else {
+            // Unfocused: bright solid outline — always visible
+            p.setPen(QPen(cursorColor, 2.0));
+            p.setBrush(Qt::NoBrush);
+            p.drawRect(cx + 1, cy + 1, m_cellWidth - 2, m_cellHeight - 2);
         }
-    } else if (m_scrollOffset == 0 && m_cursorVisible && !hasFocus()) {
-        // Unfocused: hollow cursor
-        int cx = m_cursorPos.col * m_cellWidth;
-        int cy = m_cursorPos.row * m_cellHeight;
-        p.setPen(QColor(205, 214, 244, 120));
-        p.drawRect(cx, cy, m_cellWidth - 1, m_cellHeight - 1);
     }
 }
 

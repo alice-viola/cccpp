@@ -1,5 +1,8 @@
 #include "ui/CodeViewer.h"
+#include "ui/DiffSplitView.h"
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -48,10 +51,24 @@ CodeViewer::CodeViewer(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // Tab widget with diff toggle button in corner
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(true);
     m_tabWidget->setDocumentMode(true);
+
+    m_diffToggleBtn = new QPushButton("Diff", this);
+    m_diffToggleBtn->setCheckable(true);
+    m_diffToggleBtn->setFixedSize(40, 20);
+    m_diffToggleBtn->setToolTip("Toggle side-by-side diff view");
+    m_diffToggleBtn->setStyleSheet(
+        "QPushButton { background: #2a2a2a; color: #888; border: none; border-radius: 3px; "
+        "font-size: 10px; margin: 2px 4px; }"
+        "QPushButton:hover { color: #cdd6f4; }"
+        "QPushButton:checked { background: #2d5a27; color: #a6e3a1; }");
+    m_tabWidget->setCornerWidget(m_diffToggleBtn, Qt::TopRightCorner);
+    connect(m_diffToggleBtn, &QPushButton::clicked, this, &CodeViewer::toggleDiffMode);
+
     layout->addWidget(m_tabWidget);
 
     m_fileWatcher = new QFileSystemWatcher(this);
@@ -73,6 +90,11 @@ CodeViewer::CodeViewer(QWidget *parent)
         for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it, ++i)
             reindexed[i] = it.value();
         m_tabs = reindexed;
+    });
+
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
+        if (m_tabs.contains(idx))
+            m_diffToggleBtn->setChecked(m_tabs[idx].inDiffMode);
     });
 }
 
@@ -493,14 +515,34 @@ void CodeViewer::loadFile(const QString &filePath)
     QString content = QString::fromUtf8(file.readAll());
     auto *editor = createEditor();
 
+    // Stack: index 0 = editor, index 1 = diff split view
+    auto *stack = new QStackedWidget(this);
+    stack->addWidget(editor);
+
+    auto *diffView = new DiffSplitView(this);
+    stack->addWidget(diffView);
+    stack->setCurrentIndex(0);
+
+    connect(diffView, &DiffSplitView::closed, this, [this] {
+        auto *tab = currentTab();
+        if (tab && tab->inDiffMode) {
+            tab->inDiffMode = false;
+            tab->stack->setCurrentIndex(0);
+            m_diffToggleBtn->setChecked(false);
+        }
+    });
+
     QFileInfo fi(filePath);
-    int idx = m_tabWidget->addTab(editor, fi.fileName());
+    int idx = m_tabWidget->addTab(stack, fi.fileName());
     m_tabWidget->setTabToolTip(idx, filePath);
 
     FileTab tab;
     tab.filePath = filePath;
     tab.editor = editor;
     tab.dirty = false;
+    tab.inDiffMode = false;
+    tab.stack = stack;
+    tab.diffView = diffView;
     m_tabs[idx] = tab;
 
     connectEditorSignals(m_tabs[idx]);
@@ -1005,4 +1047,59 @@ void CodeViewer::scrollToLine(int line)
 #else
     Q_UNUSED(line);
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Diff mode toggle
+// ---------------------------------------------------------------------------
+
+void CodeViewer::toggleDiffMode()
+{
+    auto *tab = currentTab();
+    if (!tab || !tab->stack) return;
+
+    tab->inDiffMode = !tab->inDiffMode;
+    m_diffToggleBtn->setChecked(tab->inDiffMode);
+
+    if (tab->inDiffMode) {
+        if (m_gitManager && m_gitManager->isGitRepo()) {
+            m_gitManager->requestFileDiff(
+                QDir(m_gitManager->workingDirectory()).relativeFilePath(tab->filePath), false);
+        }
+        tab->stack->setCurrentIndex(1);
+    } else {
+        tab->stack->setCurrentIndex(0);
+    }
+}
+
+bool CodeViewer::isInDiffMode() const
+{
+    int idx = m_tabWidget->currentIndex();
+    if (m_tabs.contains(idx))
+        return m_tabs[idx].inDiffMode;
+    return false;
+}
+
+void CodeViewer::showSplitDiff(const QString &filePath, const QString &oldContent,
+                                const QString &newContent, const QString &leftLabel,
+                                const QString &rightLabel)
+{
+    // Find or load the file tab
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) {
+        loadFile(filePath);
+        tab = tabForFile(filePath);
+    }
+    if (!tab || !tab->diffView) return;
+
+    tab->diffView->showDiff(
+        QDir(m_gitManager ? m_gitManager->workingDirectory() : "").relativeFilePath(filePath),
+        oldContent, newContent, leftLabel, rightLabel);
+    tab->inDiffMode = true;
+    tab->stack->setCurrentIndex(1);
+    m_diffToggleBtn->setChecked(true);
+
+    int idx = indexForFile(filePath);
+    if (idx >= 0)
+        m_tabWidget->setCurrentIndex(idx);
 }

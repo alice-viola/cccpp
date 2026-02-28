@@ -6,7 +6,12 @@
 #include <QMap>
 #include <QSet>
 #include <QFileSystemWatcher>
+#include <QPushButton>
+#include <QStackedWidget>
 #include "core/DiffEngine.h"
+#include "core/GitManager.h"
+
+class DiffSplitView;
 
 #ifndef NO_QSCINTILLA
 #include <Qsci/qsciscintilla.h>
@@ -17,11 +22,14 @@
 struct FileTab {
     QString filePath;
     bool dirty = false;
+    bool inDiffMode = false;
 #ifndef NO_QSCINTILLA
     QsciScintilla *editor = nullptr;
 #else
     QPlainTextEdit *editor = nullptr;
 #endif
+    QStackedWidget *stack = nullptr;
+    DiffSplitView *diffView = nullptr;
 };
 
 class CodeViewer : public QWidget {
@@ -49,6 +57,13 @@ public:
     void copy();
     void paste();
 
+    void setGitManager(GitManager *mgr) { m_gitManager = mgr; }
+    void showSplitDiff(const QString &filePath, const QString &oldContent,
+                       const QString &newContent, const QString &leftLabel,
+                       const QString &rightLabel);
+    void toggleDiffMode();
+    bool isInDiffMode() const;
+
 signals:
     void fileSaved(const QString &filePath);
     void dirtyStateChanged(const QString &filePath, bool dirty);
@@ -72,7 +87,9 @@ private:
     void connectEditorSignals(FileTab &tab);
 
     QTabWidget *m_tabWidget;
+    QPushButton *m_diffToggleBtn;
     QMap<int, FileTab> m_tabs;
     QFileSystemWatcher *m_fileWatcher;
-    QSet<QString> m_savingFiles; // files currently being saved (suppress watcher)
+    QSet<QString> m_savingFiles;
+    GitManager *m_gitManager = nullptr;
 };
