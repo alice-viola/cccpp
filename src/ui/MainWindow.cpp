@@ -141,7 +141,7 @@ void MainWindow::setupUI()
         FileDiff diff = m_diffEngine->diffForFile(filePath);
         if (!diff.hunks.isEmpty())
             m_codeViewer->showDiff(diff);
-        else if (line > 0)
+        if (line > 0)
             m_codeViewer->scrollToLine(line);
     });
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
@@ -490,6 +490,7 @@ void MainWindow::onFileChanged(const QString &filePath)
 {
     m_workspaceTree->markFileChanged(filePath);
     m_codeViewer->refreshFile(filePath);
+    m_gitManager->refreshStatus();
 }
 
 void MainWindow::onNewChat()

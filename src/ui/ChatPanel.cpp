@@ -15,6 +15,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QDateTime>
+#include <QFile>
 #include <QFileInfo>
 #include <QMenu>
 #include <QDebug>
@@ -132,6 +133,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 m_snapshotMgr->recordEditOldString(info.filePath, info.oldString);
             if (m_diffEngine)
                 m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString);
+            t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
             // Append inline diff to the assistant message
@@ -145,6 +147,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                              JsonUtils::getString(input, "contents"));
             if (m_diffEngine)
                 m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
+            t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
             // Show a summary in the chat (full file content is too large for inline diff)
@@ -179,6 +182,17 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             rec.turnId = t.turnId;
             rec.timestamp = QDateTime::currentSecsSinceEpoch();
             m_database->saveMessage(rec);
+        }
+    });
+
+    // Tool result — file is now on disk, re-emit fileChanged for git refresh
+    connect(proc->streamParser(), &StreamParser::toolResultReceived, this,
+            [this, tabIdx](const QString &) {
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        if (!t.pendingEditFile.isEmpty()) {
+            emit fileChanged(t.pendingEditFile);
+            t.pendingEditFile.clear();
         }
     });
 
@@ -368,7 +382,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
             connect(w, &ChatMessageWidget::fileNavigationRequested,
-                    this, [this](const QString &fp) { emit navigateToFile(fp, 0); });
+                    this, [this](const QString &fp, int line) { emit navigateToFile(fp, line); });
         }
         if (!td.tools.isEmpty()) {
             auto *group = new ToolCallGroupWidget;
@@ -513,8 +527,8 @@ void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
     connect(msg, &ChatMessageWidget::revertRequested,
             this, &ChatPanel::onRevertRequested);
     connect(msg, &ChatMessageWidget::fileNavigationRequested,
-            this, [this](const QString &filePath) {
-        emit navigateToFile(filePath, 0);
+            this, [this](const QString &filePath, int line) {
+        emit navigateToFile(filePath, line);
     });
 }
 
@@ -551,15 +565,27 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
     QString html;
     QFileInfo fi(filePath);
 
+    // Find the line number where the edit occurs (file not yet written, so oldStr is findable)
+    int editLine = 0;
+    if (!oldStr.isEmpty()) {
+        QFile f(filePath);
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QString contents = QString::fromUtf8(f.readAll());
+            int pos = contents.indexOf(oldStr);
+            if (pos >= 0)
+                editLine = contents.left(pos).count('\n') + 1;
+        }
+    }
+
     // Card container
     html += QStringLiteral(
         "\n\n<table cellspacing='0' cellpadding='0' style='width:100%%;margin:6px 0;'><tr><td>"
         "<div style='background:#0e0e0e;border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;'>"
         // Header bar with file name
         "<div style='background:#141414;padding:4px 8px;border-bottom:1px solid #2a2a2a;'>"
-        "<a href='cccpp://open?file=%1' style='color:#89b4fa;text-decoration:none;font-size:11px;"
+        "<a href='cccpp://open?file=%1&line=%3' style='color:#89b4fa;text-decoration:none;font-size:11px;"
         "font-family:Menlo,monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
-        .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped());
+        .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine));
 
     // Code diff area
     html += "<div style='padding:2px 0;font-family:Menlo,monospace;font-size:12px;line-height:1.4;'>";

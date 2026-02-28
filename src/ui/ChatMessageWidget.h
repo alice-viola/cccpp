@@ -29,7 +29,7 @@ signals:
     void revertRequested(int turnId);
     void acceptRequested(int turnId);
     void rejectRequested(int turnId);
-    void fileNavigationRequested(const QString &filePath);
+    void fileNavigationRequested(const QString &filePath, int line);
 
 private:
     void applyStyle();

@@ -110,9 +110,11 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
 
     connect(m_contentBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
         if (url.scheme() == "cccpp" && url.host() == "open") {
-            QString file = QUrlQuery(url).queryItemValue("file");
+            QUrlQuery q(url);
+            QString file = q.queryItemValue("file");
+            int line = q.queryItemValue("line").toInt();
             if (!file.isEmpty())
-                emit fileNavigationRequested(file);
+                emit fileNavigationRequested(file, line);
         } else if (url.scheme() == "http" || url.scheme() == "https") {
             QDesktopServices::openUrl(url);
         }

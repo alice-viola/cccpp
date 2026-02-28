@@ -30,6 +30,7 @@ struct ChatTab {
     ThinkingIndicator *thinkingIndicator = nullptr;
     QWidget *welcomeWidget = nullptr;
     QString sessionId;
+    QString pendingEditFile;   // file path from last Edit/Write tool (for deferred refresh)
     int turnId = 0;
     int tabIndex = -1;
 };

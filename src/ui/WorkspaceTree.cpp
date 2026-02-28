@@ -46,10 +46,27 @@ void ChangedFileDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
     // --- Git status badge (letter) ---
     if (m_gitStatus && !m_rootPath.isEmpty()) {
         QString relPath = QDir(m_rootPath).relativeFilePath(path);
-        auto git = m_gitStatus->find(relPath);
-        if (git != m_gitStatus->end()) {
-            QChar letter = gitStatusLetter(git.value());
-            QColor color = gitStatusColor(git.value());
+        bool isDir = m_model->isDir(index);
+
+        // For files: exact match. For directories: scan for any child with status.
+        GitFileStatus displayStatus = GitFileStatus::Unmodified;
+        if (!isDir) {
+            auto git = m_gitStatus->find(relPath);
+            if (git != m_gitStatus->end())
+                displayStatus = git.value();
+        } else {
+            QString prefix = relPath + '/';
+            for (auto it = m_gitStatus->constBegin(); it != m_gitStatus->constEnd(); ++it) {
+                if (it.key().startsWith(prefix)) {
+                    displayStatus = it.value();
+                    break;  // any child is enough to mark the directory
+                }
+            }
+        }
+
+        if (displayStatus != GitFileStatus::Unmodified) {
+            QChar letter = gitStatusLetter(displayStatus);
+            QColor color = gitStatusColor(displayStatus);
             if (!letter.isNull()) {
                 painter->save();
                 QFont f = option.font;
