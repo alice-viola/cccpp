@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
+#include <QUuid>
 #include <QDebug>
 
 ClaudeProcess::ClaudeProcess(QObject *parent)
@@ -169,13 +170,16 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     args << "--output-format" << "stream-json";
     args << "--verbose";
     args << "--include-partial-messages";
-    args << "--no-session-persistence";
 
     if (!m_model.isEmpty())
         args << "--model" << m_model;
 
-    if (!m_sessionId.isEmpty())
+    if (!m_sessionId.isEmpty()) {
         args << "--resume" << m_sessionId;
+    } else {
+        // Force a fresh session to prevent auto-resuming old sessions from other projects
+        args << "--session-id" << QUuid::createUuid().toString(QUuid::WithoutBraces);
+    }
 
     if (m_mode == "ask") {
         args << "--tools" << "Read,Glob,Grep";
