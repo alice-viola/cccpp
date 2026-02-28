@@ -10,6 +10,7 @@
 
 class InputBar;
 class ModeSelector;
+class ModelSelector;
 class ChatMessageWidget;
 class ToolCallGroupWidget;
 class ClaudeProcess;
@@ -47,6 +48,7 @@ public:
 
     InputBar *inputBar() const { return m_inputBar; }
     ModeSelector *modeSelector() const { return m_modeSelector; }
+    ModelSelector *modelSelector() const { return m_modelSelector; }
     int tabCount() const { return m_tabs.size(); }
 
 signals:
@@ -73,6 +75,7 @@ private:
     QPushButton *m_historyBtn;
     InputBar *m_inputBar;
     ModeSelector *m_modeSelector;
+    ModelSelector *m_modelSelector;
     QMap<int, ChatTab> m_tabs;
 
     SessionManager *m_sessionMgr = nullptr;

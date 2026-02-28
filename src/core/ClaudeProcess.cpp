@@ -32,6 +32,11 @@ void ClaudeProcess::setMode(const QString &mode)
     m_mode = mode;
 }
 
+void ClaudeProcess::setModel(const QString &model)
+{
+    m_model = model;
+}
+
 void ClaudeProcess::sendMessage(const QString &message)
 {
     if (m_process && m_process->state() != QProcess::NotRunning) {
@@ -164,6 +169,10 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     args << "--output-format" << "stream-json";
     args << "--verbose";
     args << "--include-partial-messages";
+    args << "--no-session-persistence";
+
+    if (!m_model.isEmpty())
+        args << "--model" << m_model;
 
     if (!m_sessionId.isEmpty())
         args << "--resume" << m_sessionId;

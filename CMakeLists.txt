@@ -55,6 +55,7 @@ set(UI_SOURCES
     src/ui/ToolCallGroupWidget.cpp
     src/ui/InputBar.cpp
     src/ui/ModeSelector.cpp
+    src/ui/ModelSelector.cpp
     src/ui/TerminalWidget.cpp
     src/ui/TerminalPanel.cpp
     src/ui/GitPanel.cpp

@@ -16,6 +16,7 @@ public:
     void setWorkingDirectory(const QString &dir);
     void setSessionId(const QString &id);
     void setMode(const QString &mode); // "agent", "ask", "plan"
+    void setModel(const QString &model); // e.g. "claude-sonnet-4-6"
 
     void sendMessage(const QString &message);
     void cancel();
@@ -42,5 +43,6 @@ private:
     QString m_workingDir;
     QString m_sessionId;
     QString m_mode = "agent";
+    QString m_model;
     QByteArray m_stdoutBuffer;
 };

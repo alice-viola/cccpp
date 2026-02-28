@@ -1,6 +1,7 @@
 #include "ui/ChatPanel.h"
 #include "ui/InputBar.h"
 #include "ui/ModeSelector.h"
+#include "ui/ModelSelector.h"
 #include "ui/ChatMessageWidget.h"
 #include "ui/ToolCallGroupWidget.h"
 #include "core/ClaudeProcess.h"
@@ -40,8 +41,18 @@ ChatPanel::ChatPanel(QWidget *parent)
 
     mainLayout->addWidget(m_tabWidget, 1);
 
+    // Mode + Model selectors in a row
+    auto *selectorRow = new QWidget(this);
+    auto *selectorLayout = new QHBoxLayout(selectorRow);
+    selectorLayout->setContentsMargins(0, 0, 0, 0);
+    selectorLayout->setSpacing(0);
+
     m_modeSelector = new ModeSelector(this);
-    mainLayout->addWidget(m_modeSelector);
+    m_modelSelector = new ModelSelector(this);
+    selectorLayout->addWidget(m_modeSelector);
+    selectorLayout->addWidget(m_modelSelector);
+
+    mainLayout->addWidget(selectorRow);
 
     m_inputBar = new InputBar(this);
     mainLayout->addWidget(m_inputBar);
@@ -395,6 +406,7 @@ void ChatPanel::onSendRequested(const QString &text)
     addMessageToTab(tab, tab.currentAssistantMsg);
 
     tab.process->setMode(m_modeSelector->currentMode());
+    tab.process->setModel(m_modelSelector->currentModelId());
     if (!tab.sessionId.startsWith("pending-"))
         tab.process->setSessionId(tab.sessionId);
 
