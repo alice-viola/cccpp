@@ -1,0 +1,163 @@
+/* CCCPP Dark Theme */
+
+* {
+    font-family: "Helvetica Neue", sans-serif;
+    font-size: 13px;
+}
+
+QMainWindow, QWidget {
+    background: #1a1a1a;
+    color: #cdd6f4;
+}
+
+/* Scrollbars — thin, minimal */
+QScrollBar:vertical {
+    background: transparent;
+    width: 5px;
+    border: none;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #333;
+    border-radius: 2px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #444; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none; height: 0; border: none;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 5px;
+    border: none;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #333;
+    border-radius: 2px;
+    min-width: 20px;
+}
+QScrollBar::handle:horizontal:hover { background: #444; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none; width: 0; border: none;
+}
+
+/* Menu */
+QMenuBar {
+    background: #161616;
+    color: #999;
+    border-bottom: 1px solid #222;
+    font-size: 13px;
+    padding: 1px 0;
+}
+QMenuBar::item { padding: 3px 8px; border-radius: 3px; }
+QMenuBar::item:selected { background: #252525; color: #cdd6f4; }
+QMenu {
+    background: #1a1a1a;
+    color: #cdd6f4;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 4px;
+}
+QMenu::item { padding: 5px 20px 5px 10px; border-radius: 3px; }
+QMenu::item:selected { background: #252525; }
+QMenu::separator { height: 1px; background: #222; margin: 3px 6px; }
+
+/* Splitter — subtle divider */
+QSplitter::handle { background: #222; width: 1px; }
+
+/* Tooltips */
+QToolTip {
+    background: #252525;
+    color: #cdd6f4;
+    border: 1px solid #333;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+/* Tab Widget — consistent across code editor and chat */
+QTabWidget::pane { border: none; background: #1a1a1a; }
+QTabBar {
+    background: #161616;
+    border-bottom: 1px solid #222;
+    qproperty-drawBase: 0;
+}
+QTabBar::tab {
+    background: transparent;
+    color: #666;
+    border: none;
+    padding: 4px 12px;
+    font-size: 11px;
+    min-width: 40px;
+    margin: 0;
+}
+QTabBar::tab:selected {
+    color: #cdd6f4;
+    border-bottom: 2px solid #888;
+}
+QTabBar::tab:hover:!selected { color: #999; }
+QTabBar::close-button { subcontrol-position: right; padding: 2px; }
+
+/* Scroll areas */
+QScrollArea { background: #1a1a1a; border: none; }
+
+/* Tree View */
+QTreeView {
+    background: #161616;
+    color: #999;
+    border: none;
+    border-right: 1px solid #222;
+    font-size: 12px;
+    outline: none;
+}
+QTreeView::item { padding: 1px 0; }
+QTreeView::item:selected { background: #252525; color: #cdd6f4; }
+QTreeView::item:hover { background: #1e1e1e; }
+QTreeView::branch { background: #161616; }
+
+/* Text browser */
+QTextBrowser {
+    background: transparent;
+    color: #cdd6f4;
+    border: none;
+    font-size: 13px;
+    selection-background-color: #333;
+}
+
+/* Text input */
+QTextEdit#chatInput {
+    background: #161616;
+    color: #cdd6f4;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+QTextEdit#chatInput:focus { border-color: #444; }
+
+/* Labels */
+QLabel { background: transparent; }
+
+/* Buttons */
+QPushButton {
+    background: #252525;
+    color: #cdd6f4;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+QPushButton:hover { background: #333; }
+QPushButton:pressed { background: #444; }
+QPushButton:disabled { background: #1a1a1a; color: #333; }
+
+/* Toolbar */
+QToolBar {
+    background: #161616;
+    border: none;
+    border-bottom: 1px solid #222;
+    spacing: 1px;
+}

@@ -1,0 +1,8 @@
+{
+  "name": "cccpp",
+  "version": "0.1.0",
+  "description": "A native C++ UI for Claude Code",
+  "dependencies": [
+    "nlohmann-json"
+  ]
+}
