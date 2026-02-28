@@ -16,5 +16,6 @@ public:
 private:
     QString escapeHtml(const QString &text) const;
     QString processCodeBlocks(const QString &text) const;
+    QString processTables(const QString &text) const;
     QString processInlineFormatting(const QString &text) const;
 };

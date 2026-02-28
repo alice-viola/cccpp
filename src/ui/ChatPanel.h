@@ -78,6 +78,7 @@ private:
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
 
     QTabWidget *m_tabWidget;
+    QPushButton *m_newChatBtn;
     QPushButton *m_historyBtn;
     InputBar *m_inputBar;
     ModeSelector *m_modeSelector;

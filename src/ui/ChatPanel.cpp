@@ -5,6 +5,7 @@
 #include "ui/ChatMessageWidget.h"
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThinkingIndicator.h"
+#include "ui/QuestionWidget.h"
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "core/SessionManager.h"
@@ -31,15 +32,31 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setDocumentMode(true);
 
-    m_historyBtn = new QPushButton("History", this);
-    m_historyBtn->setFixedHeight(26);
-    m_historyBtn->setToolTip("Browse previous chats");
-    m_historyBtn->setStyleSheet(
+    auto cornerBtnStyle = QStringLiteral(
         "QPushButton { background: transparent; color: #6c7086; border: none; "
         "font-size: 11px; padding: 0 8px; }"
         "QPushButton:hover { color: #a6adc8; }");
+
+    auto *cornerWidget = new QWidget(this);
+    auto *cornerLayout = new QHBoxLayout(cornerWidget);
+    cornerLayout->setContentsMargins(0, 0, 0, 0);
+    cornerLayout->setSpacing(0);
+
+    m_newChatBtn = new QPushButton("\xe2\x9e\x95", this);  // ➕
+    m_newChatBtn->setFixedHeight(26);
+    m_newChatBtn->setToolTip("New Chat (Ctrl+N)");
+    m_newChatBtn->setStyleSheet(cornerBtnStyle);
+    connect(m_newChatBtn, &QPushButton::clicked, this, [this] { newChat(); });
+
+    m_historyBtn = new QPushButton("History", this);
+    m_historyBtn->setFixedHeight(26);
+    m_historyBtn->setToolTip("Browse previous chats");
+    m_historyBtn->setStyleSheet(cornerBtnStyle);
     connect(m_historyBtn, &QPushButton::clicked, this, &ChatPanel::showHistoryMenu);
-    m_tabWidget->setCornerWidget(m_historyBtn, Qt::TopRightCorner);
+
+    cornerLayout->addWidget(m_newChatBtn);
+    cornerLayout->addWidget(m_historyBtn);
+    m_tabWidget->setCornerWidget(cornerWidget, Qt::TopRightCorner);
 
     mainLayout->addWidget(m_tabWidget, 1);
 
@@ -160,6 +177,34 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             }
         }
 
+        // AskUserQuestion — show interactive question widget
+        if (name == "AskUserQuestion") {
+            auto *questionWidget = new QuestionWidget(input);
+            if (t.messagesLayout) {
+                int count = t.messagesLayout->count();
+                t.messagesLayout->insertWidget(count - 1, questionWidget);
+            }
+            // When user answers, resume the conversation with their response
+            connect(questionWidget, &QuestionWidget::answered, this,
+                    [this, tabIdx](const QString &response) {
+                if (!m_tabs.contains(tabIdx)) return;
+                auto &tab = m_tabs[tabIdx];
+                // Send the answer as a follow-up message using --resume
+                tab.process->setMode(m_modeSelector->currentMode());
+                tab.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+                tab.currentAssistantMsg->setTurnId(tab.turnId);
+                if (tab.messagesLayout) {
+                    int count = tab.messagesLayout->count();
+                    tab.messagesLayout->insertWidget(count - 1, tab.currentAssistantMsg);
+                }
+                setProcessingState(true);
+                tab.process->sendMessage(response);
+            });
+            scrollTabToBottom(t);
+            // Don't add to tool group — it's shown separately
+            goto persistTool;
+        }
+
         // Create or reuse the group widget for this turn
         if (!t.currentToolGroup) {
             t.currentToolGroup = new ToolCallGroupWidget;
@@ -171,7 +216,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         t.currentToolGroup->addToolCall(info);
         scrollTabToBottom(t);
 
-        // Persist
+        persistTool:
         if (m_database) {
             MessageRecord rec;
             rec.sessionId = t.sessionId;

@@ -57,6 +57,7 @@ set(UI_SOURCES
     src/ui/ModeSelector.cpp
     src/ui/ModelSelector.cpp
     src/ui/TerminalWidget.cpp
+    src/ui/QuestionWidget.cpp
     src/ui/TerminalPanel.cpp
     src/ui/GitPanel.cpp
     src/ui/DiffSplitView.cpp

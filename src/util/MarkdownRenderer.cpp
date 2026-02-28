@@ -13,15 +13,18 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     // Process code blocks first (before other formatting touches backticks)
     result = processCodeBlocks(result);
 
+    // Process markdown tables (before inline formatting so bold/italic still works in cells)
+    result = processTables(result);
+
     // Process headers, bold, italic, etc.
     result = processInlineFormatting(result);
 
     // Convert double newlines to paragraph breaks, single to <br>
     // But not inside <pre> blocks
-    QStringList parts = result.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>)"));
+    QStringList parts = result.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>|<table[^>]*>[\\s\\S]*?</table>)"));
     QString final;
     for (const QString &part : parts) {
-        if (part.startsWith("<pre")) {
+        if (part.startsWith("<pre") || part.startsWith("<table")) {
             final += part;
         } else {
             QString p = part;
@@ -90,6 +93,123 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
     result.replace(inlineCode,
         "<code style='background:#252525;color:#cba6f7;padding:2px 5px;"
         "border-radius:4px;font-family:\"Menlo\",monospace;font-size:12px;'>\\1</code>");
+
+    return result;
+}
+
+static QStringList splitTableRow(const QString &row)
+{
+    QString trimmed = row.trimmed();
+    if (trimmed.startsWith('|')) trimmed = trimmed.mid(1);
+    if (trimmed.endsWith('|')) trimmed.chop(1);
+    return trimmed.split('|');
+}
+
+static bool isTableSeparator(const QString &line)
+{
+    QString trimmed = line.trimmed();
+    if (!trimmed.contains('-') || !trimmed.contains('|'))
+        return false;
+
+    QStringList cells = splitTableRow(trimmed);
+    if (cells.isEmpty())
+        return false;
+
+    static QRegularExpression cellPat("^\\s*:?-{3,}:?\\s*$");
+    for (const QString &cell : cells) {
+        if (!cellPat.match(cell).hasMatch())
+            return false;
+    }
+    return true;
+}
+
+static QStringList parseAlignments(const QString &separator)
+{
+    QStringList cells = splitTableRow(separator);
+    QStringList aligns;
+    for (const QString &cell : cells) {
+        QString c = cell.trimmed();
+        bool l = c.startsWith(':');
+        bool r = c.endsWith(':');
+        if (l && r)        aligns << "center";
+        else if (r)         aligns << "right";
+        else                aligns << "left";
+    }
+    return aligns;
+}
+
+QString MarkdownRenderer::processTables(const QString &text) const
+{
+    QStringList parts = text.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>)"));
+    QString result;
+
+    for (const QString &part : parts) {
+        if (part.startsWith("<pre")) {
+            result += part;
+            continue;
+        }
+
+        QStringList lines = part.split('\n');
+        QStringList output;
+        int i = 0;
+
+        while (i < lines.size()) {
+            QString line = lines[i].trimmed();
+
+            if (i + 1 < lines.size()
+                && line.contains('|') && line.count('|') >= 2
+                && isTableSeparator(lines[i + 1])) {
+
+                auto headerCells = splitTableRow(line);
+                auto aligns = parseAlignments(lines[i + 1].trimmed());
+
+                QString table = QStringLiteral(
+                    "<table cellspacing='0' cellpadding='6' "
+                    "style='border-collapse:collapse;margin:6px 0;border:1px solid #45475a;'>");
+
+                table += QStringLiteral("<tr>");
+                for (int c = 0; c < headerCells.size(); ++c) {
+                    QString a = c < aligns.size() ? aligns[c] : QStringLiteral("left");
+                    table += QStringLiteral(
+                        "<td style='border:1px solid #45475a;padding:4px 10px;"
+                        "text-align:%1;font-weight:bold;background:#1a1a1a;'>%2</td>")
+                        .arg(a, headerCells[c].trimmed());
+                }
+                table += QStringLiteral("</tr>");
+
+                i += 2;
+                bool even = false;
+                while (i < lines.size()) {
+                    QString dataLine = lines[i].trimmed();
+                    if (dataLine.isEmpty() || !dataLine.contains('|'))
+                        break;
+
+                    auto cells = splitTableRow(dataLine);
+                    QString bg = even ? QStringLiteral("#141414") : QStringLiteral("transparent");
+                    table += QStringLiteral("<tr>");
+                    for (int c = 0; c < cells.size(); ++c) {
+                        QString a = c < aligns.size() ? aligns[c] : QStringLiteral("left");
+                        table += QStringLiteral(
+                            "<td style='border:1px solid #45475a;padding:4px 10px;"
+                            "text-align:%1;background:%2;'>%3</td>")
+                            .arg(a, bg, cells[c].trimmed());
+                    }
+                    table += QStringLiteral("</tr>");
+                    even = !even;
+                    ++i;
+                }
+
+                table += QStringLiteral("</table>");
+                output << table;
+                continue;
+            }
+
+            output << lines[i];
+            ++i;
+        }
+
+        result += output.join('\n');
+    }
 
     return result;
 }
