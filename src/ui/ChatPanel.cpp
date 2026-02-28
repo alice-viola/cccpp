@@ -329,12 +329,6 @@ void ChatPanel::restoreSession(const QString &sessionId)
     tab.process->setWorkingDirectory(m_workingDir);
     tab.process->setSessionId(sessionId);
 
-    // ThinkingIndicator for restored sessions (no welcome widget — session has messages)
-    auto *scrollContent = tab.scrollArea->widget();
-    auto *indicator = new ThinkingIndicator(scrollContent);
-    tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
-    tab.thinkingIndicator = indicator;
-
     auto messages = m_database->loadMessages(sessionId);
 
     // Collect messages per turn
@@ -389,6 +383,12 @@ void ChatPanel::restoreSession(const QString &sessionId)
         }
     }
     tab.turnId = maxTurn;
+
+    // ThinkingIndicator — insert AFTER messages so it ends up just before the stretch
+    auto *scrollContent = tab.scrollArea->widget();
+    auto *indicator = new ThinkingIndicator(scrollContent);
+    tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
+    tab.thinkingIndicator = indicator;
 
     SessionInfo info = m_sessionMgr ? m_sessionMgr->sessionInfo(sessionId) : SessionInfo();
     QString title = info.title.isEmpty() ? sessionId.left(8) : info.title;
