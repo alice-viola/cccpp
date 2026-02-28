@@ -68,9 +68,12 @@ InputBar::InputBar(QWidget *parent)
     outerLayout->addLayout(inputRow);
 
     connect(m_sendBtn, &QPushButton::clicked, this, [this] {
+        if (m_processing) {
+            emit stopRequested();
+            return;
+        }
         QString t = text().trimmed();
         if (!t.isEmpty()) {
-            // Check for slash commands
             if (t.startsWith("/")) {
                 int spacePos = t.indexOf(' ');
                 QString cmd = (spacePos > 0) ? t.left(spacePos) : t;
@@ -153,7 +156,30 @@ void InputBar::clearAttachments()
 void InputBar::setEnabled(bool enabled)
 {
     m_input->setEnabled(enabled);
-    m_sendBtn->setEnabled(enabled);
+    if (!m_processing)
+        m_sendBtn->setEnabled(enabled);
+}
+
+void InputBar::setProcessing(bool processing)
+{
+    m_processing = processing;
+    auto &p = ThemeManager::instance().palette();
+
+    if (processing) {
+        m_input->setEnabled(false);
+        m_sendBtn->setEnabled(true);
+        m_sendBtn->setText("\xe2\x96\xa0"); // ■ (stop square)
+        m_sendBtn->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 14px; font-size: 14px; font-weight: bold; }"
+            "QPushButton:hover { background: %3; }")
+            .arg(p.red.name(), p.on_accent.name(), p.maroon.name()));
+    } else {
+        m_input->setEnabled(true);
+        m_sendBtn->setEnabled(true);
+        m_sendBtn->setText("\xe2\x86\x91"); // ↑ (send arrow)
+        applyThemeColors();
+    }
 }
 
 void InputBar::setPlaceholder(const QString &text)

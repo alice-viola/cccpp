@@ -168,9 +168,8 @@ void WorkspaceTree::applyThemeColors()
     const auto &pal = ThemeManager::instance().palette();
     m_header->setStyleSheet(QStringLiteral(
         "QLabel { background: %1; color: %2; font-size: 11px; "
-        "font-weight: 600; letter-spacing: 0.5px; padding-left: 10px; "
-        "border-bottom: 1px solid %3; }")
-        .arg(pal.bg_window.name(), pal.text_secondary.name(), pal.border_subtle.name()));
+        "font-weight: 600; letter-spacing: 0.5px; padding-left: 10px; }")
+        .arg(pal.bg_window.name(), pal.text_secondary.name()));
 }
 
 void WorkspaceTree::setRootPath(const QString &path)

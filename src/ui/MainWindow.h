@@ -16,7 +16,6 @@ class GitPanel;
 class SearchPanel;
 class CheckpointTimeline;
 class SessionManager;
-class SnapshotManager;
 class DiffEngine;
 class Database;
 class GitManager;
@@ -73,7 +72,6 @@ private:
     CheckpointTimeline *m_checkpointTimeline;
 
     SessionManager *m_sessionMgr;
-    SnapshotManager *m_snapshotMgr;
     DiffEngine *m_diffEngine;
     Database *m_database;
     GitManager *m_gitManager;

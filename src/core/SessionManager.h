@@ -22,6 +22,7 @@ public:
     void registerSession(const QString &sessionId, const SessionInfo &info);
     void updateSessionId(const QString &tempId, const QString &realId);
     void setSessionTitle(const QString &sessionId, const QString &title);
+    void removeSession(const QString &sessionId);
 
     SessionInfo sessionInfo(const QString &sessionId) const;
     QList<SessionInfo> allSessions() const;
@@ -30,6 +31,7 @@ public:
 signals:
     void sessionCreated(const QString &sessionId);
     void sessionUpdated(const QString &sessionId);
+    void sessionDeleted(const QString &sessionId);
 
 private:
     QMap<QString, SessionInfo> m_sessions;

@@ -68,15 +68,16 @@ void Database::createTables()
         ")");
 
     q.exec(
-        "CREATE TABLE IF NOT EXISTS snapshots ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "  session_id TEXT REFERENCES sessions(session_id),"
-        "  turn_id INTEGER,"
-        "  file_path TEXT,"
-        "  content BLOB,"
-        "  git_stash TEXT,"
-        "  timestamp INTEGER"
+        "CREATE TABLE IF NOT EXISTS checkpoints ("
+        "  session_id TEXT NOT NULL REFERENCES sessions(session_id),"
+        "  turn_id INTEGER NOT NULL,"
+        "  uuid TEXT NOT NULL,"
+        "  timestamp INTEGER,"
+        "  PRIMARY KEY (session_id, turn_id)"
         ")");
+
+    // Drop legacy snapshots table if it exists (replaced by CLI checkpointing)
+    q.exec("DROP TABLE IF EXISTS snapshots");
 }
 
 void Database::saveSession(const SessionInfo &info)
@@ -120,7 +121,7 @@ void Database::deleteSession(const QString &sessionId)
     q.addBindValue(sessionId);
     q.exec();
 
-    q.prepare("DELETE FROM snapshots WHERE session_id = ?");
+    q.prepare("DELETE FROM checkpoints WHERE session_id = ?");
     q.addBindValue(sessionId);
     q.exec();
 
@@ -153,7 +154,11 @@ void Database::updateMessageSessionId(const QString &oldSessionId, const QString
     q.addBindValue(oldSessionId);
     q.exec();
 
-    // Also update the sessions table
+    q.prepare("UPDATE checkpoints SET session_id = ? WHERE session_id = ?");
+    q.addBindValue(newSessionId);
+    q.addBindValue(oldSessionId);
+    q.exec();
+
     q.prepare("UPDATE sessions SET session_id = ? WHERE session_id = ?");
     q.addBindValue(newSessionId);
     q.addBindValue(oldSessionId);
@@ -183,49 +188,46 @@ QList<MessageRecord> Database::loadMessages(const QString &sessionId)
     return list;
 }
 
-void Database::saveSnapshot(const SnapshotRecord &snap)
+void Database::saveCheckpoint(const CheckpointRecord &cp)
 {
     QSqlQuery q(m_db);
     q.prepare(
-        "INSERT INTO snapshots (session_id, turn_id, file_path, content, git_stash, timestamp) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
-    q.addBindValue(snap.sessionId);
-    q.addBindValue(snap.turnId);
-    q.addBindValue(snap.filePath);
-    q.addBindValue(snap.content);
-    q.addBindValue(snap.gitStash);
-    q.addBindValue(snap.timestamp);
+        "INSERT OR REPLACE INTO checkpoints (session_id, turn_id, uuid, timestamp) "
+        "VALUES (?, ?, ?, ?)");
+    q.addBindValue(cp.sessionId);
+    q.addBindValue(cp.turnId);
+    q.addBindValue(cp.uuid);
+    q.addBindValue(cp.timestamp);
     q.exec();
 }
 
-QList<SnapshotRecord> Database::loadSnapshots(const QString &sessionId, int turnId)
+QList<CheckpointRecord> Database::loadCheckpoints(const QString &sessionId)
 {
-    QList<SnapshotRecord> list;
+    QList<CheckpointRecord> list;
     QSqlQuery q(m_db);
-    q.prepare("SELECT id, session_id, turn_id, file_path, content, git_stash, timestamp "
-              "FROM snapshots WHERE session_id = ? AND turn_id = ?");
+    q.prepare("SELECT session_id, turn_id, uuid, timestamp "
+              "FROM checkpoints WHERE session_id = ? ORDER BY turn_id ASC");
     q.addBindValue(sessionId);
-    q.addBindValue(turnId);
     q.exec();
     while (q.next()) {
-        SnapshotRecord snap;
-        snap.id = q.value(0).toInt();
-        snap.sessionId = q.value(1).toString();
-        snap.turnId = q.value(2).toInt();
-        snap.filePath = q.value(3).toString();
-        snap.content = q.value(4).toByteArray();
-        snap.gitStash = q.value(5).toString();
-        snap.timestamp = q.value(6).toLongLong();
-        list.append(snap);
+        CheckpointRecord cp;
+        cp.sessionId = q.value(0).toString();
+        cp.turnId = q.value(1).toInt();
+        cp.uuid = q.value(2).toString();
+        cp.timestamp = q.value(3).toLongLong();
+        list.append(cp);
     }
     return list;
 }
 
-void Database::deleteSnapshots(const QString &sessionId, int turnId)
+QString Database::checkpointUuid(const QString &sessionId, int turnId)
 {
     QSqlQuery q(m_db);
-    q.prepare("DELETE FROM snapshots WHERE session_id = ? AND turn_id = ?");
+    q.prepare("SELECT uuid FROM checkpoints WHERE session_id = ? AND turn_id = ?");
     q.addBindValue(sessionId);
     q.addBindValue(turnId);
     q.exec();
+    if (q.next())
+        return q.value(0).toString();
+    return {};
 }

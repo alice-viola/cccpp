@@ -30,6 +30,7 @@ public:
     QString text() const;
     void clear();
     void setEnabled(bool enabled);
+    void setProcessing(bool processing);
     void setPlaceholder(const QString &text);
 
     void setWorkspacePath(const QString &path);
@@ -44,6 +45,7 @@ public:
 
 signals:
     void sendRequested(const QString &text);
+    void stopRequested();
     void slashCommand(const QString &command, const QString &args);
 
 protected:
@@ -78,4 +80,5 @@ private:
     int m_atTriggerPos = -1;
     bool m_popupActive = false;
     bool m_slashPopupActive = false;
+    bool m_processing = false;
 };

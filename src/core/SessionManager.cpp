@@ -52,6 +52,12 @@ void SessionManager::setSessionTitle(const QString &sessionId, const QString &ti
     }
 }
 
+void SessionManager::removeSession(const QString &sessionId)
+{
+    if (m_sessions.remove(sessionId) > 0)
+        emit sessionDeleted(sessionId);
+}
+
 SessionInfo SessionManager::sessionInfo(const QString &sessionId) const
 {
     return m_sessions.value(sessionId);

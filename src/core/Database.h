@@ -18,13 +18,10 @@ struct MessageRecord {
     qint64 timestamp = 0;
 };
 
-struct SnapshotRecord {
-    int id = 0;
+struct CheckpointRecord {
     QString sessionId;
     int turnId = 0;
-    QString filePath;
-    QByteArray content;
-    QString gitStash;
+    QString uuid;
     qint64 timestamp = 0;
 };
 
@@ -47,10 +44,10 @@ public:
     QList<MessageRecord> loadMessages(const QString &sessionId);
     void updateMessageSessionId(const QString &oldSessionId, const QString &newSessionId);
 
-    // Snapshots
-    void saveSnapshot(const SnapshotRecord &snap);
-    QList<SnapshotRecord> loadSnapshots(const QString &sessionId, int turnId);
-    void deleteSnapshots(const QString &sessionId, int turnId);
+    // Checkpoints (CLI-backed, stores only the UUID per turn)
+    void saveCheckpoint(const CheckpointRecord &cp);
+    QList<CheckpointRecord> loadCheckpoints(const QString &sessionId);
+    QString checkpointUuid(const QString &sessionId, int turnId);
 
 private:
     void createTables();

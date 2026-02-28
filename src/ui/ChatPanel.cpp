@@ -12,7 +12,6 @@
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "core/SessionManager.h"
-#include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
 #include "core/Database.h"
 #include "util/JsonUtils.h"
@@ -22,6 +21,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMenu>
+#include <QMessageBox>
+#include <QWidgetAction>
+#include <QTabBar>
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
@@ -75,6 +77,12 @@ ChatPanel::ChatPanel(QWidget *parent)
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
+    connect(m_inputBar, &InputBar::stopRequested, this, [this] {
+        int idx = m_tabWidget->currentIndex();
+        if (m_tabs.contains(idx) && m_tabs[idx].processing) {
+            m_tabs[idx].process->cancel();
+        }
+    });
     connect(m_inputBar, &InputBar::slashCommand, this, &ChatPanel::onSlashCommand);
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         refreshInputBarForCurrentTab();
@@ -92,6 +100,21 @@ ChatPanel::ChatPanel(QWidget *parent)
             reindexed[i] = it.value();
         }
         m_tabs = reindexed;
+    });
+
+    m_tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tabWidget->tabBar(), &QWidget::customContextMenuRequested,
+            this, [this](const QPoint &pos) {
+        int tabIdx = m_tabWidget->tabBar()->tabAt(pos);
+        if (tabIdx < 0 || !m_tabs.contains(tabIdx)) return;
+        QString sid = m_tabs[tabIdx].sessionId;
+
+        QMenu menu(this);
+        auto *delAction = menu.addAction("Delete Chat");
+        connect(delAction, &QAction::triggered, this, [this, sid] {
+            deleteSession(sid);
+        });
+        menu.exec(m_tabWidget->tabBar()->mapToGlobal(pos));
     });
 
     applyThemeColors();
@@ -112,7 +135,6 @@ void ChatPanel::applyThemeColors()
 }
 
 void ChatPanel::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; }
-void ChatPanel::setSnapshotManager(SnapshotManager *snap) { m_snapshotMgr = snap; }
 void ChatPanel::setDiffEngine(DiffEngine *diff) { m_diffEngine = diff; }
 void ChatPanel::setDatabase(Database *db) { m_database = db; }
 void ChatPanel::setWorkingDirectory(const QString &dir) {
@@ -136,6 +158,20 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (t.currentAssistantMsg)
             t.currentAssistantMsg->appendContent(text);
         scrollTabToBottom(t);
+    });
+
+    connect(proc->streamParser(), &StreamParser::checkpointReceived, this,
+            [this, tabIdx](const QString &uuid) {
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        if (!uuid.isEmpty() && m_database) {
+            CheckpointRecord cp;
+            cp.sessionId = t.sessionId;
+            cp.turnId = t.turnId;
+            cp.uuid = uuid;
+            cp.timestamp = QDateTime::currentSecsSinceEpoch();
+            m_database->saveCheckpoint(cp);
+        }
     });
 
     connect(proc->streamParser(), &StreamParser::toolUseStarted, this,
@@ -169,8 +205,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             info.oldString = JsonUtils::getString(input, "old_string");
             info.newString = JsonUtils::getString(input, "new_string");
 
-            if (m_snapshotMgr)
-                m_snapshotMgr->recordEditOldString(info.filePath, info.oldString);
             if (m_diffEngine)
                 m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString);
             t.pendingEditFile = info.filePath;
@@ -188,15 +222,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                              JsonUtils::getString(input, "contents"));
             if (m_diffEngine)
                 m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
-
-            // Record old file content for snapshot (empty string if file is new)
-            if (m_snapshotMgr) {
-                QString oldContent;
-                QFile existingFile(info.filePath);
-                if (existingFile.open(QIODevice::ReadOnly | QIODevice::Text))
-                    oldContent = QString::fromUtf8(existingFile.readAll());
-                m_snapshotMgr->recordEditOldString(info.filePath, oldContent);
-            }
 
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
@@ -292,17 +317,21 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (!m_tabs.contains(tabIdx)) return;
         auto &t = m_tabs[tabIdx];
 
-        if (m_snapshotMgr)
-            m_snapshotMgr->commitTurn();
+        bool wasCancelled = (exitCode == 15 || exitCode == 9
+                             || exitCode == 143 || exitCode == 137);
 
         if (t.currentToolGroup) {
             t.currentToolGroup->finalize();
             t.currentToolGroup = nullptr;
         }
 
-        if (t.currentAssistantMsg && t.currentAssistantMsg->rawContent().isEmpty()) {
-            t.currentAssistantMsg->appendContent(
-                QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
+        if (t.currentAssistantMsg) {
+            if (wasCancelled) {
+                t.currentAssistantMsg->appendContent("\n\n*\\[Stopped by user\\]*");
+            } else if (t.currentAssistantMsg->rawContent().isEmpty()) {
+                t.currentAssistantMsg->appendContent(
+                    QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
+            }
         }
 
         if (m_database && t.currentAssistantMsg) {
@@ -534,10 +563,6 @@ void ChatPanel::onSendRequested(const QString &text)
 
     tab.turnId++;
     emit aboutToSendMessage();
-    if (m_snapshotMgr) {
-        m_snapshotMgr->setSessionId(tab.sessionId);
-        m_snapshotMgr->beginTurn(tab.turnId);
-    }
 
     if (m_database) {
         MessageRecord rec;
@@ -602,8 +627,44 @@ void ChatPanel::onSlashCommand(const QString &command, const QString &args)
 
 void ChatPanel::onRevertRequested(int turnId)
 {
-    if (m_snapshotMgr)
-        m_snapshotMgr->revertTurn(turnId);
+    if (!m_database) return;
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) return;
+    const auto &tab = m_tabs[idx];
+
+    QString uuid = m_database->checkpointUuid(tab.sessionId, turnId);
+    if (!uuid.isEmpty())
+        rewindToCheckpoint(uuid);
+}
+
+void ChatPanel::rewindToCheckpoint(const QString &checkpointUuid)
+{
+    if (checkpointUuid.isEmpty()) return;
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) return;
+    auto &tab = m_tabs[idx];
+    if (!tab.process || tab.sessionId.isEmpty()) return;
+
+    tab.process->setSessionId(tab.sessionId);
+
+    connect(tab.process, &ClaudeProcess::rewindCompleted, this,
+            [this](bool success) {
+        emit rewindCompleted(success);
+    }, Qt::SingleShotConnection);
+
+    tab.process->rewindFiles(checkpointUuid);
+}
+
+void ChatPanel::rewindCurrentTurn()
+{
+    if (!m_database) return;
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) return;
+    const auto &tab = m_tabs[idx];
+
+    auto checkpoints = m_database->loadCheckpoints(tab.sessionId);
+    if (!checkpoints.isEmpty())
+        rewindToCheckpoint(checkpoints.last().uuid);
 }
 
 QString ChatPanel::buildContextPreamble(const QString &userText)
@@ -848,7 +909,7 @@ void ChatPanel::refreshInputBarForCurrentTab()
 {
     int idx = m_tabWidget->currentIndex();
     bool busy = m_tabs.contains(idx) && m_tabs[idx].processing;
-    m_inputBar->setEnabled(!busy);
+    m_inputBar->setProcessing(busy);
     m_inputBar->setPlaceholder(busy ? "Claude is thinking..."
                                     : "Ask Claude anything... (@ to mention files, / for commands)");
     updateInputBarContext();
@@ -913,6 +974,43 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
     return html;
 }
 
+void ChatPanel::deleteSession(const QString &sessionId)
+{
+    auto answer = QMessageBox::question(
+        this, "Delete Chat",
+        "Permanently delete this chat and all its messages?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->sessionId == sessionId) {
+            if (it->process && it->process->isRunning())
+                it->process->cancel();
+            int idx = it->tabIndex;
+            m_tabs.erase(it);
+            m_tabWidget->removeTab(idx);
+
+            QMap<int, ChatTab> reindexed;
+            int i = 0;
+            for (auto jt = m_tabs.begin(); jt != m_tabs.end(); ++jt, ++i) {
+                jt.value().tabIndex = i;
+                reindexed[i] = jt.value();
+            }
+            m_tabs = reindexed;
+            break;
+        }
+    }
+
+    if (m_database)
+        m_database->deleteSession(sessionId);
+    if (m_sessionMgr)
+        m_sessionMgr->removeSession(sessionId);
+
+    if (m_tabs.isEmpty())
+        newChat();
+}
+
 void ChatPanel::showHistoryMenu()
 {
     if (!m_database) return;
@@ -921,6 +1019,7 @@ void ChatPanel::showHistoryMenu()
     if (sessions.isEmpty()) return;
 
     QMenu menu(this);
+    auto &thm = ThemeManager::instance();
 
     QSet<QString> openIds;
     for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it)
@@ -939,10 +1038,49 @@ void ChatPanel::showHistoryMenu()
         QDateTime dt = QDateTime::fromSecsSinceEpoch(session.updatedAt);
         label += "  " + dt.toString("MMM d, hh:mm");
 
-        auto *action = menu.addAction(label);
+        auto *row = new QWidget;
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(8, 2, 4, 2);
+        layout->setSpacing(4);
+
+        auto *nameBtn = new QPushButton(label, row);
+        nameBtn->setFlat(true);
+        nameBtn->setCursor(Qt::PointingHandCursor);
+        nameBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        nameBtn->setStyleSheet(
+            QStringLiteral(
+                "QPushButton { text-align: left; padding: 4px 4px; border: none;"
+                " color: %1; font-size: 12px; }"
+                "QPushButton:hover { color: %2; }")
+            .arg(thm.hex("text_primary"), thm.hex("blue")));
+
+        auto *delBtn = new QPushButton("\xf0\x9f\x97\x91", row);  // 🗑
+        delBtn->setFixedSize(28, 28);
+        delBtn->setToolTip("Delete chat");
+        delBtn->setCursor(Qt::PointingHandCursor);
+        delBtn->setStyleSheet(
+            QStringLiteral(
+                "QPushButton { border: 1px solid %1; font-size: 14px;"
+                " border-radius: 4px; background: %2; padding: 0; }"
+                "QPushButton:hover { background: %3; border-color: %4; }")
+            .arg(thm.hex("border_standard"), thm.hex("bg_base"),
+                 thm.hex("bg_surface"), thm.hex("red")));
+
+        layout->addWidget(nameBtn, 1);
+        layout->addWidget(delBtn);
+
+        auto *widgetAction = new QWidgetAction(&menu);
+        widgetAction->setDefaultWidget(row);
+        menu.addAction(widgetAction);
+
         QString sid = session.sessionId;
-        connect(action, &QAction::triggered, this, [this, sid] {
+        connect(nameBtn, &QPushButton::clicked, this, [this, &menu, sid] {
+            menu.close();
             restoreSession(sid);
+        });
+        connect(delBtn, &QPushButton::clicked, this, [this, &menu, sid] {
+            menu.close();
+            deleteSession(sid);
         });
 
         if (++count >= 20) break;

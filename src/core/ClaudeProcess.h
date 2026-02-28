@@ -19,6 +19,7 @@ public:
     void setModel(const QString &model); // e.g. "claude-sonnet-4-6"
 
     void sendMessage(const QString &message);
+    void rewindFiles(const QString &checkpointUuid);
     void cancel();
     bool isRunning() const;
 
@@ -29,6 +30,7 @@ signals:
     void started();
     void finished(int exitCode);
     void errorOccurred(const QString &error);
+    void rewindCompleted(bool success);
 
 private slots:
     void onReadyReadStdout();

@@ -197,6 +197,17 @@ StreamEvent StreamParser::parseEvent(const json &j)
         return event;
     }
 
+    // ---- "user" message with checkpoint UUID (from --replay-user-messages) ----
+    if (type == "user") {
+        QString uuid = jstr(j, "uuid");
+        if (uuid.isEmpty() && j.contains("message"))
+            uuid = jstr(j["message"], "uuid");
+        if (!uuid.isEmpty())
+            emit checkpointReceived(uuid);
+        event.type = StreamEvent::Unknown;
+        return event;
+    }
+
     // ---- "assistant" snapshot message ----
     // Contains accumulated content. We use it ONLY for tool_use blocks we haven't seen.
     // Text blocks are already handled by content_block_delta streaming.

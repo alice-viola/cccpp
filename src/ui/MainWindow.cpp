@@ -12,7 +12,6 @@
 #include "ui/SettingsDialog.h"
 #include "ui/InputBar.h"
 #include "core/SessionManager.h"
-#include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
 #include "core/Database.h"
 #include "core/GitManager.h"
@@ -36,7 +35,6 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle("CCCPP - Claude Code C++ UI");
 
     m_sessionMgr = new SessionManager(this);
-    m_snapshotMgr = new SnapshotManager(this);
     m_diffEngine = new DiffEngine(this);
     m_database = new Database(this);
     m_database->open();
@@ -90,10 +88,8 @@ void MainWindow::setupUI()
     m_searchPanel = new SearchPanel(this);
     m_checkpointTimeline = new CheckpointTimeline(this);
     m_checkpointTimeline->setDatabase(m_database);
-    m_checkpointTimeline->setSnapshotManager(m_snapshotMgr);
 
     m_chatPanel->setSessionManager(m_sessionMgr);
-    m_chatPanel->setSnapshotManager(m_snapshotMgr);
     m_chatPanel->setDiffEngine(m_diffEngine);
     m_chatPanel->setDatabase(m_database);
     m_chatPanel->setCodeViewer(m_codeViewer);
@@ -234,28 +230,33 @@ void MainWindow::setupUI()
     });
     connect(m_codeViewer, &CodeViewer::inlineDiffRejected, this,
             [this](const QString &filePath, const QString &, const QString &) {
-        if (m_snapshotMgr)
-            m_snapshotMgr->revertTurn(m_snapshotMgr->currentTurnId());
+        m_chatPanel->rewindCurrentTurn();
         m_codeViewer->hideInlineDiffOverlay();
         m_codeViewer->refreshFile(filePath);
     });
 
-    // Checkpoint timeline restore
-    connect(m_checkpointTimeline, &CheckpointTimeline::restoreRequested, this, [this](int turnId) {
-        if (!m_snapshotMgr) return;
-        QString sid = m_chatPanel->currentSessionId();
-        if (!sid.isEmpty())
-            m_snapshotMgr->setSessionId(sid);
-        bool ok = m_snapshotMgr->revertTurn(turnId);
-        if (ok) {
-            ToastManager::instance().show(
-                QStringLiteral("Restored to turn %1").arg(turnId),
-                ToastType::Success, 2500);
+    // Handle rewind completion (from ChatPanel revert button or CheckpointTimeline)
+    connect(m_chatPanel, &ChatPanel::rewindCompleted, this, [this](bool success) {
+        if (success) {
+            ToastManager::instance().show("Files restored", ToastType::Success, 2500);
+            m_gitManager->refreshStatus();
+            m_checkpointTimeline->refresh();
+            for (const QString &fp : m_codeViewer->openFiles())
+                m_codeViewer->forceReloadFile(fp);
         } else {
-            ToastManager::instance().show(
-                QStringLiteral("No snapshot data for turn %1").arg(turnId),
-                ToastType::Error, 3000);
+            ToastManager::instance().show("Rewind failed", ToastType::Error, 3000);
         }
+    });
+
+    // Checkpoint timeline restore
+    connect(m_checkpointTimeline, &CheckpointTimeline::restoreRequested, this,
+            [this](const QString &checkpointUuid) {
+        if (checkpointUuid.isEmpty()) {
+            ToastManager::instance().show("No checkpoint data available", ToastType::Error, 3000);
+            return;
+        }
+        ToastManager::instance().show("Rewinding files...", ToastType::Info, 2000);
+        m_chatPanel->rewindToCheckpoint(checkpointUuid);
     });
 
     // Git panel: open files on request
@@ -651,9 +652,6 @@ void MainWindow::openWorkspace(const QString &path)
     m_searchPanel->setRootPath(path);
     m_chatPanel->setWorkingDirectory(path);
     m_terminalPanel->setWorkingDirectory(path);
-    m_snapshotMgr->setGitManager(m_gitManager);
-    m_snapshotMgr->setWorkingDirectory(path);
-    m_snapshotMgr->setDatabase(m_database);
     m_gitManager->setWorkingDirectory(path);
     m_codeViewer->setRootPath(path);
 
@@ -814,13 +812,6 @@ void MainWindow::connectGitSignals()
             ToastType::Error, 5000);
     });
 
-    connect(m_snapshotMgr, &SnapshotManager::revertCompleted, this, [this](int) {
-        m_gitManager->refreshStatus();
-        m_checkpointTimeline->refresh();
-        // Force-reload all open files from disk (no "unsaved changes" prompt)
-        for (const QString &filePath : m_codeViewer->openFiles())
-            m_codeViewer->forceReloadFile(filePath);
-    });
 }
 
 void MainWindow::onGitRefresh()

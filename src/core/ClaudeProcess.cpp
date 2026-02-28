@@ -73,9 +73,9 @@ void ClaudeProcess::sendMessage(const QString &message)
             path = p + ":" + path;
     }
     env.insert("PATH", path);
-    // Ensure HOME is set (GUI apps sometimes miss this)
     if (env.value("HOME").isEmpty())
         env.insert("HOME", QDir::homePath());
+    env.insert("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
     m_process->setProcessEnvironment(env);
 
     connect(m_process, &QProcess::readyReadStandardOutput,
@@ -148,7 +148,17 @@ void ClaudeProcess::sendMessage(const QString &message)
         emit errorOccurred(QStringLiteral("Process failed to start: %1").arg(claudeBin));
     }
 
-    // Close stdin immediately — signals to claude there's no interactive input
+    // Send the user message as stream-json on stdin, then close.
+    // Format matches the Anthropic API message structure that the CLI expects.
+    QByteArray escaped = message.toUtf8();
+    escaped.replace('\\', "\\\\");
+    escaped.replace('"', "\\\"");
+    escaped.replace('\n', "\\n");
+    escaped.replace('\r', "\\r");
+    escaped.replace('\t', "\\t");
+    QByteArray jsonMsg = "{\"type\":\"user\",\"message\":{\"role\":\"user\","
+        "\"content\":[{\"type\":\"text\",\"text\":\"" + escaped + "\"}]}}\n";
+    m_process->write(jsonMsg);
     m_process->closeWriteChannel();
 
     emit started();
@@ -157,8 +167,10 @@ void ClaudeProcess::sendMessage(const QString &message)
 void ClaudeProcess::cancel()
 {
     if (m_process && m_process->state() != QProcess::NotRunning) {
-        m_process->kill();
-        m_process->waitForFinished(3000);
+        m_process->terminate();
+        if (!m_process->waitForFinished(2000))
+            m_process->kill();
+        m_process->waitForFinished(1000);
     }
 }
 
@@ -167,13 +179,84 @@ bool ClaudeProcess::isRunning() const
     return m_process && m_process->state() != QProcess::NotRunning;
 }
 
+void ClaudeProcess::rewindFiles(const QString &checkpointUuid)
+{
+    if (m_sessionId.isEmpty() || checkpointUuid.isEmpty()) {
+        emit rewindCompleted(false);
+        return;
+    }
+
+    auto *proc = new QProcess(this);
+    if (!m_workingDir.isEmpty())
+        proc->setWorkingDirectory(m_workingDir);
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QString pathVal = env.value("PATH");
+    QStringList extraPaths = {
+        QDir::homePath() + "/.local/bin",
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+    };
+    QDir nvmDir(QDir::homePath() + "/.nvm/versions/node");
+    if (nvmDir.exists()) {
+        QStringList versions = nvmDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        if (!versions.isEmpty())
+            extraPaths.prepend(nvmDir.absoluteFilePath(versions.last()) + "/bin");
+    }
+    for (const QString &p : extraPaths) {
+        if (!pathVal.contains(p) && QDir(p).exists())
+            pathVal = p + ":" + pathVal;
+    }
+    env.insert("PATH", pathVal);
+    if (env.value("HOME").isEmpty())
+        env.insert("HOME", QDir::homePath());
+    env.insert("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
+    proc->setProcessEnvironment(env);
+
+    QString claudeBin = Config::instance().claudeBinary();
+    if (claudeBin == "claude" || claudeBin.isEmpty()) {
+        QStringList searchDirs = {
+            QDir::homePath() + "/.local/bin",
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+        };
+        for (const QString &dir : searchDirs) {
+            QString candidate = dir + "/claude";
+            if (QFile::exists(candidate)) {
+                claudeBin = candidate;
+                break;
+            }
+        }
+    }
+
+    QStringList args;
+    args << "--resume" << m_sessionId
+         << "--rewind-files" << checkpointUuid;
+
+    qDebug() << "[cccpp] Rewinding:" << claudeBin << args;
+
+    connect(proc, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this, [this, proc](int exitCode, QProcess::ExitStatus) {
+        bool ok = (exitCode == 0);
+        if (!ok)
+            qWarning() << "[cccpp] Rewind failed, exit code:" << exitCode
+                       << proc->readAllStandardError();
+        proc->deleteLater();
+        emit rewindCompleted(ok);
+    });
+
+    proc->start(claudeBin, args);
+}
+
 QStringList ClaudeProcess::buildArguments(const QString &message) const
 {
     QStringList args;
-    args << "-p" << message;
+    args << "-p";
+    args << "--input-format" << "stream-json";
     args << "--output-format" << "stream-json";
     args << "--verbose";
     args << "--include-partial-messages";
+    args << "--replay-user-messages";
 
     if (!m_model.isEmpty())
         args << "--model" << m_model;

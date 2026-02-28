@@ -39,7 +39,6 @@ set(CORE_SOURCES
     src/core/DiffEngine.cpp
     src/core/FileSnapshot.cpp
     src/core/Database.cpp
-    src/core/SnapshotManager.cpp
     src/core/GitManager.cpp
     src/core/PtyProcess.cpp
     src/core/UnixPty.cpp

@@ -260,7 +260,7 @@ QGroupBox::title {
 /* --- Status bar -------------------------------------------------- */
 
 QStatusBar {
-    background: {{bg_base}};
+    background: {{bg_window}};
     border-top: 1px solid {{border_subtle}};
     color: {{text_muted}};
     font-size: 11px;

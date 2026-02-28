@@ -17,7 +17,6 @@ class ThinkingIndicator;
 class SuggestionChips;
 class ClaudeProcess;
 class SessionManager;
-class SnapshotManager;
 class DiffEngine;
 class Database;
 class CodeViewer;
@@ -45,7 +44,6 @@ public:
     explicit ChatPanel(QWidget *parent = nullptr);
 
     void setSessionManager(SessionManager *mgr);
-    void setSnapshotManager(SnapshotManager *snap);
     void setDiffEngine(DiffEngine *diff);
     void setDatabase(Database *db);
     void setWorkingDirectory(const QString &dir);
@@ -55,6 +53,9 @@ public:
     void closeAllTabs();
     void restoreSession(const QString &sessionId);
     void sendMessage(const QString &text);
+
+    void rewindToCheckpoint(const QString &checkpointUuid);
+    void rewindCurrentTurn();
 
     InputBar *inputBar() const { return m_inputBar; }
     ModeSelector *modeSelector() const { return m_modeSelector; }
@@ -72,6 +73,7 @@ signals:
     void activeSessionChanged(const QString &sessionId);
     void editApplied(const QString &filePath, const QString &oldText,
                      const QString &newText, int startLine);
+    void rewindCompleted(bool success);
     void inlineEditRequested(const QString &filePath, const QString &selectedCode,
                              const QString &instruction);
 
@@ -91,6 +93,7 @@ private:
     void setTabProcessingState(int tabIdx, bool processing);
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
+    void deleteSession(const QString &sessionId);
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
     QString buildContextPreamble(const QString &userText);
     void updateInputBarContext();
@@ -105,7 +108,6 @@ private:
     QMap<int, ChatTab> m_tabs;
 
     SessionManager *m_sessionMgr = nullptr;
-    SnapshotManager *m_snapshotMgr = nullptr;
     DiffEngine *m_diffEngine = nullptr;
     Database *m_database = nullptr;
     CodeViewer *m_codeViewer = nullptr;

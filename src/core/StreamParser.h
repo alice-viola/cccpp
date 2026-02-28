@@ -50,6 +50,7 @@ signals:
     void resultReady(const QString &sessionId, const json &result);
     void errorOccurred(const QString &message);
     void eventParsed(const StreamEvent &event);
+    void checkpointReceived(const QString &uuid);
 
 private:
     StreamEvent parseEvent(const json &j);

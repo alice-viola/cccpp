@@ -8,11 +8,11 @@
 #include <QList>
 
 class Database;
-class SnapshotManager;
 
 struct CheckpointEntry {
     int turnId = 0;
     QString sessionId;
+    QString checkpointUuid;
     qint64 timestamp = 0;
     QStringList filesChanged;
     QString summary;
@@ -24,13 +24,11 @@ public:
     explicit CheckpointTimeline(QWidget *parent = nullptr);
 
     void setDatabase(Database *db);
-    void setSnapshotManager(SnapshotManager *mgr);
     void setSessionId(const QString &id);
     void refresh();
 
 signals:
-    void restoreRequested(int turnId);
-    void compareRequested(int turnId);
+    void restoreRequested(const QString &checkpointUuid);
 
 private:
     void rebuild();
@@ -44,7 +42,6 @@ private:
     QPushButton *m_refreshBtn;
 
     Database *m_database = nullptr;
-    SnapshotManager *m_snapshotMgr = nullptr;
     QString m_sessionId;
     QList<CheckpointEntry> m_entries;
 };
