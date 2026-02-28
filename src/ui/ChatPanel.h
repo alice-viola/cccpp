@@ -60,6 +60,7 @@ public:
     ModeSelector *modeSelector() const { return m_modeSelector; }
     ModelSelector *modelSelector() const { return m_modelSelector; }
     int tabCount() const { return m_tabs.size(); }
+    QString currentSessionId() const;
 
 signals:
     void fileChanged(const QString &filePath);
@@ -68,6 +69,7 @@ signals:
     void aboutToSendMessage();
     void processingChanged(bool processing);
     void applyCodeRequested(const QString &code, const QString &language, const QString &filePath);
+    void activeSessionChanged(const QString &sessionId);
     void editApplied(const QString &filePath, const QString &oldText,
                      const QString &newText, int startLine);
     void inlineEditRequested(const QString &filePath, const QString &selectedCode,

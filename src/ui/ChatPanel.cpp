@@ -76,8 +76,10 @@ ChatPanel::ChatPanel(QWidget *parent)
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
     connect(m_inputBar, &InputBar::slashCommand, this, &ChatPanel::onSlashCommand);
-    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         refreshInputBarForCurrentTab();
+        if (m_tabs.contains(idx))
+            emit activeSessionChanged(m_tabs[idx].sessionId);
     });
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_tabs.size() <= 1) return;
@@ -186,6 +188,16 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                              JsonUtils::getString(input, "contents"));
             if (m_diffEngine)
                 m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
+
+            // Record old file content for snapshot (empty string if file is new)
+            if (m_snapshotMgr) {
+                QString oldContent;
+                QFile existingFile(info.filePath);
+                if (existingFile.open(QIODevice::ReadOnly | QIODevice::Text))
+                    oldContent = QString::fromUtf8(existingFile.readAll());
+                m_snapshotMgr->recordEditOldString(info.filePath, oldContent);
+            }
+
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
@@ -495,6 +507,8 @@ void ChatPanel::restoreSession(const QString &sessionId)
     }
     if (!lastPlanFile.isEmpty() && QFile::exists(lastPlanFile))
         emit planFileDetected(lastPlanFile);
+
+    emit activeSessionChanged(sessionId);
 }
 
 void ChatPanel::sendMessage(const QString &text)
@@ -683,6 +697,14 @@ void ChatPanel::updateInputBarContext()
         relFile = currentFile.mid(m_workingDir.length() + 1);
 
     m_inputBar->setContextIndicator(QStringLiteral("Context: %1").arg(relFile));
+}
+
+QString ChatPanel::currentSessionId() const
+{
+    int idx = m_tabWidget->currentIndex();
+    if (m_tabs.contains(idx))
+        return m_tabs[idx].sessionId;
+    return {};
 }
 
 void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)

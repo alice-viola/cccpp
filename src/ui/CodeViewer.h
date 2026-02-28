@@ -48,6 +48,7 @@ public:
     void closeFile(const QString &filePath);
     void openMarkdown(const QString &filePath);
     void refreshFile(const QString &filePath);
+    void forceReloadFile(const QString &filePath);
     void showDiff(const FileDiff &diff);
     void clearDiffMarkers();
     void scrollToLine(int line);
@@ -94,6 +95,9 @@ signals:
     void inlineDiffAccepted(const QString &filePath);
     void inlineDiffRejected(const QString &filePath, const QString &oldText,
                             const QString &newText);
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
 #ifndef NO_QSCINTILLA

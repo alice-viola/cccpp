@@ -13,6 +13,9 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QPainter>
+#include <QResizeEvent>
+#include <QTimer>
+#include <QTabBar>
 
 // ---------------------------------------------------------------------------
 // Empty state widget — shown when no files are open
@@ -645,6 +648,17 @@ void CodeViewer::updateEmptyState()
     if (m_breadcrumb) m_breadcrumb->setVisible(!empty);
 }
 
+void CodeViewer::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_inlineDiffOverlay && m_inlineDiffOverlay->isVisible()) {
+        int w = m_tabWidget->width();
+        int tabBarH = m_tabWidget->tabBar()->height();
+        int barH = qMin(m_inlineDiffOverlay->sizeHint().height(), 200);
+        m_inlineDiffOverlay->setGeometry(0, tabBarH, w, barH);
+        m_inlineDiffOverlay->raise();
+    }
+}
 
 // ---------------------------------------------------------------------------
 // File loading / refreshing
@@ -841,6 +855,45 @@ void CodeViewer::refreshFile(const QString &filePath)
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
+
+    QString content = QString::fromUtf8(file.readAll());
+
+#ifndef NO_QSCINTILLA
+    tab->editor->setText(content);
+    tab->editor->setModified(false);
+#else
+    tab->editor->setPlainText(content);
+    tab->editor->document()->setModified(false);
+#endif
+
+    tab->dirty = false;
+    int idx = indexForFile(filePath);
+    if (idx >= 0)
+        updateTabTitle(idx);
+}
+
+void CodeViewer::forceReloadFile(const QString &filePath)
+{
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) return;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        // File was deleted (e.g., reverting a Write that created it)
+        int idx = indexForFile(filePath);
+        if (idx >= 0) {
+            unwatchFile(filePath);
+            m_tabs.remove(idx);
+            m_tabWidget->removeTab(idx);
+            QMap<int, FileTab> reindexed;
+            int i = 0;
+            for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it, ++i)
+                reindexed[i] = it.value();
+            m_tabs = reindexed;
+            updateEmptyState();
+        }
+        return;
+    }
 
     QString content = QString::fromUtf8(file.readAll());
 
@@ -1452,16 +1505,24 @@ void CodeViewer::showInlineDiffOverlay(const QString &filePath, const QString &o
     m_inlineDiffOverlay->setFilePath(filePath);
     m_inlineDiffOverlay->setDiff(oldText, newText, startLine);
 
-    // Position as a compact bar at the top of the editor (not blocking code)
-    auto *tab = tabForFile(filePath);
-    if (!tab) tab = currentTab();
-    if (tab && tab->stack) {
-        m_inlineDiffOverlay->setParent(tab->stack);
-        int barHeight = qMin(m_inlineDiffOverlay->sizeHint().height(), 200);
-        m_inlineDiffOverlay->setGeometry(0, 0, tab->stack->width(), barHeight);
-    }
+    // Parent to the tab widget (not the stack) so it spans the full width
+    m_inlineDiffOverlay->setParent(m_tabWidget);
+    m_inlineDiffOverlay->setMaximumHeight(200);
     m_inlineDiffOverlay->show();
     m_inlineDiffOverlay->raise();
+
+    // Position at the top of the tab content area, deferring so the layout has settled
+    auto repositionOverlay = [this] {
+        if (!m_inlineDiffOverlay || !m_inlineDiffOverlay->isVisible()) return;
+        int w = m_tabWidget->width();
+        int tabBarH = m_tabWidget->tabBar()->height();
+        int barH = qMin(m_inlineDiffOverlay->sizeHint().height(), 200);
+        m_inlineDiffOverlay->setGeometry(0, tabBarH, w, barH);
+        m_inlineDiffOverlay->raise();
+    };
+    repositionOverlay();
+    QTimer::singleShot(50, this, repositionOverlay);
+    QTimer::singleShot(200, this, repositionOverlay);
 }
 
 void CodeViewer::hideInlineDiffOverlay()

@@ -137,44 +137,43 @@ void CheckpointTimeline::rebuild()
         const auto &entry = m_entries[i];
 
         auto *entryWidget = new QFrame(m_entriesWidget);
-        entryWidget->setCursor(Qt::PointingHandCursor);
         entryWidget->setStyleSheet(QStringLiteral(
             "QFrame { background: transparent; border: none; padding: 2px 0; }"
-            "QFrame:hover { background: %1; border-radius: 4px; }")
+            "QFrame:hover { background: %1; border-radius: 6px; }")
             .arg(p.hover_raised.name()));
 
-        auto *entryLayout = new QHBoxLayout(entryWidget);
-        entryLayout->setContentsMargins(4, 4, 4, 4);
-        entryLayout->setSpacing(8);
+        auto *entryLayout = new QVBoxLayout(entryWidget);
+        entryLayout->setContentsMargins(8, 6, 8, 6);
+        entryLayout->setSpacing(3);
 
-        // Timeline dot
+        // Header row: dot + turn label
+        auto *headerRow = new QHBoxLayout;
+        headerRow->setSpacing(6);
+
         auto *dot = new QLabel(entryWidget);
-        dot->setFixedSize(10, 10);
+        dot->setFixedSize(8, 8);
         dot->setStyleSheet(QStringLiteral(
-            "QLabel { background: %1; border-radius: 5px; }")
+            "QLabel { background: %1; border-radius: 4px; }")
             .arg(entry.filesChanged.isEmpty() ? p.text_muted.name() : p.blue.name()));
-        entryLayout->addWidget(dot, 0, Qt::AlignTop | Qt::AlignHCenter);
-
-        // Content
-        auto *contentLayout = new QVBoxLayout;
-        contentLayout->setSpacing(1);
+        headerRow->addWidget(dot, 0, Qt::AlignVCenter);
 
         QDateTime dt = QDateTime::fromSecsSinceEpoch(entry.timestamp);
         auto *timeLabel = new QLabel(
-            QStringLiteral("Turn %1 \xc2\xb7 %2").arg(entry.turnId).arg(dt.toString("hh:mm")),
+            QStringLiteral("Turn %1 \u00b7 %2").arg(entry.turnId).arg(dt.toString("hh:mm")),
             entryWidget);
         timeLabel->setStyleSheet(QStringLiteral(
             "QLabel { color: %1; font-size: 11px; font-weight: bold; }")
             .arg(p.text_secondary.name()));
-        contentLayout->addWidget(timeLabel);
+        headerRow->addWidget(timeLabel, 1);
+        entryLayout->addLayout(headerRow);
 
         if (!entry.summary.isEmpty()) {
             auto *summaryLabel = new QLabel(entry.summary, entryWidget);
             summaryLabel->setWordWrap(true);
             summaryLabel->setStyleSheet(QStringLiteral(
-                "QLabel { color: %1; font-size: 11px; }")
+                "QLabel { color: %1; font-size: 11px; padding-left: 14px; }")
                 .arg(p.text_muted.name()));
-            contentLayout->addWidget(summaryLabel);
+            entryLayout->addWidget(summaryLabel);
         }
 
         if (!entry.filesChanged.isEmpty()) {
@@ -183,26 +182,26 @@ void CheckpointTimeline::rebuild()
                 fileText = fileText.left(50) + "...";
             auto *filesLabel = new QLabel(fileText, entryWidget);
             filesLabel->setStyleSheet(QStringLiteral(
-                "QLabel { color: %1; font-size: 10px; font-family: monospace; }")
+                "QLabel { color: %1; font-size: 10px; font-family: monospace; padding-left: 14px; }")
                 .arg(p.text_faint.name()));
-            contentLayout->addWidget(filesLabel);
+            entryLayout->addWidget(filesLabel);
         }
 
-        entryLayout->addLayout(contentLayout, 1);
-
-        // Restore button
-        auto *restoreBtn = new QPushButton("\xe2\x86\xa9", entryWidget);
-        restoreBtn->setFixedSize(22, 22);
-        restoreBtn->setToolTip("Restore to this checkpoint");
+        // Restore button -- full width, clearly visible
+        auto *restoreBtn = new QPushButton("Restore to this point", entryWidget);
+        restoreBtn->setFixedHeight(24);
+        restoreBtn->setCursor(Qt::PointingHandCursor);
         restoreBtn->setStyleSheet(QStringLiteral(
-            "QPushButton { background: transparent; color: %1; border: none; font-size: 12px; }"
-            "QPushButton:hover { color: %2; background: %3; border-radius: 11px; }")
-            .arg(p.text_muted.name(), p.red.name(), p.bg_raised.name()));
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 4px; font-size: 11px; margin-left: 14px; margin-top: 2px; }"
+            "QPushButton:hover { background: %4; color: %5; border-color: %5; }")
+            .arg(p.bg_surface.name(), p.text_muted.name(), p.border_standard.name(),
+                 p.bg_raised.name(), p.red.name()));
         int turnId = entry.turnId;
         connect(restoreBtn, &QPushButton::clicked, this, [this, turnId] {
             emit restoreRequested(turnId);
         });
-        entryLayout->addWidget(restoreBtn, 0, Qt::AlignTop);
+        entryLayout->addWidget(restoreBtn);
 
         m_entriesLayout->insertWidget(m_entriesLayout->count() - 1, entryWidget);
     }

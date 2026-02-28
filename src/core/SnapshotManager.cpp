@@ -79,21 +79,29 @@ bool SnapshotManager::revertTurn(int turnId)
         return false;
     }
 
-    if (m_isGitRepo && m_gitManager && !snapshots.first().gitStash.isEmpty()) {
-        QString stash = snapshots.first().gitStash;
-        QString result = m_gitManager->runGitSync({"checkout", stash, "--", "."});
-        if (result.contains("error")) {
-            emit revertFailed(turnId, result);
-            return false;
-        }
-    } else {
-        for (const auto &snap : snapshots) {
+    // Always restore from saved file content (more reliable than git stash)
+    int filesRestored = 0;
+    for (const auto &snap : snapshots) {
+        if (snap.filePath.isEmpty()) continue;
+
+        if (snap.content.isEmpty()) {
+            if (QFile::exists(snap.filePath)) {
+                QFile::remove(snap.filePath);
+                ++filesRestored;
+            }
+        } else {
             QFile file(snap.filePath);
-            if (file.open(QIODevice::WriteOnly)) {
+            if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 file.write(snap.content);
                 file.close();
+                ++filesRestored;
             }
         }
+    }
+
+    if (filesRestored == 0) {
+        emit revertFailed(turnId, "Could not restore any files");
+        return false;
     }
 
     emit revertCompleted(turnId);

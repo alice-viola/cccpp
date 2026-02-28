@@ -192,6 +192,11 @@ void MainWindow::setupUI()
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
             this, &MainWindow::onBeforeTurnBegins);
 
+    connect(m_chatPanel, &ChatPanel::activeSessionChanged, this, [this](const QString &sid) {
+        if (!sid.isEmpty() && !sid.startsWith("pending-"))
+            m_checkpointTimeline->setSessionId(sid);
+    });
+
     connect(m_codeViewer, &CodeViewer::fileSaved, this, [this](const QString &) {
         syncEditorContextToChat();
     });
@@ -237,8 +242,20 @@ void MainWindow::setupUI()
 
     // Checkpoint timeline restore
     connect(m_checkpointTimeline, &CheckpointTimeline::restoreRequested, this, [this](int turnId) {
-        if (m_snapshotMgr)
-            m_snapshotMgr->revertTurn(turnId);
+        if (!m_snapshotMgr) return;
+        QString sid = m_chatPanel->currentSessionId();
+        if (!sid.isEmpty())
+            m_snapshotMgr->setSessionId(sid);
+        bool ok = m_snapshotMgr->revertTurn(turnId);
+        if (ok) {
+            ToastManager::instance().show(
+                QStringLiteral("Restored to turn %1").arg(turnId),
+                ToastType::Success, 2500);
+        } else {
+            ToastManager::instance().show(
+                QStringLiteral("No snapshot data for turn %1").arg(turnId),
+                ToastType::Error, 3000);
+        }
     });
 
     // Git panel: open files on request
@@ -300,6 +317,12 @@ void MainWindow::setupStatusBar()
         } else {
             m_statusProcessing->setStyleSheet("");
             m_statusProcessing->clear();
+
+            // Refresh checkpoint timeline after a turn completes
+            // (session ID may have changed from pending-* to real ID)
+            QString sid = m_chatPanel->currentSessionId();
+            if (!sid.isEmpty() && !sid.startsWith("pending-"))
+                m_checkpointTimeline->setSessionId(sid);
         }
     });
 }
@@ -644,6 +667,19 @@ void MainWindow::openWorkspace(const QString &path)
         m_chatPanel->newChat();
 
     syncEditorContextToChat();
+
+    // Load the most recent session for this workspace into the checkpoint timeline
+    auto sessions = m_database->loadSessions();
+    QString latestSessionId;
+    qint64 latestTime = 0;
+    for (const auto &s : sessions) {
+        if (s.workspace == path && !s.sessionId.startsWith("pending-") && s.updatedAt > latestTime) {
+            latestTime = s.updatedAt;
+            latestSessionId = s.sessionId;
+        }
+    }
+    if (!latestSessionId.isEmpty())
+        m_checkpointTimeline->setSessionId(latestSessionId);
 }
 
 void MainWindow::onFileSelected(const QString &filePath)
@@ -701,7 +737,11 @@ void MainWindow::onBeforeTurnBegins()
 {
     if (m_codeViewer->hasDirtyTabs())
         m_codeViewer->saveAllFiles();
-    m_checkpointTimeline->refresh();
+
+    // Keep checkpoint timeline in sync with the active chat session
+    QString sid = m_chatPanel->currentSessionId();
+    if (!sid.isEmpty() && !sid.startsWith("pending-"))
+        m_checkpointTimeline->setSessionId(sid);
 }
 
 void MainWindow::onToggleTerminal()
@@ -777,6 +817,9 @@ void MainWindow::connectGitSignals()
     connect(m_snapshotMgr, &SnapshotManager::revertCompleted, this, [this](int) {
         m_gitManager->refreshStatus();
         m_checkpointTimeline->refresh();
+        // Force-reload all open files from disk (no "unsaved changes" prompt)
+        for (const QString &filePath : m_codeViewer->openFiles())
+            m_codeViewer->forceReloadFile(filePath);
     });
 }
 

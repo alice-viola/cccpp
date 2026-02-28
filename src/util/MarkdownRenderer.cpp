@@ -1,6 +1,7 @@
 #include "util/MarkdownRenderer.h"
 #include "ui/ThemeManager.h"
 #include <QRegularExpression>
+#include <QFileInfo>
 
 MarkdownRenderer::MarkdownRenderer(QObject *parent)
     : QObject(parent)
@@ -25,6 +26,9 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
             QString p = part;
             p.replace("\n\n", "</p><p style='margin:4px 0;'>");
             p.replace("\n", "<br>");
+            // Block-level <div> elements (list items, headings) don't need <br> or
+            // paragraph breaks between them — collapse any such spacing.
+            p.replace(QRegularExpression("</div>((?:<br>|</p>\\s*<p[^>]*>|\\s)+)<div"), "</div><div");
             final += p;
         }
     }
@@ -73,19 +77,67 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
 
         auto &tm = ThemeManager::instance();
 
-        // Header with language tag and action buttons
-        QString headerHtml = QStringLiteral(
-            "<div style='background:%1;padding:4px 8px;border-radius:4px 4px 0 0;"
-            "display:flex;font-family:monospace;'>")
-            .arg(tm.hex("bg_base"));
+        // For diff blocks: extract filename from unified diff header and colorize lines
+        QString cardTitle;
+        bool isDiff = (lang == "diff");
+        if (isDiff) {
+            QRegularExpression diffFile("^\\+{3}\\s+(?:b/)?(.+?)(?:\\t.*)?$",
+                                        QRegularExpression::MultilineOption);
+            auto dm = diffFile.match(code);
+            if (dm.hasMatch()) {
+                QString fullPath = dm.captured(1).trimmed();
+                QString fname = QFileInfo(fullPath).fileName();
+                cardTitle = fname.isEmpty() ? fullPath : fname;
+            }
 
-        if (!lang.isEmpty()) {
-            headerHtml += QStringLiteral(
-                "<span style='color:%1;font-size:11px;'>%2</span>")
-                .arg(tm.hex("text_muted"), lang);
+            // Colorize diff lines
+            QStringList lines = escapedCode.split('\n');
+            QStringList highlighted;
+            for (const QString &line : lines) {
+                if (line.startsWith('+') && !line.startsWith("+++")) {
+                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
+                        .arg(tm.hex("green"), line);
+                } else if (line.startsWith('-') && !line.startsWith("---")) {
+                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
+                        .arg(tm.hex("red"), line);
+                } else if (line.startsWith("@@")) {
+                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
+                        .arg(tm.hex("blue"), line);
+                } else if (line.startsWith("---") || line.startsWith("+++")) {
+                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
+                        .arg(tm.hex("text_muted"), line);
+                } else {
+                    highlighted << line;
+                }
+            }
+            escapedCode = highlighted.join('\n');
         }
 
-        // Apply and Copy buttons as clickable links
+        // Card header
+        QString headerHtml;
+        if (isDiff && !cardTitle.isEmpty()) {
+            // Prominent file-name header for diff blocks
+            headerHtml = QStringLiteral(
+                "<div style='background:%1;padding:5px 10px;border-radius:6px 6px 0 0;"
+                "border:1px solid %2;border-bottom:1px solid %3;'>")
+                .arg(tm.hex("bg_window"), tm.hex("border_standard"), tm.hex("bg_raised"));
+            headerHtml += QStringLiteral(
+                "<span style='color:%1;font-size:12px;font-weight:600;"
+                "font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;'>%2</span>")
+                .arg(tm.hex("text_primary"), escapeHtml(cardTitle));
+        } else {
+            headerHtml = QStringLiteral(
+                "<div style='background:%1;padding:4px 8px;border-radius:4px 4px 0 0;"
+                "display:flex;font-family:monospace;'>")
+                .arg(tm.hex("bg_base"));
+            if (!lang.isEmpty()) {
+                headerHtml += QStringLiteral(
+                    "<span style='color:%1;font-size:11px;'>%2</span>")
+                    .arg(tm.hex("text_muted"), lang);
+            }
+        }
+
+        // Copy / Apply buttons
         headerHtml += QStringLiteral(
             "<span style='margin-left:auto;'>"
             "<a href='cccpp://copy?block=%1' style='color:%3;text-decoration:none;font-size:11px;"
@@ -101,14 +153,33 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
 
         headerHtml += "</div>";
 
-        QString replacement = QStringLiteral(
-            "%1<pre style='background:%2;color:%3;padding:6px 8px;"
-            "border-radius:0 0 4px 4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
-            "font-size:12px;overflow-x:auto;margin:0 0 4px;line-height:1.3;"
-            "border:1px solid %4;border-top:none;'><code>%5</code></pre>")
-            .arg(headerHtml,
-                 tm.hex("bg_base"), tm.hex("text_primary"),
-                 tm.hex("border_standard"), escapedCode);
+        QString outerBorder = isDiff
+            ? QStringLiteral("border:1px solid %1;border-radius:6px;margin:4px 0 6px;")
+                .arg(tm.hex("border_standard"))
+            : QString();
+
+        QString replacement;
+        if (isDiff) {
+            replacement = QStringLiteral(
+                "<div style='%6'>"
+                "%1"
+                "<pre style='background:%2;color:%3;padding:6px 8px;"
+                "border-radius:0 0 6px 6px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
+                "font-size:12px;overflow-x:auto;margin:0;line-height:1.3;border:none;'><code>%5</code></pre>"
+                "</div>")
+                .arg(headerHtml,
+                     tm.hex("bg_base"), tm.hex("text_primary"),
+                     tm.hex("border_standard"), escapedCode, outerBorder);
+        } else {
+            replacement = QStringLiteral(
+                "%1<pre style='background:%2;color:%3;padding:6px 8px;"
+                "border-radius:0 0 4px 4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
+                "font-size:12px;overflow-x:auto;margin:0 0 4px;line-height:1.3;"
+                "border:1px solid %4;border-top:none;'><code>%5</code></pre>")
+                .arg(headerHtml,
+                     tm.hex("bg_base"), tm.hex("text_primary"),
+                     tm.hex("border_standard"), escapedCode);
+        }
         replacements.append(replacement);
         ++blockIndex;
     }
