@@ -60,6 +60,9 @@ set(UI_SOURCES
     src/ui/TerminalPanel.cpp
     src/ui/GitPanel.cpp
     src/ui/DiffSplitView.cpp
+    src/ui/ThinkingIndicator.cpp
+    src/ui/ToastNotification.cpp
+    src/ui/ToastManager.cpp
 )
 
 set(UTIL_SOURCES

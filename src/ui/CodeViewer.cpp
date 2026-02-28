@@ -6,6 +6,69 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPainter>
+
+// ---------------------------------------------------------------------------
+// Empty state widget — shown when no files are open
+// ---------------------------------------------------------------------------
+
+class CodeViewerEmptyState : public QWidget {
+public:
+    explicit CodeViewerEmptyState(QWidget *parent = nullptr) : QWidget(parent) {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.fillRect(rect(), QColor("#1a1a1a"));
+
+        QPoint c = rect().center();
+
+        // File icon — two stacked rounded rects
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor("#252525"));
+        p.drawRoundedRect(c.x() - 12, c.y() - 52, 34, 44, 3, 3);
+        p.setBrush(QColor("#2d2d2d"));
+        p.drawRoundedRect(c.x() - 18, c.y() - 58, 34, 44, 3, 3);
+        // Folded corner cutout
+        p.setBrush(QColor("#1a1a1a"));
+        QPolygon corner;
+        corner << QPoint(c.x() + 6,  c.y() - 58)
+               << QPoint(c.x() + 16, c.y() - 48)
+               << QPoint(c.x() + 16, c.y() - 58);
+        p.drawPolygon(corner);
+        // Folded corner fill
+        p.setBrush(QColor("#3d3d3d"));
+        QPolygon fold;
+        fold << QPoint(c.x() + 6,  c.y() - 58)
+             << QPoint(c.x() + 16, c.y() - 48)
+             << QPoint(c.x() + 6,  c.y() - 48);
+        p.drawPolygon(fold);
+        // Text line hints inside icon
+        p.setBrush(QColor("#3a3a3a"));
+        for (int i = 0; i < 3; ++i) {
+            int lw = (i == 2) ? 14 : 22;
+            p.drawRoundedRect(c.x() - 14, c.y() - 46 + i * 9, lw, 3, 1, 1);
+        }
+
+        // Primary label
+        QFont tf = font();
+        tf.setPixelSize(14);
+        tf.setWeight(QFont::Medium);
+        p.setFont(tf);
+        p.setPen(QColor("#45475a"));
+        p.drawText(QRect(c.x() - 150, c.y() - 4, 300, 22), Qt::AlignCenter, "No file open");
+
+        // Hint line
+        QFont hf = font();
+        hf.setPixelSize(11);
+        p.setFont(hf);
+        p.setPen(QColor("#2d2d40"));
+        p.drawText(QRect(c.x() - 220, c.y() + 22, 440, 18), Qt::AlignCenter,
+                   "Select a file from the explorer or ask Claude to open one");
+    }
+};
 
 #ifndef NO_QSCINTILLA
 #include <Qsci/qscilexercpp.h>
@@ -51,6 +114,10 @@ CodeViewer::CodeViewer(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // Empty state (shown when no tabs are open)
+    m_emptyState = new CodeViewerEmptyState(this);
+    layout->addWidget(m_emptyState);
+
     // Tab widget with diff toggle button in corner
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabsClosable(true);
@@ -71,6 +138,9 @@ CodeViewer::CodeViewer(QWidget *parent)
 
     layout->addWidget(m_tabWidget);
 
+    // Initial state: no tabs → show empty state
+    m_tabWidget->hide();
+
     m_fileWatcher = new QFileSystemWatcher(this);
     connect(m_fileWatcher, &QFileSystemWatcher::fileChanged,
             this, &CodeViewer::onExternalFileChanged);
@@ -90,6 +160,7 @@ CodeViewer::CodeViewer(QWidget *parent)
         for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it, ++i)
             reindexed[i] = it.value();
         m_tabs = reindexed;
+        updateEmptyState();
     });
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
@@ -496,6 +567,17 @@ void CodeViewer::connectEditorSignals(FileTab &tab)
 }
 
 // ---------------------------------------------------------------------------
+// Empty state management
+// ---------------------------------------------------------------------------
+
+void CodeViewer::updateEmptyState()
+{
+    bool empty = m_tabs.isEmpty();
+    m_emptyState->setVisible(empty);
+    m_tabWidget->setVisible(!empty);
+}
+
+// ---------------------------------------------------------------------------
 // File loading / refreshing
 // ---------------------------------------------------------------------------
 
@@ -548,6 +630,7 @@ void CodeViewer::loadFile(const QString &filePath)
     connectEditorSignals(m_tabs[idx]);
 
     m_tabWidget->setCurrentIndex(idx);
+    updateEmptyState();
 
 #ifndef NO_QSCINTILLA
     setLexerForFile(filePath, editor);

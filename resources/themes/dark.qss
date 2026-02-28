@@ -54,11 +54,12 @@ QScrollBar:vertical {
     margin: 0;
 }
 QScrollBar::handle:vertical {
-    background: #333;
+    background: #2a2a2a;
     border-radius: 2px;
     min-height: 20px;
 }
-QScrollBar::handle:vertical:hover { background: #444; }
+QScrollBar::handle:vertical:hover   { background: #3d3d3d; }
+QScrollBar::handle:vertical:pressed { background: #cba6f7; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none; height: 0; border: none;
@@ -71,11 +72,12 @@ QScrollBar:horizontal {
     margin: 0;
 }
 QScrollBar::handle:horizontal {
-    background: #333;
+    background: #2a2a2a;
     border-radius: 2px;
     min-width: 20px;
 }
-QScrollBar::handle:horizontal:hover { background: #444; }
+QScrollBar::handle:horizontal:hover   { background: #3d3d3d; }
+QScrollBar::handle:horizontal:pressed { background: #cba6f7; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: none; width: 0; border: none;
@@ -106,7 +108,9 @@ QMenu::separator { height: 1px; background: #2a2a2a; margin: 3px 6px; }
 
 /* --- Splitter ---------------------------------------------------- */
 
-QSplitter::handle { background: #2a2a2a; width: 1px; }
+QSplitter::handle { background: #1e1e1e; width: 1px; }
+QSplitter::handle:hover { background: #cba6f7; }
+QSplitter::handle:pressed { background: #cba6f7; }
 
 /* --- Tooltips ---------------------------------------------------- */
 
@@ -140,9 +144,11 @@ QTabBar::tab {
 QTabBar::tab:selected {
     color: #cdd6f4;
     border-bottom: 2px solid #cba6f7;
+    background: rgba(203, 166, 247, 0.05);
 }
-QTabBar::tab:hover:!selected { color: #a6adc8; }
+QTabBar::tab:hover:!selected { color: #a6adc8; background: rgba(255,255,255,0.025); }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
+QTabBar::close-button:hover { background: rgba(243, 139, 168, 0.3); border-radius: 2px; }
 
 /* --- Scroll areas ------------------------------------------------ */
 
@@ -158,7 +164,7 @@ QTreeView, QTreeWidget {
     font-size: 12px;
     outline: none;
 }
-QTreeView::item, QTreeWidget::item { padding: 2px 0; }
+QTreeView::item, QTreeWidget::item { padding: 3px 0; min-height: 20px; }
 QTreeView::item:selected, QTreeWidget::item:selected {
     background: #252525;
     color: #cdd6f4;
@@ -242,3 +248,24 @@ QComboBox QAbstractItemView {
     padding: 2px;
     font-size: 11px;
 }
+
+/* --- Status bar -------------------------------------------------- */
+
+QStatusBar {
+    background: #0e0e0e;
+    border-top: 1px solid #1e1e1e;
+    color: #6c7086;
+    font-size: 11px;
+    min-height: 20px;
+    padding: 0;
+}
+QStatusBar::item { border: none; padding: 0; }
+QStatusBar QLabel {
+    color: #6c7086;
+    font-size: 11px;
+    padding: 0 10px;
+    border-right: 1px solid #1e1e1e;
+    background: transparent;
+    min-height: 20px;
+}
+QStatusBar QLabel:last-child { border-right: none; }

@@ -6,7 +6,7 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
 {
     setStyleSheet(
         "ToolCallGroupWidget { background: #141414; border: 1px solid #2a2a2a; "
-        "border-radius: 6px; }");
+        "border-left: 2px solid #a6e3a1; border-radius: 6px; }");
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(8, 6, 8, 6);
@@ -31,20 +31,40 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
 
     m_layout->addLayout(m_headerLayout);
 
-    // Detail container (hidden by default)
+    // Detail container — always in layout, height animated via maximumHeight
     m_detailContainer = new QWidget(this);
-    m_detailContainer->setVisible(false);
+    m_detailContainer->setMaximumHeight(0);
     m_detailLayout = new QVBoxLayout(m_detailContainer);
     m_detailLayout->setContentsMargins(24, 6, 0, 4);
     m_detailLayout->setSpacing(4);
     m_layout->addWidget(m_detailContainer);
 
+    // Height animation for smooth expand / collapse
+    m_expandAnim = new QPropertyAnimation(m_detailContainer, "maximumHeight", this);
+    m_expandAnim->setDuration(180);
+    m_expandAnim->setEasingCurve(QEasingCurve::InOutCubic);
+
     connect(m_expandBtn, &QPushButton::clicked, this, [this] {
         m_expanded = !m_expanded;
-        m_detailContainer->setVisible(m_expanded);
         m_expandBtn->setText(m_expanded ? QStringLiteral("\u25BC") : QStringLiteral("\u25B6"));
-        if (m_expanded)
+
+        m_expandAnim->stop();
+        if (m_expanded) {
             rebuildDetailView();
+            // Measure natural height
+            m_detailContainer->layout()->activate();
+            int target = qMax(m_detailContainer->layout()->sizeHint().height(), 40);
+            m_expandAnim->setStartValue(m_detailContainer->maximumHeight());
+            m_expandAnim->setEndValue(target);
+            // After animation, remove height cap so content can resize freely
+            connect(m_expandAnim, &QPropertyAnimation::finished, this, [this] {
+                if (m_expanded) m_detailContainer->setMaximumHeight(16777215);
+            }, Qt::SingleShotConnection);
+        } else {
+            m_expandAnim->setStartValue(m_detailContainer->height());
+            m_expandAnim->setEndValue(0);
+        }
+        m_expandAnim->start();
     });
 }
 

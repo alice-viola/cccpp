@@ -5,6 +5,7 @@
 #include <QToolBar>
 #include <QPushButton>
 #include <QTabWidget>
+#include <QLabel>
 
 class WorkspaceTree;
 class CodeViewer;
@@ -42,6 +43,7 @@ private:
     void setupMenuBar();
     void setupToolBar();
     void setupUI();
+    void setupStatusBar();
     void loadStylesheet();
     void restoreSessions();
     void updateToggleButtons();
@@ -68,4 +70,10 @@ private:
     GitManager *m_gitManager;
 
     QString m_workspacePath;
+
+    // Status bar labels (right-to-left: model | branch | processing | file)
+    QLabel *m_statusFile       = nullptr;
+    QLabel *m_statusBranch     = nullptr;
+    QLabel *m_statusModel      = nullptr;
+    QLabel *m_statusProcessing = nullptr;
 };

@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QVariantAnimation>
 
 class InputBar : public QWidget {
     Q_OBJECT
@@ -21,6 +22,9 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
+    void applyBorderColor(const QColor &c);
+
     QTextEdit *m_input;
     QPushButton *m_sendBtn;
+    QVariantAnimation *m_focusAnim = nullptr;
 };

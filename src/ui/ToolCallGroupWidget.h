@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QTextBrowser>
+#include <QPropertyAnimation>
 #include <QMap>
 #include <QList>
 
@@ -38,6 +39,7 @@ private:
     QLabel *m_summaryLabel;
     QWidget *m_detailContainer;
     QVBoxLayout *m_detailLayout;
+    QPropertyAnimation *m_expandAnim = nullptr;
     bool m_expanded = false;
 
     QList<ToolCallInfo> m_calls;

@@ -86,8 +86,11 @@ private:
     void unwatchFile(const QString &filePath);
     void connectEditorSignals(FileTab &tab);
 
+    void updateEmptyState();
+
     QTabWidget *m_tabWidget;
     QPushButton *m_diffToggleBtn;
+    QWidget *m_emptyState = nullptr;
     QMap<int, FileTab> m_tabs;
     QFileSystemWatcher *m_fileWatcher;
     QSet<QString> m_savingFiles;

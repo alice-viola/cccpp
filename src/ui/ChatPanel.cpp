@@ -4,6 +4,7 @@
 #include "ui/ModelSelector.h"
 #include "ui/ChatMessageWidget.h"
 #include "ui/ToolCallGroupWidget.h"
+#include "ui/ThinkingIndicator.h"
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "core/SessionManager.h"
@@ -239,6 +240,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.currentAssistantMsg = nullptr;
         }
         setProcessingState(false);
+        setTabProcessing(tabIdx, false);
         scrollTabToBottom(t);
     });
 
@@ -251,6 +253,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Error:** %1").arg(err));
         setProcessingState(false);
+        setTabProcessing(tabIdx, false);
     });
 
     // Stream parser errors
@@ -279,6 +282,29 @@ QString ChatPanel::newChat()
     tab.process = new ClaudeProcess(this);
     tab.process->setWorkingDirectory(m_workingDir);
 
+    // Welcome label — hidden when first message is added
+    auto *scrollContent = tab.scrollArea->widget();
+    auto *welcome = new QLabel(scrollContent);
+    welcome->setObjectName("chatWelcome");
+    welcome->setAlignment(Qt::AlignCenter);
+    welcome->setText(
+        "<div style='color:#3a3a5c;font-size:32px;margin-bottom:16px;'>&#x2726;</div>"
+        "<div style='color:#45475a;font-size:14px;font-weight:500;"
+        "margin-bottom:6px;'>Start a conversation</div>"
+        "<div style='color:#313244;font-size:11px;'>"
+        "Type a message or choose a mode below</div>");
+    welcome->setTextFormat(Qt::RichText);
+    welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // Insert as first item (index 0); stretch is at 0, so we prepend a spacer
+    // Layout: [spacer, welcome, stretch] — use two stretches to center welcome
+    tab.messagesLayout->insertWidget(0, welcome);
+    tab.welcomeWidget = welcome;
+
+    // ThinkingIndicator lives at the bottom of the message list
+    auto *indicator = new ThinkingIndicator(scrollContent);
+    tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
+    tab.thinkingIndicator = indicator;
+
     int idx = m_tabWidget->addTab(tab.container, "New Chat");
     tab.tabIndex = idx;
     m_tabs[idx] = tab;
@@ -302,6 +328,12 @@ void ChatPanel::restoreSession(const QString &sessionId)
     tab.process = new ClaudeProcess(this);
     tab.process->setWorkingDirectory(m_workingDir);
     tab.process->setSessionId(sessionId);
+
+    // ThinkingIndicator for restored sessions (no welcome widget — session has messages)
+    auto *scrollContent = tab.scrollArea->widget();
+    auto *indicator = new ThinkingIndicator(scrollContent);
+    tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
+    tab.thinkingIndicator = indicator;
 
     auto messages = m_database->loadMessages(sessionId);
 
@@ -411,6 +443,7 @@ void ChatPanel::onSendRequested(const QString &text)
         tab.process->setSessionId(tab.sessionId);
 
     setProcessingState(true);
+    setTabProcessing(tab.tabIndex, true);
     tab.process->sendMessage(text);
 }
 
@@ -462,8 +495,21 @@ QWidget *ChatPanel::createChatContent()
 void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
 {
     if (!tab.messagesLayout) return;
-    int count = tab.messagesLayout->count();
-    tab.messagesLayout->insertWidget(count - 1, msg);
+
+    // Hide welcome label on first real message
+    if (tab.welcomeWidget && tab.welcomeWidget->isVisible())
+        tab.welcomeWidget->hide();
+
+    // Insert before the thinking indicator (which is just before the stretch)
+    // Layout: [...messages..., thinkingIndicator, stretch]
+    int insertPos = tab.messagesLayout->count() - 1; // before stretch
+    if (tab.thinkingIndicator) {
+        // Insert before the indicator
+        int indicatorIdx = tab.messagesLayout->indexOf(tab.thinkingIndicator);
+        if (indicatorIdx >= 0) insertPos = indicatorIdx;
+    }
+    tab.messagesLayout->insertWidget(insertPos, msg);
+
     connect(msg, &ChatMessageWidget::revertRequested,
             this, &ChatPanel::onRevertRequested);
     connect(msg, &ChatMessageWidget::fileNavigationRequested,
@@ -484,10 +530,20 @@ void ChatPanel::scrollTabToBottom(ChatTab &tab)
 void ChatPanel::setProcessingState(bool processing)
 {
     m_inputBar->setEnabled(!processing);
-    if (processing)
-        m_inputBar->setPlaceholder("Claude is thinking...");
-    else
-        m_inputBar->setPlaceholder("Ask Claude anything...");
+    m_inputBar->setPlaceholder(processing ? "Claude is thinking..." : "Ask Claude anything...");
+    emit processingChanged(processing);
+}
+
+void ChatPanel::setTabProcessing(int tabIdx, bool processing)
+{
+    if (!m_tabs.contains(tabIdx)) return;
+    auto &tab = m_tabs[tabIdx];
+    if (tab.thinkingIndicator) {
+        if (processing)
+            tab.thinkingIndicator->startAnimation();
+        else
+            tab.thinkingIndicator->stopAnimation();
+    }
 }
 
 QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr)

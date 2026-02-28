@@ -13,6 +13,7 @@ class ModeSelector;
 class ModelSelector;
 class ChatMessageWidget;
 class ToolCallGroupWidget;
+class ThinkingIndicator;
 class ClaudeProcess;
 class SessionManager;
 class SnapshotManager;
@@ -26,6 +27,8 @@ struct ChatTab {
     ClaudeProcess *process = nullptr;
     ChatMessageWidget *currentAssistantMsg = nullptr;
     ToolCallGroupWidget *currentToolGroup = nullptr;
+    ThinkingIndicator *thinkingIndicator = nullptr;
+    QWidget *welcomeWidget = nullptr;
     QString sessionId;
     int turnId = 0;
     int tabIndex = -1;
@@ -55,6 +58,7 @@ signals:
     void fileChanged(const QString &filePath);
     void navigateToFile(const QString &filePath, int line);
     void aboutToSendMessage();
+    void processingChanged(bool processing);
 
 private slots:
     void onSendRequested(const QString &text);
@@ -68,6 +72,7 @@ private:
     void addMessageToTab(ChatTab &tab, ChatMessageWidget *msg);
     void scrollTabToBottom(ChatTab &tab);
     void setProcessingState(bool processing);
+    void setTabProcessing(int tabIdx, bool processing);
     void showHistoryMenu();
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
 

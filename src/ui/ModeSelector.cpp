@@ -8,8 +8,12 @@ ModeSelector::ModeSelector(QWidget *parent)
     layout->setSpacing(1);
 
     m_agentBtn = new QPushButton("Agent", this);
-    m_askBtn = new QPushButton("Ask", this);
-    m_planBtn = new QPushButton("Plan", this);
+    m_askBtn   = new QPushButton("Ask",   this);
+    m_planBtn  = new QPushButton("Plan",  this);
+
+    m_agentBtn->setToolTip("Agent mode — Claude autonomously edits files and runs tools");
+    m_askBtn->setToolTip("Ask mode — Conversational; Claude answers without making file changes");
+    m_planBtn->setToolTip("Plan mode — Claude writes a plan and waits for your approval before acting");
 
     for (auto *btn : {m_agentBtn, m_askBtn, m_planBtn})
         btn->setFixedHeight(24);

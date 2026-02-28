@@ -1,6 +1,7 @@
 #include "ui/InputBar.h"
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QFocusEvent>
 
 InputBar::InputBar(QWidget *parent)
     : QWidget(parent)
@@ -34,6 +35,22 @@ InputBar::InputBar(QWidget *parent)
             clear();
         }
     });
+
+    // Animated focus ring
+    m_focusAnim = new QVariantAnimation(this);
+    m_focusAnim->setDuration(180);
+    m_focusAnim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_focusAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
+        applyBorderColor(v.value<QColor>());
+    });
+}
+
+void InputBar::applyBorderColor(const QColor &c)
+{
+    m_input->setStyleSheet(
+        QStringLiteral("QTextEdit#chatInput { background: #141414; color: #cdd6f4; "
+                       "border: 1px solid %1; border-radius: 8px; padding: 6px 10px; "
+                       "font-size: 13px; }").arg(c.name()));
 }
 
 QString InputBar::text() const
@@ -59,11 +76,26 @@ void InputBar::setPlaceholder(const QString &text)
 
 bool InputBar::eventFilter(QObject *obj, QEvent *event)
 {
-    if (obj == m_input && event->type() == QEvent::KeyPress) {
-        auto *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Return && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
-            m_sendBtn->click();
-            return true;
+    if (obj == m_input) {
+        if (event->type() == QEvent::KeyPress) {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Return && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
+                m_sendBtn->click();
+                return true;
+            }
+        } else if (event->type() == QEvent::FocusIn) {
+            m_focusAnim->stop();
+            m_focusAnim->setStartValue(QColor("#2a2a2a"));
+            m_focusAnim->setEndValue(QColor("#cba6f7"));
+            m_focusAnim->start();
+        } else if (event->type() == QEvent::FocusOut) {
+            m_focusAnim->stop();
+            m_focusAnim->setStartValue(
+                m_focusAnim->currentValue().isValid()
+                    ? m_focusAnim->currentValue().value<QColor>()
+                    : QColor("#cba6f7"));
+            m_focusAnim->setEndValue(QColor("#2a2a2a"));
+            m_focusAnim->start();
         }
     }
     return QWidget::eventFilter(obj, event);

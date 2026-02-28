@@ -1,10 +1,12 @@
 #include "ui/GitPanel.h"
+#include "ui/ToastManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QMenu>
 #include <QMessageBox>
 #include <QFont>
+#include <QTimer>
 
 GitPanel::GitPanel(QWidget *parent)
     : QWidget(parent)
@@ -387,7 +389,30 @@ void GitPanel::onCommit()
 
     m_git->commit(message);
 
-    connect(m_git, &GitManager::commitSucceeded, this, [this](const QString &, const QString &) {
+    connect(m_git, &GitManager::commitSucceeded, this,
+            [this](const QString &hash, const QString &) {
         m_commitMsg->clear();
+
+        // Flash the commit button green
+        const QString successStyle =
+            "QPushButton { background: #1a3d16; color: #a6e3a1; border: none; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: bold; }";
+        const QString normalStyle =
+            "QPushButton { background: #2d5a27; color: #cdd6f4; border: none; border-radius: 4px; "
+            "padding: 4px 10px; font-size: 11px; font-weight: bold; }"
+            "QPushButton:hover { background: #3a6e32; }"
+            "QPushButton:disabled { background: #1a1a1a; color: #45475a; }";
+
+        m_commitBtn->setText(QStringLiteral("\u2713  Committed!"));
+        m_commitBtn->setStyleSheet(successStyle);
+
+        QTimer::singleShot(2500, this, [this, normalStyle] {
+            m_commitBtn->setText("Commit");
+            m_commitBtn->setStyleSheet(normalStyle);
+        });
+
+        ToastManager::instance().show(
+            QStringLiteral("Committed %1").arg(hash.left(7)),
+            ToastType::Success, 2500);
     }, Qt::SingleShotConnection);
 }

@@ -4,6 +4,8 @@
 #include "ui/ChatPanel.h"
 #include "ui/TerminalPanel.h"
 #include "ui/GitPanel.h"
+#include "ui/ModelSelector.h"
+#include "ui/ToastManager.h"
 #include "core/SessionManager.h"
 #include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
@@ -14,6 +16,7 @@
 #include <QFileDialog>
 #include <QApplication>
 #include <QScreen>
+#include <QStatusBar>
 #include <QDir>
 #include <QFile>
 #include <QTimer>
@@ -35,8 +38,10 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     setupToolBar();
     setupMenuBar();
+    setupStatusBar();
     loadStylesheet();
     connectGitSignals();
+    ToastManager::instance().setParentWidget(this);
 
     if (auto *screen = QApplication::primaryScreen()) {
         QSize screenSize = screen->availableSize();
@@ -151,6 +156,44 @@ void MainWindow::setupUI()
     // Git panel: file clicked -> show split diff
     connect(m_gitPanel, &GitPanel::fileClicked, this, [this](const QString &filePath, bool staged) {
         m_gitManager->requestFileDiff(filePath, staged);
+    });
+}
+
+void MainWindow::setupStatusBar()
+{
+    m_statusFile       = new QLabel("No file open", this);
+    m_statusBranch     = new QLabel("", this);
+    m_statusModel      = new QLabel("", this);
+    m_statusProcessing = new QLabel("", this);
+
+    // Left: file name (stretches)
+    statusBar()->addWidget(m_statusFile, 1);
+
+    // Right: permanent widgets (rightmost first)
+    statusBar()->addPermanentWidget(m_statusModel);
+    statusBar()->addPermanentWidget(m_statusBranch);
+    statusBar()->addPermanentWidget(m_statusProcessing);
+
+    // Wire git branch updates
+    connect(m_gitManager, &GitManager::branchChanged, this, [this](const QString &branch) {
+        m_statusBranch->setText(QStringLiteral("\u2387 %1").arg(branch));
+    });
+
+    // Wire model selector
+    connect(m_chatPanel->modelSelector(), &ModelSelector::modelChanged, this,
+            [this](const QString &) {
+        m_statusModel->setText(m_chatPanel->modelSelector()->currentModelLabel());
+    });
+
+    // Wire processing state from ChatPanel
+    connect(m_chatPanel, &ChatPanel::processingChanged, this, [this](bool processing) {
+        if (processing) {
+            m_statusProcessing->setStyleSheet("QLabel { color: #cba6f7; }");
+            m_statusProcessing->setText("\u25CF Processing");
+        } else {
+            m_statusProcessing->setStyleSheet("");
+            m_statusProcessing->clear();
+        }
     });
 }
 
@@ -437,6 +480,7 @@ void MainWindow::onFileSelected(const QString &filePath)
     }
 
     m_codeViewer->loadFile(filePath);
+    m_statusFile->setText(QFileInfo(filePath).fileName());
     FileDiff diff = m_diffEngine->diffForFile(filePath);
     if (!diff.hunks.isEmpty())
         m_codeViewer->showDiff(diff);
@@ -541,10 +585,16 @@ void MainWindow::connectGitSignals()
     connect(m_gitManager, &GitManager::commitSucceeded, this,
             [](const QString &hash, const QString &msg) {
         qDebug() << "[cccpp] Committed" << hash << ":" << msg;
+        ToastManager::instance().show(
+            QStringLiteral("Committed %1").arg(hash.left(7)),
+            ToastType::Success, 2500);
     });
     connect(m_gitManager, &GitManager::commitFailed, this,
             [](const QString &err) {
         qDebug() << "[cccpp] Commit failed:" << err;
+        ToastManager::instance().show(
+            QStringLiteral("Commit failed: %1").arg(err.left(60)),
+            ToastType::Error, 5000);
     });
 
     // After SnapshotManager revert, refresh git status
