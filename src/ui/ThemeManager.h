@@ -157,7 +157,7 @@ private:
 
         // Inline fallback template (matches theme.qss)
         return QStringLiteral(R"(
-* { font-family: -apple-system, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+* { font-family: ".AppleSystemUIFont", "Segoe UI", "Helvetica Neue", sans-serif; font-size: 13px; }
 QMainWindow, QWidget { background: {{bg_window}}; color: {{text_primary}}; }
 QScrollBar:vertical { background: transparent; width: 8px; border: none; }
 QScrollBar::handle:vertical { background: {{border_subtle}}; border-radius: 4px; min-height: 24px; }
@@ -183,18 +183,18 @@ QSplitter::handle:hover { background: {{blue}}; width: 2px; }
 QSplitter::handle:pressed { background: {{blue}}; width: 2px; }
 QToolTip { background: {{bg_raised}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
 QTabWidget::pane { border: none; background: {{bg_window}}; }
-QTabBar { background: {{bg_base}}; border-bottom: 1px solid {{border_subtle}}; qproperty-drawBase: 0; }
+QTabBar { background: {{bg_window}}; border-bottom: 1px solid {{border_subtle}}; qproperty-drawBase: 0; }
 QTabBar::tab { background: transparent; color: {{text_muted}}; border: none; padding: 6px 14px; font-size: 12px; min-width: 40px; margin: 0; }
-QTabBar::tab:selected { color: {{text_primary}}; border-bottom: 2px solid {{blue}}; background: {{white_2pct}}; }
-QTabBar::tab:hover:!selected { color: {{text_secondary}}; background: {{white_2pct}}; }
+QTabBar::tab:selected { color: {{text_primary}}; border-bottom: 2px solid {{blue}}; }
+QTabBar::tab:hover:!selected { color: {{text_secondary}}; }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
 QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 3px; }
 QScrollArea { background: {{bg_window}}; border: none; }
-QTreeView, QTreeWidget { background: {{bg_base}}; color: {{text_secondary}}; border: none; font-size: 12px; outline: none; }
+QTreeView, QTreeWidget { background: {{bg_window}}; color: {{text_secondary}}; border: none; font-size: 12px; outline: none; }
 QTreeView::item, QTreeWidget::item { padding: 2px 4px; min-height: 22px; }
 QTreeView::item:selected, QTreeWidget::item:selected { background: {{bg_raised}}; color: {{text_primary}}; }
 QTreeView::item:hover, QTreeWidget::item:hover { background: {{white_2pct}}; }
-QTreeView::branch, QTreeWidget::branch { background: {{bg_base}}; }
+QTreeView::branch, QTreeWidget::branch { background: {{bg_window}}; }
 QTextBrowser { background: transparent; color: {{text_primary}}; border: none; font-size: 13px; selection-background-color: {{hover_raised}}; }
 QTextEdit#chatInput { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 12px; padding: 8px 12px; font-size: 13px; }
 QTextEdit#chatInput:focus { border-color: {{blue}}; }
@@ -203,7 +203,7 @@ QPushButton { background: {{bg_raised}}; color: {{text_primary}}; border: none; 
 QPushButton:hover { background: {{hover_raised}}; }
 QPushButton:pressed { background: {{pressed_raised}}; }
 QPushButton:disabled { background: {{bg_window}}; color: {{text_faint}}; }
-QToolBar { background: {{bg_base}}; border: none; border-bottom: 1px solid {{border_subtle}}; spacing: 2px; }
+QToolBar { background: {{bg_window}}; border: none; border-bottom: 1px solid {{border_subtle}}; spacing: 2px; }
 QComboBox { background: {{bg_raised}}; color: {{text_primary}}; border: none; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
 QComboBox:hover { background: {{hover_raised}}; }
 QComboBox::drop-down { border: none; width: 18px; }

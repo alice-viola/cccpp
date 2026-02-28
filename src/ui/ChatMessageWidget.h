@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QStringList>
 
 class ChatMessageWidget : public QFrame {
     Q_OBJECT
@@ -16,6 +17,7 @@ public:
                                QWidget *parent = nullptr);
 
     void appendContent(const QString &text);
+    void appendRawHtml(const QString &html, const QString &plainSummary);
     void appendHtmlOnly(const QString &html, const QString &plainTextForStorage);
     void setToolInfo(const QString &toolName, const QString &summary);
     void setTurnId(int turnId) { m_turnId = turnId; }
@@ -30,6 +32,7 @@ signals:
     void acceptRequested(int turnId);
     void rejectRequested(int turnId);
     void fileNavigationRequested(const QString &filePath, int line);
+    void applyCodeRequested(const QString &code, const QString &language);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -54,6 +57,7 @@ private:
     QPushButton *m_expandBtn = nullptr;
     QVBoxLayout *m_layout;
     QString m_rawContent;
+    QStringList m_pendingHtmlBlocks;
     bool m_isCollapsed = true;
     bool m_resizePending = false;
 };

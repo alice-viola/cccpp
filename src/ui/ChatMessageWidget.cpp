@@ -4,6 +4,9 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QDesktopServices>
+#include <QApplication>
+#include <QClipboard>
+#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QTimer>
 #include <QtMath>
@@ -14,8 +17,8 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     , m_rawContent(content)
 {
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(10, 6, 10, 6);
-    m_layout->setSpacing(0);
+    m_layout->setContentsMargins(12, 10, 12, 10);
+    m_layout->setSpacing(4);
 
     // Header: role label + buttons
     auto *headerLayout = new QHBoxLayout;
@@ -128,6 +131,38 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
             int line = q.queryItemValue("line").toInt();
             if (!file.isEmpty())
                 emit fileNavigationRequested(file, line);
+        } else if (url.scheme() == "cccpp" && url.host() == "copy") {
+            QUrlQuery q(url);
+            int blockIdx = q.queryItemValue("block").toInt();
+            // Extract code from raw content for the given block index
+            QString raw = m_rawContent;
+            QRegularExpression fenced("```\\w*\\n([\\s\\S]*?)\\n```");
+            auto it = fenced.globalMatch(raw);
+            int idx = 0;
+            while (it.hasNext()) {
+                auto match = it.next();
+                if (idx == blockIdx) {
+                    QApplication::clipboard()->setText(match.captured(1));
+                    break;
+                }
+                ++idx;
+            }
+        } else if (url.scheme() == "cccpp" && url.host() == "apply") {
+            QUrlQuery q(url);
+            int blockIdx = q.queryItemValue("block").toInt();
+            QString lang = q.queryItemValue("lang");
+            QString raw = m_rawContent;
+            QRegularExpression fenced("```\\w*\\n([\\s\\S]*?)\\n```");
+            auto it = fenced.globalMatch(raw);
+            int idx = 0;
+            while (it.hasNext()) {
+                auto match = it.next();
+                if (idx == blockIdx) {
+                    emit applyCodeRequested(match.captured(1), lang);
+                    break;
+                }
+                ++idx;
+            }
         } else if (url.scheme() == "http" || url.scheme() == "https") {
             QDesktopServices::openUrl(url);
         }
@@ -170,9 +205,24 @@ void ChatMessageWidget::appendContent(const QString &text)
     m_rawContent += text;
     if (m_contentBrowser) {
         MarkdownRenderer renderer;
-        m_contentBrowser->setHtml(renderer.toHtml(m_rawContent));
+        QString html = renderer.toHtml(m_rawContent);
+        if (!m_pendingHtmlBlocks.isEmpty())
+            html += m_pendingHtmlBlocks.join("");
+        m_contentBrowser->setHtml(html);
     } else if (m_userLabel) {
         m_userLabel->setText(m_rawContent);
+    }
+}
+
+void ChatMessageWidget::appendRawHtml(const QString &html, const QString &plainSummary)
+{
+    m_rawContent += plainSummary;
+    m_pendingHtmlBlocks.append(html);
+    if (m_contentBrowser) {
+        MarkdownRenderer renderer;
+        QString rendered = renderer.toHtml(m_rawContent);
+        rendered += m_pendingHtmlBlocks.join("");
+        m_contentBrowser->setHtml(rendered);
     }
 }
 
@@ -338,6 +388,9 @@ void ChatMessageWidget::applyThemeColors()
 
     if (m_contentBrowser && !m_rawContent.isEmpty()) {
         MarkdownRenderer renderer;
-        m_contentBrowser->setHtml(renderer.toHtml(m_rawContent));
+        QString html = renderer.toHtml(m_rawContent);
+        if (!m_pendingHtmlBlocks.isEmpty())
+            html += m_pendingHtmlBlocks.join("");
+        m_contentBrowser->setHtml(html);
     }
 }

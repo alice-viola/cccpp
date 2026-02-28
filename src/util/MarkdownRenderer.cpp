@@ -9,23 +9,17 @@ MarkdownRenderer::MarkdownRenderer(QObject *parent)
 
 QString MarkdownRenderer::toHtml(const QString &markdown) const
 {
+    m_lastCodeBlocks.clear();
+
     QString result = markdown;
-
-    // Process code blocks first (before other formatting touches backticks)
     result = processCodeBlocks(result);
-
-    // Process markdown tables (before inline formatting so bold/italic still works in cells)
     result = processTables(result);
-
-    // Process headers, bold, italic, etc.
     result = processInlineFormatting(result);
 
-    // Convert double newlines to paragraph breaks, single to <br>
-    // But not inside <pre> blocks
     QStringList parts = result.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>|<table[^>]*>[\\s\\S]*?</table>)"));
     QString final;
     for (const QString &part : parts) {
-        if (part.startsWith("<pre") || part.startsWith("<table")) {
+        if (part.startsWith("<pre") || part.startsWith("<table") || part.startsWith("<div class='codeblock")) {
             final += part;
         } else {
             QString p = part;
@@ -36,7 +30,7 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     }
 
     return QStringLiteral(
-        "<div style='font-family:-apple-system,\"SF Pro Text\",\"Inter\",\"Segoe UI\",system-ui,sans-serif;"
+        "<div style='font-family:\"Inter\",\"SF Pro Text\",\"Segoe UI\",\"Helvetica Neue\",sans-serif;"
         "font-size:13px;line-height:1.5;color:%2;'>"
         "<p style='margin:0;'>%1</p></div>")
         .arg(final, ThemeManager::instance().hex("text_primary"));
@@ -56,39 +50,69 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
 {
     QString result = text;
 
-    // Fenced code blocks: ```lang\n...\n```
     QRegularExpression fenced("```(\\w*)\\n([\\s\\S]*?)\\n```");
     auto it = fenced.globalMatch(result);
     QList<std::pair<int, int>> ranges;
     QList<QString> replacements;
 
+    int blockIndex = 0;
     while (it.hasNext()) {
         auto match = it.next();
         ranges.append({match.capturedStart(), match.capturedLength()});
         QString lang = match.captured(1);
-        QString code = escapeHtml(match.captured(2));
+        QString code = match.captured(2);
+        QString escapedCode = escapeHtml(code);
+
+        // Store code block info for Apply functionality
+        CodeBlockInfo info;
+        info.language = lang;
+        info.code = code;
+        info.startOffset = match.capturedStart();
+        info.endOffset = match.capturedEnd();
+        m_lastCodeBlocks.append(info);
 
         auto &tm = ThemeManager::instance();
-        QString langTag;
-        if (!lang.isEmpty())
-            langTag = QStringLiteral(
-                "<div style='background:%2;color:%3;font-size:11px;"
-                "padding:4px 8px;border-radius:4px 4px 0 0;font-family:monospace;'>%1</div>")
-                .arg(lang, tm.hex("bg_base"), tm.hex("text_muted"));
+
+        // Header with language tag and action buttons
+        QString headerHtml = QStringLiteral(
+            "<div style='background:%1;padding:4px 8px;border-radius:4px 4px 0 0;"
+            "display:flex;font-family:monospace;'>")
+            .arg(tm.hex("bg_base"));
+
+        if (!lang.isEmpty()) {
+            headerHtml += QStringLiteral(
+                "<span style='color:%1;font-size:11px;'>%2</span>")
+                .arg(tm.hex("text_muted"), lang);
+        }
+
+        // Apply and Copy buttons as clickable links
+        headerHtml += QStringLiteral(
+            "<span style='margin-left:auto;'>"
+            "<a href='cccpp://copy?block=%1' style='color:%3;text-decoration:none;font-size:11px;"
+            "padding:1px 6px;border-radius:3px;margin-right:4px;'>Copy</a>"
+            "<a href='cccpp://apply?block=%1&lang=%2' style='color:%4;text-decoration:none;font-size:11px;"
+            "padding:1px 6px;border-radius:3px;background:%5;'>Apply</a>"
+            "</span>")
+            .arg(blockIndex)
+            .arg(lang)
+            .arg(tm.hex("text_muted"))
+            .arg(tm.hex("on_accent"))
+            .arg(tm.hex("blue"));
+
+        headerHtml += "</div>";
 
         QString replacement = QStringLiteral(
-            "%1<pre style='background:%4;color:%5;padding:6px 8px;"
-            "border-radius:%2;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
-            "font-size:12px;overflow-x:auto;margin:2px 0 4px;line-height:1.3;"
-            "border:1px solid %6;'><code>%3</code></pre>")
-            .arg(langTag,
-                 lang.isEmpty() ? "4px" : "0 0 4px 4px",
-                 code,
-                 tm.hex("bg_base"), tm.hex("text_primary"), tm.hex("border_standard"));
+            "%1<pre style='background:%2;color:%3;padding:6px 8px;"
+            "border-radius:0 0 4px 4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
+            "font-size:12px;overflow-x:auto;margin:0 0 4px;line-height:1.3;"
+            "border:1px solid %4;border-top:none;'><code>%5</code></pre>")
+            .arg(headerHtml,
+                 tm.hex("bg_base"), tm.hex("text_primary"),
+                 tm.hex("border_standard"), escapedCode);
         replacements.append(replacement);
+        ++blockIndex;
     }
 
-    // Replace from end to start to preserve offsets
     for (int i = ranges.size() - 1; i >= 0; --i) {
         result.replace(ranges[i].first, ranges[i].second, replacements[i]);
     }
@@ -232,18 +256,15 @@ QString MarkdownRenderer::processInlineFormatting(const QString &text) const
     QString result = text;
     auto &tm = ThemeManager::instance();
 
-    // Bold: **text** or __text__
     QRegularExpression bold("\\*\\*(.+?)\\*\\*");
     result.replace(bold, "<b>\\1</b>");
 
     QRegularExpression boldUnderscore("__(.+?)__");
     result.replace(boldUnderscore, "<b>\\1</b>");
 
-    // Italic: *text* or _text_
     QRegularExpression italic("(?<!\\*)\\*([^*]+)\\*(?!\\*)");
     result.replace(italic, "<i>\\1</i>");
 
-    // Headers — compact margins
     QString blueHex = tm.hex("blue");
     QRegularExpression h1("^# (.+)$", QRegularExpression::MultilineOption);
     result.replace(h1,
@@ -260,7 +281,6 @@ QString MarkdownRenderer::processInlineFormatting(const QString &text) const
         QStringLiteral("<div style='color:%1;margin:4px 0 1px;font-size:13px;font-weight:600;'>\\1</div>")
         .arg(blueHex));
 
-    // Bullet lists
     QString mutedHex = tm.hex("text_muted");
     QRegularExpression bullet("^[\\-\\*] (.+)$", QRegularExpression::MultilineOption);
     result.replace(bullet,
@@ -268,26 +288,22 @@ QString MarkdownRenderer::processInlineFormatting(const QString &text) const
         "<span style='color:%1;'>&#x2022;</span> \\1</div>")
         .arg(mutedHex));
 
-    // Numbered lists: 1. item
     QRegularExpression numbered("^(\\d+)\\. (.+)$", QRegularExpression::MultilineOption);
     result.replace(numbered,
         QStringLiteral("<div style='padding-left:16px;margin:2px 0;'>"
         "<span style='color:%1;'>\\1.</span> \\2</div>")
         .arg(mutedHex));
 
-    // Links: [text](url)
     QRegularExpression link("\\[([^\\]]+)\\]\\(([^)]+)\\)");
     result.replace(link,
         QStringLiteral("<a href='\\2' style='color:%1;text-decoration:underline;'>\\1</a>")
         .arg(blueHex));
 
-    // Horizontal rule: --- or ***
     QRegularExpression hr("^(---+|\\*\\*\\*+)$", QRegularExpression::MultilineOption);
     result.replace(hr,
         QStringLiteral("<hr style='border:none;border-top:1px solid %1;margin:8px 0;'>")
         .arg(tm.hex("border_standard")));
 
-    // Blockquote: > text
     QRegularExpression blockquote("^> (.+)$", QRegularExpression::MultilineOption);
     result.replace(blockquote,
         QStringLiteral("<div style='border-left:3px solid %1;padding-left:12px;margin:4px 0;"

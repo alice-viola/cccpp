@@ -71,9 +71,9 @@ void TerminalPanel::applyThemeColors()
     m_tabWidget->setStyleSheet(QStringLiteral(
         "QTabWidget::pane { border: none; background: %1; }"
         "QTabBar { background: %1; }"
-        "QTabBar::tab { background: %1; color: %2; border: none; "
-        "padding: 3px 12px; font-size: 11px; }"
-        "QTabBar::tab:selected { color: %3; border-top: 1px solid %4; }")
+        "QTabBar::tab { background: transparent; color: %2; border: none; "
+        "padding: 4px 14px; font-size: 11px; }"
+        "QTabBar::tab:selected { color: %3; border-top: 2px solid %4; }")
         .arg(pal.bg_base.name(), pal.overlay0.name(),
              pal.text_primary.name(), pal.mauve.name()));
 }

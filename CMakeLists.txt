@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(cccpp VERSION 0.1.0 LANGUAGES C CXX)
+project(cccpp VERSION 0.1.0 LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,13 +68,26 @@ set(UI_SOURCES
     src/ui/ThemeManager.cpp
     src/ui/SearchPanel.cpp
     src/ui/BreadcrumbBar.cpp
+    src/ui/ContextPopup.cpp
+    src/ui/SlashCommandPopup.cpp
+    src/ui/SuggestionChips.cpp
+    src/ui/InlineDiffOverlay.cpp
+    src/ui/InlineEditBar.cpp
+    src/ui/CheckpointTimeline.cpp
 )
 
 set(UTIL_SOURCES
     src/util/MarkdownRenderer.cpp
     src/util/JsonUtils.cpp
     src/util/Config.cpp
+    $<$<PLATFORM_ID:Darwin>:src/util/MacUtils.mm>
 )
+
+if(NOT APPLE)
+    file(WRITE "${CMAKE_BINARY_DIR}/MacUtils_stub.cpp"
+         "#include \"util/MacUtils.h\"\nnamespace MacUtils { void applyTitleBarStyle(QWidget*, bool, const QColor&) {} }\n")
+    list(APPEND UTIL_SOURCES "${CMAKE_BINARY_DIR}/MacUtils_stub.cpp")
+endif()
 
 add_executable(cccpp
     src/main.cpp
@@ -98,6 +111,11 @@ target_link_libraries(cccpp PRIVATE
 # Platform-specific linking for PTY support
 if(UNIX AND NOT APPLE)
     target_link_libraries(cccpp PRIVATE util)
+endif()
+
+if(APPLE)
+    find_library(APPKIT_FRAMEWORK AppKit)
+    target_link_libraries(cccpp PRIVATE ${APPKIT_FRAMEWORK})
 endif()
 
 if(QSCINTILLA_FOUND)

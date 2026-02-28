@@ -14,11 +14,13 @@ class ModelSelector;
 class ChatMessageWidget;
 class ToolCallGroupWidget;
 class ThinkingIndicator;
+class SuggestionChips;
 class ClaudeProcess;
 class SessionManager;
 class SnapshotManager;
 class DiffEngine;
 class Database;
+class CodeViewer;
 
 struct ChatTab {
     QWidget *container = nullptr;
@@ -28,9 +30,10 @@ struct ChatTab {
     ChatMessageWidget *currentAssistantMsg = nullptr;
     ToolCallGroupWidget *currentToolGroup = nullptr;
     ThinkingIndicator *thinkingIndicator = nullptr;
+    SuggestionChips *suggestionChips = nullptr;
     QWidget *welcomeWidget = nullptr;
     QString sessionId;
-    QString pendingEditFile;   // file path from last Edit/Write tool (for deferred refresh)
+    QString pendingEditFile;
     int turnId = 0;
     int tabIndex = -1;
     bool processing = false;
@@ -46,8 +49,10 @@ public:
     void setDiffEngine(DiffEngine *diff);
     void setDatabase(Database *db);
     void setWorkingDirectory(const QString &dir);
+    void setCodeViewer(CodeViewer *viewer);
 
     QString newChat();
+    void closeAllTabs();
     void restoreSession(const QString &sessionId);
     void sendMessage(const QString &text);
 
@@ -62,9 +67,15 @@ signals:
     void planFileDetected(const QString &filePath);
     void aboutToSendMessage();
     void processingChanged(bool processing);
+    void applyCodeRequested(const QString &code, const QString &language, const QString &filePath);
+    void editApplied(const QString &filePath, const QString &oldText,
+                     const QString &newText, int startLine);
+    void inlineEditRequested(const QString &filePath, const QString &selectedCode,
+                             const QString &instruction);
 
 private slots:
     void onSendRequested(const QString &text);
+    void onSlashCommand(const QString &command, const QString &args);
     void onRevertRequested(int turnId);
     void applyThemeColors();
 
@@ -79,6 +90,9 @@ private:
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
+    QString buildContextPreamble(const QString &userText);
+    void updateInputBarContext();
+    void showSuggestionChips(ChatTab &tab, const QString &responseText);
 
     QTabWidget *m_tabWidget;
     QPushButton *m_newChatBtn;
@@ -92,5 +106,6 @@ private:
     SnapshotManager *m_snapshotMgr = nullptr;
     DiffEngine *m_diffEngine = nullptr;
     Database *m_database = nullptr;
+    CodeViewer *m_codeViewer = nullptr;
     QString m_workingDir;
 };

@@ -2,6 +2,8 @@
 #include "ui/FileIconProvider.h"
 #include "ui/BreadcrumbBar.h"
 #include "ui/DiffSplitView.h"
+#include "ui/InlineDiffOverlay.h"
+#include "ui/InlineEditBar.h"
 #include "ui/ThemeManager.h"
 #include "util/MarkdownRenderer.h"
 #include <QVBoxLayout>
@@ -521,13 +523,13 @@ void CodeViewer::applyEditorThemeColors(QsciScintilla *ed)
     const auto &pal = ThemeManager::instance().palette();
 
     ed->setMarginsForegroundColor(pal.overlay0);
-    ed->setMarginsBackgroundColor(pal.bg_base);
+    ed->setMarginsBackgroundColor(pal.bg_window);
     ed->setCaretForegroundColor(pal.text_primary);
-    ed->setCaretLineBackgroundColor(pal.border_subtle);
+    ed->setCaretLineBackgroundColor(pal.white_2pct);
     ed->setPaper(pal.bg_window);
     ed->setColor(pal.text_primary);
-    ed->setIndentationGuidesForegroundColor(pal.border_standard);
-    ed->setFoldMarginColors(pal.bg_base, pal.bg_base);
+    ed->setIndentationGuidesForegroundColor(pal.border_subtle);
+    ed->setFoldMarginColors(pal.bg_window, pal.bg_window);
     ed->setMatchedBraceForegroundColor(pal.yellow);
     ed->setMatchedBraceBackgroundColor(pal.pressed_raised);
     ed->setSelectionBackgroundColor(pal.pressed_raised);
@@ -643,7 +645,6 @@ void CodeViewer::updateEmptyState()
     if (m_breadcrumb) m_breadcrumb->setVisible(!empty);
 }
 
-void CodeViewer::setRootPath(const QString &path) { m_rootPath = path; }
 
 // ---------------------------------------------------------------------------
 // File loading / refreshing
@@ -760,7 +761,7 @@ void CodeViewer::openMarkdown(const QString &filePath)
         QStringLiteral(
         "QTextBrowser {"
         "  background: %1; color: %2;"
-        "  font-family: -apple-system,'SF Pro Text','Inter','Segoe UI',system-ui,sans-serif;"
+        "  font-family: '.AppleSystemUIFont','Segoe UI','Helvetica Neue',sans-serif;"
         "  font-size: 13px; padding: 16px 24px;"
         "  selection-background-color: %3;"
         "}")
@@ -1371,4 +1372,145 @@ void CodeViewer::showSplitDiff(const QString &filePath, const QString &oldConten
     int idx = indexForFile(filePath);
     if (idx >= 0)
         m_tabWidget->setCurrentIndex(idx);
+}
+
+// ---------------------------------------------------------------------------
+// Open files list (for context)
+// ---------------------------------------------------------------------------
+
+QStringList CodeViewer::openFiles() const
+{
+    QStringList files;
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
+        if (!it->filePath.isEmpty())
+            files << it->filePath;
+    }
+    return files;
+}
+
+QString CodeViewer::selectedText() const
+{
+#ifndef NO_QSCINTILLA
+    auto *tab = const_cast<CodeViewer *>(this)->currentTab();
+    if (tab && tab->editor)
+        return tab->editor->selectedText();
+#endif
+    return {};
+}
+
+int CodeViewer::currentLine() const
+{
+#ifndef NO_QSCINTILLA
+    auto *tab = const_cast<CodeViewer *>(this)->currentTab();
+    if (tab && tab->editor) {
+        int line, col;
+        tab->editor->getCursorPosition(&line, &col);
+        return line + 1;
+    }
+#endif
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Inline diff overlay (for reviewing AI edits)
+// ---------------------------------------------------------------------------
+
+void CodeViewer::showInlineDiffOverlay(const QString &filePath, const QString &oldText,
+                                        const QString &newText, int startLine)
+{
+    if (!m_inlineDiffOverlay) {
+        m_inlineDiffOverlay = new InlineDiffOverlay(this);
+
+        connect(m_inlineDiffOverlay, &InlineDiffOverlay::acceptAll, this, [this] {
+            emit inlineDiffAccepted(m_inlineDiffOverlay->property("filePath").toString());
+            hideInlineDiffOverlay();
+        });
+        connect(m_inlineDiffOverlay, &InlineDiffOverlay::rejectAll, this, [this] {
+            auto *overlay = m_inlineDiffOverlay;
+            QString fp = overlay->property("filePath").toString();
+            emit inlineDiffRejected(fp, "", "");
+            hideInlineDiffOverlay();
+        });
+        connect(m_inlineDiffOverlay, &InlineDiffOverlay::closed, this, [this] {
+            hideInlineDiffOverlay();
+        });
+        connect(m_inlineDiffOverlay, &InlineDiffOverlay::acceptHunk, this, [this](int) {
+            // Individual hunk accept - no-op since edit is already applied
+        });
+        connect(m_inlineDiffOverlay, &InlineDiffOverlay::rejectHunk, this, [this](int) {
+            // Individual hunk reject would need per-hunk revert
+            QString fp = m_inlineDiffOverlay->property("filePath").toString();
+            emit inlineDiffRejected(fp, "", "");
+        });
+    }
+
+    // Load the file if not already open
+    if (tabForFile(filePath) == nullptr)
+        loadFile(filePath);
+
+    m_inlineDiffOverlay->setProperty("filePath", filePath);
+    m_inlineDiffOverlay->setFilePath(filePath);
+    m_inlineDiffOverlay->setDiff(oldText, newText, startLine);
+
+    // Position as a compact bar at the top of the editor (not blocking code)
+    auto *tab = tabForFile(filePath);
+    if (!tab) tab = currentTab();
+    if (tab && tab->stack) {
+        m_inlineDiffOverlay->setParent(tab->stack);
+        int barHeight = qMin(m_inlineDiffOverlay->sizeHint().height(), 200);
+        m_inlineDiffOverlay->setGeometry(0, 0, tab->stack->width(), barHeight);
+    }
+    m_inlineDiffOverlay->show();
+    m_inlineDiffOverlay->raise();
+}
+
+void CodeViewer::hideInlineDiffOverlay()
+{
+    if (m_inlineDiffOverlay) {
+        m_inlineDiffOverlay->clear();
+        m_inlineDiffOverlay->hide();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Inline edit bar (Cmd+K)
+// ---------------------------------------------------------------------------
+
+void CodeViewer::showInlineEditBar()
+{
+    auto *tab = currentTab();
+    if (!tab || !tab->editor) return;
+
+    QString selected = selectedText();
+    if (selected.isEmpty()) return;
+
+    if (!m_inlineEditBar) {
+        m_inlineEditBar = new InlineEditBar(this);
+        connect(m_inlineEditBar, &InlineEditBar::submitted, this,
+                &CodeViewer::inlineEditSubmitted);
+        connect(m_inlineEditBar, &InlineEditBar::cancelled, this, [this] {
+            hideInlineEditBar();
+        });
+    }
+
+    m_inlineEditBar->setContext(tab->filePath, selected, currentLine());
+
+    // Position below the editor toolbar
+    if (tab->stack) {
+        m_inlineEditBar->setParent(tab->stack);
+        int w = tab->stack->width() - 16;
+        m_inlineEditBar->setGeometry(8, 8, w, m_inlineEditBar->sizeHint().height());
+    }
+
+    m_inlineEditBar->show();
+    m_inlineEditBar->raise();
+    m_inlineEditBar->focusInput();
+}
+
+void CodeViewer::hideInlineEditBar()
+{
+    if (m_inlineEditBar) {
+        m_inlineEditBar->clear();
+        m_inlineEditBar->hide();
+    }
 }

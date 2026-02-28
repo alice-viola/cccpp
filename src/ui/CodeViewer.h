@@ -14,6 +14,8 @@
 #include "ui/ThemeManager.h"
 
 class DiffSplitView;
+class InlineDiffOverlay;
+class InlineEditBar;
 class BreadcrumbBar;
 
 #ifndef NO_QSCINTILLA
@@ -57,6 +59,10 @@ public:
     bool hasDirtyTabs() const;
 
     QString currentFile() const;
+    void setRootPath(const QString &path) { m_rootPath = path; }
+    QStringList openFiles() const;
+    QString selectedText() const;
+    int currentLine() const;
 
     void undo();
     void redo();
@@ -64,7 +70,6 @@ public:
     void copy();
     void paste();
 
-    void setRootPath(const QString &path);
     void setGitManager(GitManager *mgr) { m_gitManager = mgr; }
     void showSplitDiff(const QString &filePath, const QString &oldContent,
                        const QString &newContent, const QString &leftLabel,
@@ -72,9 +77,23 @@ public:
     void toggleDiffMode();
     bool isInDiffMode() const;
 
+    // Inline diff overlay for AI edits
+    void showInlineDiffOverlay(const QString &filePath, const QString &oldText,
+                               const QString &newText, int startLine);
+    void hideInlineDiffOverlay();
+
+    // Inline edit (Cmd+K)
+    void showInlineEditBar();
+    void hideInlineEditBar();
+
 signals:
     void fileSaved(const QString &filePath);
     void dirtyStateChanged(const QString &filePath, bool dirty);
+    void inlineEditSubmitted(const QString &filePath, const QString &selectedCode,
+                             const QString &instruction);
+    void inlineDiffAccepted(const QString &filePath);
+    void inlineDiffRejected(const QString &filePath, const QString &oldText,
+                            const QString &newText);
 
 private:
 #ifndef NO_QSCINTILLA
@@ -95,7 +114,6 @@ private:
     void watchFile(const QString &filePath);
     void unwatchFile(const QString &filePath);
     void connectEditorSignals(FileTab &tab);
-
     void updateEmptyState();
 
     QTabWidget *m_tabWidget;
@@ -107,4 +125,7 @@ private:
     QSet<QString> m_savingFiles;
     GitManager *m_gitManager = nullptr;
     QString m_rootPath;
+
+    InlineDiffOverlay *m_inlineDiffOverlay = nullptr;
+    InlineEditBar *m_inlineEditBar = nullptr;
 };

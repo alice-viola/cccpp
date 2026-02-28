@@ -17,7 +17,7 @@
    =================================================================== */
 
 * {
-    font-family: -apple-system, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+    font-family: ".AppleSystemUIFont", "Segoe UI", "Helvetica Neue", sans-serif;
     font-size: 13px;
 }
 
@@ -109,7 +109,7 @@ QToolTip {
 QTabWidget::pane { border: none; background: {{bg_window}}; }
 
 QTabBar {
-    background: {{bg_base}};
+    background: {{bg_window}};
     border-bottom: 1px solid {{border_subtle}};
     qproperty-drawBase: 0;
 }
@@ -125,9 +125,8 @@ QTabBar::tab {
 QTabBar::tab:selected {
     color: {{text_primary}};
     border-bottom: 2px solid {{blue}};
-    background: {{white_2pct}};
 }
-QTabBar::tab:hover:!selected { color: {{text_secondary}}; background: {{white_2pct}}; }
+QTabBar::tab:hover:!selected { color: {{text_secondary}}; }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
 QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 3px; }
 
@@ -138,7 +137,7 @@ QScrollArea { background: {{bg_window}}; border: none; }
 /* --- Tree views -------------------------------------------------- */
 
 QTreeView, QTreeWidget {
-    background: {{bg_base}};
+    background: {{bg_window}};
     color: {{text_secondary}};
     border: none;
     font-size: 12px;
@@ -150,7 +149,7 @@ QTreeView::item:selected, QTreeWidget::item:selected {
     color: {{text_primary}};
 }
 QTreeView::item:hover, QTreeWidget::item:hover { background: {{white_2pct}}; }
-QTreeView::branch, QTreeWidget::branch { background: {{bg_base}}; }
+QTreeView::branch, QTreeWidget::branch { background: {{bg_window}}; }
 
 /* --- Text browser ------------------------------------------------ */
 
@@ -195,7 +194,7 @@ QPushButton:disabled { background: {{bg_window}}; color: {{text_faint}}; }
 /* --- Toolbar ----------------------------------------------------- */
 
 QToolBar {
-    background: {{bg_base}};
+    background: {{bg_window}};
     border: none;
     border-bottom: 1px solid {{border_subtle}};
     spacing: 2px;

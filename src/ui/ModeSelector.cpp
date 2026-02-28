@@ -5,7 +5,7 @@ ModeSelector::ModeSelector(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(16, 6, 16, 6);
     layout->setSpacing(1);
 
     m_agentBtn = new QPushButton("Agent", this);

@@ -6,7 +6,9 @@
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThinkingIndicator.h"
 #include "ui/QuestionWidget.h"
+#include "ui/SuggestionChips.h"
 #include "ui/ThemeManager.h"
+#include "ui/CodeViewer.h"
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "core/SessionManager.h"
@@ -21,6 +23,8 @@
 #include <QFileInfo>
 #include <QMenu>
 #include <QDebug>
+#include <QRegularExpression>
+#include <QSet>
 
 ChatPanel::ChatPanel(QWidget *parent)
     : QWidget(parent)
@@ -38,7 +42,7 @@ ChatPanel::ChatPanel(QWidget *parent)
     cornerLayout->setContentsMargins(0, 0, 0, 0);
     cornerLayout->setSpacing(0);
 
-    m_newChatBtn = new QPushButton("\xe2\x9e\x95", this);  // ➕
+    m_newChatBtn = new QPushButton("\xe2\x9e\x95", this);  // +
     m_newChatBtn->setFixedHeight(26);
     m_newChatBtn->setToolTip("New Chat (Ctrl+N)");
     connect(m_newChatBtn, &QPushButton::clicked, this, [this] { newChat(); });
@@ -54,7 +58,7 @@ ChatPanel::ChatPanel(QWidget *parent)
 
     mainLayout->addWidget(m_tabWidget, 1);
 
-    // Mode + Model selectors in a row
+    // Mode + Model selectors
     auto *selectorRow = new QWidget(this);
     auto *selectorLayout = new QHBoxLayout(selectorRow);
     selectorLayout->setContentsMargins(0, 0, 0, 0);
@@ -71,6 +75,7 @@ ChatPanel::ChatPanel(QWidget *parent)
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
+    connect(m_inputBar, &InputBar::slashCommand, this, &ChatPanel::onSlashCommand);
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
         refreshInputBarForCurrentTab();
     });
@@ -108,14 +113,20 @@ void ChatPanel::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; }
 void ChatPanel::setSnapshotManager(SnapshotManager *snap) { m_snapshotMgr = snap; }
 void ChatPanel::setDiffEngine(DiffEngine *diff) { m_diffEngine = diff; }
 void ChatPanel::setDatabase(Database *db) { m_database = db; }
-void ChatPanel::setWorkingDirectory(const QString &dir) { m_workingDir = dir; }
+void ChatPanel::setWorkingDirectory(const QString &dir) {
+    m_workingDir = dir;
+    // Strip trailing slash to avoid off-by-one in relative path computation
+    while (m_workingDir.endsWith('/') && m_workingDir.length() > 1)
+        m_workingDir.chop(1);
+    m_inputBar->setWorkspacePath(m_workingDir);
+}
+void ChatPanel::setCodeViewer(CodeViewer *viewer) { m_codeViewer = viewer; }
 
 void ChatPanel::wireProcessSignals(ChatTab &tab)
 {
     ClaudeProcess *proc = tab.process;
     int tabIdx = tab.tabIndex;
 
-    // Text streaming — route to the correct tab, not the visible one
     connect(proc->streamParser(), &StreamParser::textDelta, this,
             [this, tabIdx](const QString &text) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -125,7 +136,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         scrollTabToBottom(t);
     });
 
-    // Tool use events — grouped into a single collapsible widget per turn
     connect(proc->streamParser(), &StreamParser::toolUseStarted, this,
             [this, tabIdx](const QString &name, const nlohmann::json &input) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -138,7 +148,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                  << "hasOldString:" << hasOldStr
                  << "inputKeys:" << QString::fromStdString(input.dump()).left(100);
 
-        // Build tool call info
         ToolCallInfo info;
         info.toolName = name;
 
@@ -153,7 +162,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         else if (input.contains("command"))
             info.summary += ": " + JsonUtils::getString(input, "command");
 
-        // Handle edits — record for snapshot/diff and capture old/new for inline diff
         if ((name == "Edit" || name == "StrReplace") && input.contains("old_string")) {
             info.isEdit = true;
             info.oldString = JsonUtils::getString(input, "old_string");
@@ -166,11 +174,12 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
-            // Append inline diff to the assistant message
             if (t.currentAssistantMsg && !info.filePath.isEmpty()) {
                 QString diffHtml = buildInlineDiffHtml(info.filePath, info.oldString, info.newString);
-                t.currentAssistantMsg->appendContent(diffHtml);
+                QString summary = QStringLiteral("\n[Edit: %1]\n").arg(QFileInfo(info.filePath).fileName());
+                t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
             }
+            emit editApplied(info.filePath, info.oldString, info.newString, 0);
         } else if (name == "Write" && !info.filePath.isEmpty()) {
             info.isEdit = true;
             info.newString = JsonUtils::getString(input, "content",
@@ -180,32 +189,30 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
-            // Show a summary in the chat (full file content is too large for inline diff)
             if (t.currentAssistantMsg) {
                 int lineCount = info.newString.count('\n') + 1;
                 QString diffHtml = buildInlineDiffHtml(
                     info.filePath, "",
                     QStringLiteral("(%1 lines written)").arg(lineCount));
-                t.currentAssistantMsg->appendContent(diffHtml);
+                QString summary = QStringLiteral("\n[Write: %1 (%2 lines)]\n")
+                    .arg(QFileInfo(info.filePath).fileName()).arg(lineCount);
+                t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
             }
 
             if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
                 emit planFileDetected(info.filePath);
         }
 
-        // AskUserQuestion — show interactive question widget
         if (name == "AskUserQuestion") {
             auto *questionWidget = new QuestionWidget(input);
             if (t.messagesLayout) {
                 int count = t.messagesLayout->count();
                 t.messagesLayout->insertWidget(count - 1, questionWidget);
             }
-            // When user answers, resume the conversation with their response
             connect(questionWidget, &QuestionWidget::answered, this,
                     [this, tabIdx](const QString &response) {
                 if (!m_tabs.contains(tabIdx)) return;
                 auto &tab = m_tabs[tabIdx];
-                // Send the answer as a follow-up message using --resume
                 tab.process->setMode(m_modeSelector->currentMode());
                 tab.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
                 tab.currentAssistantMsg->setTurnId(tab.turnId);
@@ -217,11 +224,9 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 tab.process->sendMessage(response);
             });
             scrollTabToBottom(t);
-            // Don't add to tool group — it's shown separately
             goto persistTool;
         }
 
-        // Create or reuse the group widget for this turn
         if (!t.currentToolGroup) {
             t.currentToolGroup = new ToolCallGroupWidget;
             if (t.messagesLayout) {
@@ -246,7 +251,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
     });
 
-    // Tool result — file is now on disk, re-emit fileChanged for git refresh
     connect(proc->streamParser(), &StreamParser::toolResultReceived, this,
             [this, tabIdx](const QString &) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -257,7 +261,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
     });
 
-    // Result (session ID capture only — no DB save here, done on process finish)
     connect(proc->streamParser(), &StreamParser::resultReady, this,
             [this, tabIdx](const QString &sessionId, const nlohmann::json &) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -268,13 +271,11 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.process->setSessionId(sessionId);
             if (m_sessionMgr)
                 m_sessionMgr->updateSessionId(oldId, sessionId);
-            // Migrate all messages saved with the old (pending) ID to the real ID
             if (m_database)
                 m_database->updateMessageSessionId(oldId, sessionId);
         }
     });
 
-    // Process finished
     connect(proc, &ClaudeProcess::finished, this, [this, tabIdx](int exitCode) {
         if (!m_tabs.contains(tabIdx)) return;
         auto &t = m_tabs[tabIdx];
@@ -282,7 +283,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (m_snapshotMgr)
             m_snapshotMgr->commitTurn();
 
-        // Finalize tool call group
         if (t.currentToolGroup) {
             t.currentToolGroup->finalize();
             t.currentToolGroup = nullptr;
@@ -293,7 +293,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
         }
 
-        // Save assistant message to DB — skip noise-only messages
         if (m_database && t.currentAssistantMsg) {
             QString content = t.currentAssistantMsg->rawContent().trimmed();
             bool isNoise = content.isEmpty()
@@ -312,13 +311,16 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         if (t.currentAssistantMsg) {
             t.currentAssistantMsg->showRevertButton(true);
+
+            // Generate follow-up suggestions
+            showSuggestionChips(t, t.currentAssistantMsg->rawContent());
+
             t.currentAssistantMsg = nullptr;
         }
         setTabProcessingState(tabIdx, false);
         scrollTabToBottom(t);
     });
 
-    // Errors from process (stderr, failed to start)
     connect(proc, &ClaudeProcess::errorOccurred, this, [this, tabIdx](const QString &err) {
         qWarning() << "ClaudeProcess error (tab" << tabIdx << "):" << err;
         if (!m_tabs.contains(tabIdx)) return;
@@ -329,7 +331,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         setTabProcessingState(tabIdx, false);
     });
 
-    // Stream parser errors
     connect(proc->streamParser(), &StreamParser::errorOccurred, this,
             [this, tabIdx](const QString &err) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -355,7 +356,6 @@ QString ChatPanel::newChat()
     tab.process = new ClaudeProcess(this);
     tab.process->setWorkingDirectory(m_workingDir);
 
-    // Welcome label — hidden when first message is added
     auto *scrollContent = tab.scrollArea->widget();
     auto *welcome = new QLabel(scrollContent);
     welcome->setObjectName("chatWelcome");
@@ -367,16 +367,13 @@ QString ChatPanel::newChat()
         "<div style='color:%2;font-size:14px;font-weight:500;"
         "margin-bottom:6px;'>Start a conversation</div>"
         "<div style='color:%3;font-size:11px;'>"
-        "Type a message or choose a mode below</div>")
+        "Type a message, @ to mention files, / for commands</div>")
         .arg(thm2.hex("surface0"), thm2.hex("text_faint"), thm2.hex("surface0")));
     welcome->setTextFormat(Qt::RichText);
     welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    // Insert as first item (index 0); stretch is at 0, so we prepend a spacer
-    // Layout: [spacer, welcome, stretch] — use two stretches to center welcome
     tab.messagesLayout->insertWidget(0, welcome);
     tab.welcomeWidget = welcome;
 
-    // ThinkingIndicator lives at the bottom of the message list
     auto *indicator = new ThinkingIndicator(scrollContent);
     tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
     tab.thinkingIndicator = indicator;
@@ -389,6 +386,21 @@ QString ChatPanel::newChat()
 
     m_tabWidget->setCurrentIndex(idx);
     return sessionId;
+}
+
+void ChatPanel::closeAllTabs()
+{
+    // Cancel any running processes
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->process && it->process->isRunning())
+            it->process->cancel();
+    }
+
+    // Remove all tabs
+    while (m_tabWidget->count() > 0)
+        m_tabWidget->removeTab(0);
+
+    m_tabs.clear();
 }
 
 void ChatPanel::restoreSession(const QString &sessionId)
@@ -407,7 +419,6 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     auto messages = m_database->loadMessages(sessionId);
 
-    // Collect messages per turn
     struct TurnData {
         QString userContent;
         QString assistantContent;
@@ -427,7 +438,6 @@ void ChatPanel::restoreSession(const QString &sessionId)
             turns[t].tools.append(msg);
     }
 
-    // Render: user -> assistant -> tool group (matches live chat layout)
     for (auto it = turns.constBegin(); it != turns.constEnd(); ++it) {
         const TurnData &td = it.value();
         int turnId = it.key();
@@ -460,7 +470,6 @@ void ChatPanel::restoreSession(const QString &sessionId)
     }
     tab.turnId = maxTurn;
 
-    // ThinkingIndicator — insert AFTER messages so it ends up just before the stretch
     auto *scrollContent = tab.scrollArea->widget();
     auto *indicator = new ThinkingIndicator(scrollContent);
     tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
@@ -476,7 +485,6 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     m_tabWidget->setCurrentIndex(idx);
 
-    // Check for plan files referenced in tool messages
     QString lastPlanFile;
     for (const auto &msg : messages) {
         if (msg.role == "tool" && msg.content.startsWith("Write: ")) {
@@ -500,6 +508,12 @@ void ChatPanel::onSendRequested(const QString &text)
         newChat();
 
     auto &tab = currentTab();
+
+    // Hide previous suggestion chips
+    if (tab.suggestionChips) {
+        tab.suggestionChips->clear();
+        tab.suggestionChips = nullptr;
+    }
 
     auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
     addMessageToTab(tab, userMsg);
@@ -525,19 +539,190 @@ void ChatPanel::onSendRequested(const QString &text)
     tab.currentAssistantMsg->setTurnId(tab.turnId);
     addMessageToTab(tab, tab.currentAssistantMsg);
 
+    // Build enriched message with context
+    QString enrichedMessage = buildContextPreamble(text);
+
     tab.process->setMode(m_modeSelector->currentMode());
     tab.process->setModel(m_modelSelector->currentModelId());
     if (!tab.sessionId.startsWith("pending-"))
         tab.process->setSessionId(tab.sessionId);
 
     setTabProcessingState(tab.tabIndex, true);
-    tab.process->sendMessage(text);
+    tab.process->sendMessage(enrichedMessage);
+
+    // Clear attachments after sending
+    m_inputBar->clearAttachments();
+    updateInputBarContext();
+}
+
+void ChatPanel::onSlashCommand(const QString &command, const QString &args)
+{
+    if (command == "/clear") {
+        newChat();
+    } else if (command == "/compact") {
+        if (!m_tabs.isEmpty()) {
+            sendMessage("Please provide a concise summary of our conversation so far, "
+                        "then we can continue from that summary.");
+        }
+    } else if (command == "/help") {
+        if (m_tabs.isEmpty()) newChat();
+        auto &tab = currentTab();
+        auto *helpMsg = new ChatMessageWidget(ChatMessageWidget::Assistant,
+            "**Available commands:**\n"
+            "- `/clear` - Start a new conversation\n"
+            "- `/compact` - Compact conversation history\n"
+            "- `/help` - Show this help\n"
+            "- `/model <name>` - Switch Claude model\n"
+            "- `/mode <agent|ask|plan>` - Switch mode\n\n"
+            "**Shortcuts:**\n"
+            "- `@` - Mention files to attach as context\n"
+            "- Paste images with Ctrl/Cmd+V\n"
+            "- Cmd+K in editor for inline edits");
+        addMessageToTab(tab, helpMsg);
+    } else if (command == "/mode" && !args.isEmpty()) {
+        m_modeSelector->setMode(args.toLower());
+    } else if (command == "/model" && !args.isEmpty()) {
+        // Model switching handled by ModelSelector
+    }
 }
 
 void ChatPanel::onRevertRequested(int turnId)
 {
     if (m_snapshotMgr)
         m_snapshotMgr->revertTurn(turnId);
+}
+
+QString ChatPanel::buildContextPreamble(const QString &userText)
+{
+    QStringList contextParts;
+    QString processedText = userText;
+    QSet<QString> resolvedPaths;
+
+    // Auto-attached context: current file + line
+    if (m_codeViewer) {
+        QString currentFile = m_codeViewer->currentFile();
+        if (!currentFile.isEmpty()) {
+            QString relFile = currentFile;
+            if (!m_workingDir.isEmpty() && currentFile.startsWith(m_workingDir))
+                relFile = currentFile.mid(m_workingDir.length() + 1);
+            contextParts << QStringLiteral("Currently viewing: %1").arg(relFile);
+        }
+    }
+
+    // @-mentioned file contexts (from popup selection, stored as pills)
+    auto contexts = m_inputBar->attachedContexts();
+    for (const auto &ctx : contexts) {
+        if (resolvedPaths.contains(ctx.fullPath)) continue;
+        QFile file(ctx.fullPath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QString content = QString::fromUtf8(file.readAll());
+            if (content.length() > 50000)
+                content = content.left(50000) + "\n... (truncated)";
+            contextParts << QStringLiteral("Content of %1:\n```\n%2\n```")
+                .arg(ctx.displayName, content);
+            resolvedPaths.insert(ctx.fullPath);
+        }
+    }
+
+    // Fallback: resolve @filename patterns typed inline in the message text.
+    // Handles patterns like @README.md, @src/main.cpp, @CMakeLists.txt
+    QRegularExpression atMention("@([\\w./\\-]+\\.[\\w]+)");
+    auto it = atMention.globalMatch(userText);
+    while (it.hasNext()) {
+        auto match = it.next();
+        QString token = match.captured(1);
+
+        // Try to resolve: first as relative to workspace, then as absolute
+        QString fullPath;
+        if (!m_workingDir.isEmpty()) {
+            QString candidate = m_workingDir + "/" + token;
+            if (QFile::exists(candidate))
+                fullPath = candidate;
+        }
+        if (fullPath.isEmpty() && QFile::exists(token))
+            fullPath = token;
+
+        if (fullPath.isEmpty() || resolvedPaths.contains(fullPath))
+            continue;
+
+        QFile file(fullPath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QString content = QString::fromUtf8(file.readAll());
+            if (content.length() > 50000)
+                content = content.left(50000) + "\n... (truncated)";
+            contextParts << QStringLiteral("Content of %1:\n```\n%2\n```")
+                .arg(token, content);
+            resolvedPaths.insert(fullPath);
+        }
+    }
+
+    // Image contexts
+    auto images = m_inputBar->attachedImages();
+    if (!images.isEmpty()) {
+        contextParts << QStringLiteral("[%1 image(s) attached]").arg(images.size());
+    }
+
+    if (contextParts.isEmpty())
+        return processedText;
+
+    return contextParts.join("\n\n") + "\n\n" + processedText;
+}
+
+void ChatPanel::updateInputBarContext()
+{
+    if (!m_codeViewer) return;
+
+    QString currentFile = m_codeViewer->currentFile();
+    if (currentFile.isEmpty()) {
+        m_inputBar->setContextIndicator("");
+        return;
+    }
+
+    QString relFile = currentFile;
+    if (!m_workingDir.isEmpty() && currentFile.startsWith(m_workingDir))
+        relFile = currentFile.mid(m_workingDir.length() + 1);
+
+    m_inputBar->setContextIndicator(QStringLiteral("Context: %1").arg(relFile));
+}
+
+void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)
+{
+    QStringList suggestions;
+
+    // Heuristic: if response mentions files that were edited, suggest reviewing them
+    if (responseText.contains("Edit:") || responseText.contains("Write:") ||
+        responseText.contains("created") || responseText.contains("modified")) {
+        suggestions << "Run tests" << "Show diff";
+    }
+
+    if (responseText.contains("error") || responseText.contains("fix") ||
+        responseText.contains("bug")) {
+        suggestions << "Explain the fix" << "Are there similar issues?";
+    }
+
+    if (responseText.contains("TODO") || responseText.contains("next step")) {
+        suggestions << "Continue" << "What's left?";
+    }
+
+    if (suggestions.isEmpty())
+        return;
+
+    // Limit to 3 suggestions
+    while (suggestions.size() > 3)
+        suggestions.removeLast();
+
+    auto *chips = new SuggestionChips;
+    chips->setSuggestions(suggestions);
+    connect(chips, &SuggestionChips::suggestionClicked, this, [this](const QString &text) {
+        sendMessage(text);
+    });
+
+    if (tab.messagesLayout) {
+        int count = tab.messagesLayout->count();
+        tab.messagesLayout->insertWidget(count - 1, chips);
+    }
+    tab.suggestionChips = chips;
+    scrollTabToBottom(tab);
 }
 
 ChatTab &ChatPanel::currentTab()
@@ -569,8 +754,8 @@ QWidget *ChatPanel::createChatContent()
     auto *scrollContent = new QWidget;
     auto *messagesLayout = new QVBoxLayout(scrollContent);
     messagesLayout->setObjectName("messagesLayout");
-    messagesLayout->setContentsMargins(4, 4, 4, 4);
-    messagesLayout->setSpacing(2);
+    messagesLayout->setContentsMargins(16, 12, 16, 12);
+    messagesLayout->setSpacing(12);
     messagesLayout->addStretch();
 
     scrollArea->setWidget(scrollContent);
@@ -583,15 +768,11 @@ void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
 {
     if (!tab.messagesLayout) return;
 
-    // Hide welcome label on first real message
     if (tab.welcomeWidget && tab.welcomeWidget->isVisible())
         tab.welcomeWidget->hide();
 
-    // Insert before the thinking indicator (which is just before the stretch)
-    // Layout: [...messages..., thinkingIndicator, stretch]
-    int insertPos = tab.messagesLayout->count() - 1; // before stretch
+    int insertPos = tab.messagesLayout->count() - 1;
     if (tab.thinkingIndicator) {
-        // Insert before the indicator
         int indicatorIdx = tab.messagesLayout->indexOf(tab.thinkingIndicator);
         if (indicatorIdx >= 0) insertPos = indicatorIdx;
     }
@@ -602,6 +783,10 @@ void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
     connect(msg, &ChatMessageWidget::fileNavigationRequested,
             this, [this](const QString &filePath, int line) {
         emit navigateToFile(filePath, line);
+    });
+    connect(msg, &ChatMessageWidget::applyCodeRequested,
+            this, [this](const QString &code, const QString &language) {
+        emit applyCodeRequested(code, language, "");
     });
 }
 
@@ -630,7 +815,6 @@ void ChatPanel::setTabProcessingState(int tabIdx, bool processing)
     if (tabIdx == m_tabWidget->currentIndex())
         refreshInputBarForCurrentTab();
 
-    // Emit global processingChanged (true if ANY tab is processing)
     bool anyProcessing = false;
     for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
         if (it->processing) { anyProcessing = true; break; }
@@ -643,7 +827,9 @@ void ChatPanel::refreshInputBarForCurrentTab()
     int idx = m_tabWidget->currentIndex();
     bool busy = m_tabs.contains(idx) && m_tabs[idx].processing;
     m_inputBar->setEnabled(!busy);
-    m_inputBar->setPlaceholder(busy ? "Claude is thinking..." : "Ask Claude anything...");
+    m_inputBar->setPlaceholder(busy ? "Claude is thinking..."
+                                    : "Ask Claude anything... (@ to mention files, / for commands)");
+    updateInputBarContext();
 }
 
 QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr)
@@ -651,7 +837,6 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
     QString html;
     QFileInfo fi(filePath);
 
-    // Find the line number where the edit occurs (file not yet written, so oldStr is findable)
     int editLine = 0;
     if (!oldStr.isEmpty()) {
         QFile f(filePath);
@@ -665,18 +850,15 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
 
     auto &thm = ThemeManager::instance();
 
-    // Card container
     html += QStringLiteral(
         "\n\n<table cellspacing='0' cellpadding='0' style='width:100%%;margin:6px 0;'><tr><td>"
         "<div style='background:%4;border:1px solid %5;border-radius:6px;overflow:hidden;'>"
-        // Header bar with file name
         "<div style='background:%6;padding:4px 8px;border-bottom:1px solid %5;'>"
         "<a href='cccpp://open?file=%1&line=%3' style='color:%7;text-decoration:none;font-size:11px;"
         "font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
         .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine),
              thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"), thm.hex("blue"));
 
-    // Code diff area
     html += "<div style='padding:2px 0;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;font-size:12px;line-height:1.4;'>";
 
     if (!oldStr.isEmpty()) {
@@ -717,9 +899,7 @@ void ChatPanel::showHistoryMenu()
     if (sessions.isEmpty()) return;
 
     QMenu menu(this);
-    // Styled via QSS — no inline override needed
 
-    // Only show sessions from this workspace that aren't already open
     QSet<QString> openIds;
     for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it)
         openIds.insert(it->sessionId);

@@ -148,7 +148,7 @@ void GitPanel::applyThemeColors()
 
     m_commitMsg->setStyleSheet(QStringLiteral(
         "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: -apple-system,'SF Pro Text','Inter','Segoe UI',system-ui,sans-serif; }"
+        "border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: '.AppleSystemUIFont','Segoe UI','Helvetica Neue',sans-serif; }"
         "QTextEdit:focus { border-color: %4; }")
         .arg(pal.bg_window.name(), pal.text_primary.name(),
              pal.border_standard.name(), pal.border_focus.name()));

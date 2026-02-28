@@ -15,6 +15,7 @@
 #include "core/Database.h"
 #include "core/GitManager.h"
 #include "util/Config.h"
+#include "util/MacUtils.h"
 #include <QMenuBar>
 #include <QFileDialog>
 #include <QApplication>
@@ -394,20 +395,18 @@ void MainWindow::setupToolBar()
 
     auto makeToggle = [this](const QString &label, const QString &tip) -> QPushButton* {
         auto *btn = new QPushButton(label, this);
-        btn->setFixedSize(24, 18);
         btn->setToolTip(tip);
         btn->setCheckable(true);
         btn->setChecked(true);
+        btn->setFixedHeight(20);
         return btn;
     };
 
-    m_toggleTree = makeToggle("\xe2\x96\x8c", "Toggle Workspace (Ctrl+1)");
-    m_toggleEditor = makeToggle("\xe2\x96\x88", "Toggle Editor (Ctrl+2)");
-    m_toggleChat = makeToggle("\xe2\x96\x90", "Toggle Chat (Ctrl+3)");
-    m_toggleTerminal = makeToggle("\xe2\x96\xbc", "Toggle Terminal (Ctrl+`)");
+    m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
+    m_toggleEditor = makeToggle("Editor", "Toggle Editor (Ctrl+2)");
+    m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
+    m_toggleTerminal = makeToggle("Terminal", "Toggle Terminal (Ctrl+`)");
     m_toggleTerminal->setChecked(false);
-    m_toggleTerminal->setFixedSize(42, 18);
-    m_toggleTerminal->setText("\xe2\x96\xbc tty");
     // Styles applied by applyThemeColors()
 
     auto *spacer = new QWidget(this);
@@ -456,6 +455,11 @@ void MainWindow::loadStylesheet()
 
     connect(&tm, &ThemeManager::themeChanged, this, &MainWindow::onThemeChanged);
     applyThemeColors();
+
+    QTimer::singleShot(0, this, [this] {
+        const auto &pal = ThemeManager::instance().palette();
+        MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_base);
+    });
 }
 
 void MainWindow::applyThemeColors()
@@ -469,27 +473,22 @@ void MainWindow::applyThemeColors()
         "QTabBar::tab { background: transparent; color: %3; border: none; padding: 4px 12px; font-size: 11px; }"
         "QTabBar::tab:selected { color: %4; border-top: 2px solid %5; }"
         "QTabBar::tab:hover:!selected { color: %6; }")
-        .arg(p.bg_base.name(), p.border_standard.name(), p.text_muted.name(),
-             p.text_primary.name(), p.mauve.name(), p.text_secondary.name()));
+        .arg(p.bg_window.name(), p.border_subtle.name(), p.text_muted.name(),
+             p.text_primary.name(), p.blue.name(), p.text_secondary.name()));
 
     // Toggle buttons in toolbar
     auto toggleStyle = QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: none; "
-        "border-radius: 4px; font-size: 11px; padding: 0; margin: 0; }"
-        "QPushButton:hover { color: %2; }"
-        "QPushButton:checked { color: %3; }")
-        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name());
+        "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 2px 8px; margin: 0 1px; }"
+        "QPushButton:hover { background: %4; color: %2; }"
+        "QPushButton:checked { background: %4; color: %3; }")
+        .arg(p.text_muted.name(), p.text_secondary.name(),
+             p.text_primary.name(), p.bg_raised.name());
 
     m_toggleTree->setStyleSheet(toggleStyle);
     m_toggleEditor->setStyleSheet(toggleStyle);
     m_toggleChat->setStyleSheet(toggleStyle);
-    m_toggleTerminal->setStyleSheet(
-        QStringLiteral(
-            "QPushButton { background: transparent; color: %1; border: none; "
-            "border-radius: 4px; font-size: 11px; padding: 0 4px; margin: 0; }"
-            "QPushButton:hover { color: %2; }"
-            "QPushButton:checked { color: %3; }")
-        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name()));
+    m_toggleTerminal->setStyleSheet(toggleStyle);
 
     // Status bar processing label (re-apply if active)
     if (!m_statusProcessing->text().isEmpty())
@@ -500,6 +499,9 @@ void MainWindow::onThemeChanged(const QString &name)
 {
     applyThemeColors();
     Config::instance().setTheme(name);
+
+    const auto &pal = ThemeManager::instance().palette();
+    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_base);
 
     // Update theme menu checkmarks
     if (m_themeGroup) {

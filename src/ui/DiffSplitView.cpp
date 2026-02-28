@@ -132,7 +132,7 @@ void DiffSplitView::applyThemeColors()
 #ifndef NO_QSCINTILLA
     for (auto *ed : {m_leftEditor, m_rightEditor}) {
         ed->setMarginsForegroundColor(pal.overlay0);
-        ed->setMarginsBackgroundColor(pal.bg_base);
+        ed->setMarginsBackgroundColor(pal.bg_window);
         ed->setCaretForegroundColor(pal.text_primary);
         ed->setPaper(pal.bg_window);
         ed->setColor(pal.text_primary);
