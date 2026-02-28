@@ -33,28 +33,30 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     headerLayout->addStretch();
 
     m_acceptBtn = new QPushButton("Accept", this);
-    m_acceptBtn->setFixedHeight(18);
+    m_acceptBtn->setFixedHeight(20);
     m_acceptBtn->setStyleSheet(
         "QPushButton { background: #a6e3a1; color: #0e0e0e; border: none; "
-        "border-radius: 3px; font-size: 10px; font-weight: bold; padding: 0 6px; }");
+        "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+        "QPushButton:hover { background: #b6f0b1; }");
     m_acceptBtn->setVisible(false);
     connect(m_acceptBtn, &QPushButton::clicked, this, [this] { emit acceptRequested(m_turnId); });
     headerLayout->addWidget(m_acceptBtn);
 
     m_rejectBtn = new QPushButton("Reject", this);
-    m_rejectBtn->setFixedHeight(18);
+    m_rejectBtn->setFixedHeight(20);
     m_rejectBtn->setStyleSheet(
         "QPushButton { background: #f38ba8; color: #0e0e0e; border: none; "
-        "border-radius: 3px; font-size: 10px; font-weight: bold; padding: 0 6px; }");
+        "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+        "QPushButton:hover { background: #f5a0b6; }");
     m_rejectBtn->setVisible(false);
     connect(m_rejectBtn, &QPushButton::clicked, this, [this] { emit rejectRequested(m_turnId); });
     headerLayout->addWidget(m_rejectBtn);
 
     m_revertBtn = new QPushButton("Revert", this);
-    m_revertBtn->setFixedHeight(18);
+    m_revertBtn->setFixedHeight(20);
     m_revertBtn->setStyleSheet(
-        "QPushButton { background: #2a2a2a; color: #f38ba8; border: none; "
-        "border-radius: 3px; font-size: 10px; padding: 0 6px; }"
+        "QPushButton { background: #252525; color: #f38ba8; border: none; "
+        "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
         "QPushButton:hover { background: #f38ba8; color: #0e0e0e; }");
     m_revertBtn->setVisible(false);
     connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
@@ -158,7 +160,7 @@ void ChatMessageWidget::appendHtmlOnly(const QString &html, const QString &plain
 void ChatMessageWidget::setToolInfo(const QString &toolName, const QString &summary)
 {
     m_roleLabel->setText(QStringLiteral("Tool: %1").arg(toolName));
-    m_roleLabel->setStyleSheet("QLabel { font-weight: bold; font-size: 10px; color: #a6e3a1; }");
+    m_roleLabel->setStyleSheet("QLabel { font-weight: bold; font-size: 11px; color: #a6e3a1; }");
     setupToolWidget(toolName, summary);
 }
 
@@ -172,14 +174,14 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     summaryLayout->setContentsMargins(0, 0, 0, 0);
 
     m_expandBtn = new QPushButton(QStringLiteral("\u25B6"), this);
-    m_expandBtn->setFixedSize(14, 14);
+    m_expandBtn->setFixedSize(16, 16);
     m_expandBtn->setStyleSheet(
-        "QPushButton { background: none; color: #4a4a4a; border: none; font-size: 8px; padding: 0; }"
+        "QPushButton { background: none; color: #6c7086; border: none; font-size: 9px; padding: 0; }"
         "QPushButton:hover { color: #cdd6f4; }");
     summaryLayout->addWidget(m_expandBtn);
 
     auto *summaryLabel = new QLabel(summary, this);
-    summaryLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 10px; font-family: Menlo, monospace; }");
+    summaryLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; font-family: Menlo, monospace; }");
     summaryLabel->setWordWrap(true);
     summaryLayout->addWidget(summaryLabel, 1);
 
@@ -194,7 +196,7 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     detailBrowser->setFrameShape(QFrame::NoFrame);
     detailBrowser->setStyleSheet(
         "QTextBrowser { background: #0e0e0e; color: #a6adc8; border: none; "
-        "font-family: Menlo, monospace; font-size: 10px; padding: 3px; }");
+        "font-family: Menlo, monospace; font-size: 11px; padding: 4px; }");
     detailBrowser->setMaximumHeight(120);
     detailBrowser->setPlainText(summary);
     detailLayout->addWidget(detailBrowser);
@@ -217,7 +219,7 @@ void ChatMessageWidget::showAcceptRejectButtons(bool show) {
 void ChatMessageWidget::setReverted(bool reverted)
 {
     if (reverted) {
-        setStyleSheet("ChatMessageWidget { background: #0e0e0e; border-radius: 4px; }");
+        setStyleSheet("ChatMessageWidget { background: #0e0e0e; border-radius: 6px; }");
         m_revertBtn->setEnabled(false);
         m_revertBtn->setText("Reverted");
     }
@@ -228,12 +230,12 @@ void ChatMessageWidget::applyStyle()
     switch (m_role) {
     case User:
         setStyleSheet(
-            "ChatMessageWidget { background: #1c1c1c; border: 1px solid #2a2a2a; "
+            "ChatMessageWidget { background: #141414; border: 1px solid #2a2a2a; "
             "border-radius: 6px; }");
         break;
     case Assistant:
         setStyleSheet(
-            "ChatMessageWidget { background: #141414; border-left: 2px solid #89b4fa; "
+            "ChatMessageWidget { background: #0e0e0e; border-left: 2px solid #89b4fa; "
             "border-radius: 0; }");
         break;
     case Tool:

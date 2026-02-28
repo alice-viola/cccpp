@@ -62,9 +62,9 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_diffToggleBtn->setFixedSize(40, 20);
     m_diffToggleBtn->setToolTip("Toggle side-by-side diff view");
     m_diffToggleBtn->setStyleSheet(
-        "QPushButton { background: #2a2a2a; color: #888; border: none; border-radius: 3px; "
-        "font-size: 10px; margin: 2px 4px; }"
-        "QPushButton:hover { color: #cdd6f4; }"
+        "QPushButton { background: #252525; color: #6c7086; border: none; border-radius: 4px; "
+        "font-size: 11px; margin: 2px 4px; }"
+        "QPushButton:hover { color: #cdd6f4; background: #333; }"
         "QPushButton:checked { background: #2d5a27; color: #a6e3a1; }");
     m_tabWidget->setCornerWidget(m_diffToggleBtn, Qt::TopRightCorner);
     connect(m_diffToggleBtn, &QPushButton::clicked, this, &CodeViewer::toggleDiffMode);
@@ -436,11 +436,11 @@ QsciScintilla *CodeViewer::createEditor()
     ed->setEolMode(QsciScintilla::EolUnix);
     ed->setUtf8(true);
 
-    // Diff markers (green = added, red = removed)
+    // Diff markers (green = added, red = removed) — unified palette
     ed->markerDefine(QsciScintilla::Background, 1);
-    ed->setMarkerBackgroundColor(QColor(30, 70, 32), 1);
+    ed->setMarkerBackgroundColor(QColor(0x1a, 0x2e, 0x1a), 1);  // #1a2e1a
     ed->markerDefine(QsciScintilla::Background, 2);
-    ed->setMarkerBackgroundColor(QColor(70, 30, 35), 2);
+    ed->setMarkerBackgroundColor(QColor(0x2e, 0x1a, 0x1e), 2);  // #2e1a1e
 
     return ed;
 }

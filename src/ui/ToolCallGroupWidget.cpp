@@ -5,12 +5,11 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     : QFrame(parent)
 {
     setStyleSheet(
-        "ToolCallGroupWidget { background: #111111; border: 1px solid #1c1c1c; "
-        "border-radius: 4px; }");
-    
+        "ToolCallGroupWidget { background: #141414; border: 1px solid #2a2a2a; "
+        "border-radius: 6px; }");
 
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(10, 6, 10, 6);
+    m_layout->setContentsMargins(8, 6, 8, 6);
     m_layout->setSpacing(0);
 
     // Header: expand button + summary
@@ -20,13 +19,13 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     m_expandBtn = new QPushButton(QStringLiteral("\u25B6"), this);
     m_expandBtn->setFixedSize(18, 18);
     m_expandBtn->setStyleSheet(
-        "QPushButton { background: none; color: #6c7086; border: none; font-size: 10px; }"
+        "QPushButton { background: none; color: #6c7086; border: none; font-size: 9px; padding: 0; }"
         "QPushButton:hover { color: #cdd6f4; }");
     m_headerLayout->addWidget(m_expandBtn);
 
     m_summaryLabel = new QLabel(this);
     m_summaryLabel->setStyleSheet(
-        "QLabel { color: #a6adc8; font-size: 12px; }");
+        "QLabel { color: #a6adc8; font-size: 11px; }");
     m_summaryLabel->setWordWrap(true);
     m_headerLayout->addWidget(m_summaryLabel, 1);
 
@@ -110,7 +109,7 @@ void ToolCallGroupWidget::rebuildDetailView()
             header += QStringLiteral(" <span style='color:#89b4fa;'>%1</span>").arg(call.filePath);
 
         auto *headerLabel = new QLabel(header, row);
-        headerLabel->setStyleSheet("QLabel { font-size: 12px; }");
+        headerLabel->setStyleSheet("QLabel { font-size: 11px; }");
         headerLabel->setTextFormat(Qt::RichText);
         rowLayout->addWidget(headerLabel);
 
@@ -130,7 +129,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
     browser->setFrameShape(QFrame::NoFrame);
     browser->setStyleSheet(
         "QTextBrowser { background: #0e0e0e; border: none; font-family: Menlo, monospace; "
-        "font-size: 11px; }");
+        "font-size: 12px; }");
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     browser->setMaximumHeight(200);
 
@@ -142,7 +141,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         for (const QString &line : oldLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
-                "<div style='background:#2d1215;color:#f38ba8;padding:1px 4px;'>"
+                "<div style='background:#2e1a1e;color:#f38ba8;padding:1px 4px;'>"
                 "- %1</div>").arg(escaped);
         }
     }
@@ -153,7 +152,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         for (const QString &line : newLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
-                "<div style='background:#132d16;color:#a6e3a1;padding:1px 4px;'>"
+                "<div style='background:#1a2e1a;color:#a6e3a1;padding:1px 4px;'>"
                 "+ %1</div>").arg(escaped);
         }
     }

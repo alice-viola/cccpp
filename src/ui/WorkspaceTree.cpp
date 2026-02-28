@@ -96,11 +96,11 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
     layout->setSpacing(0);
 
     auto *header = new QLabel("  EXPLORER", this);
-    header->setFixedHeight(22);
+    header->setFixedHeight(26);
     header->setStyleSheet(
-        "QLabel { background: #161616; color: #555; font-size: 10px; "
+        "QLabel { background: #0e0e0e; color: #6c7086; font-size: 11px; "
         "font-weight: bold; letter-spacing: 1px; padding-left: 8px; "
-        "border-bottom: 1px solid #222; }");
+        "border-bottom: 1px solid #2a2a2a; }");
     layout->addWidget(header);
 
     m_model = new QFileSystemModel(this);

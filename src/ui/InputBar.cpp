@@ -22,7 +22,7 @@ InputBar::InputBar(QWidget *parent)
         "QPushButton { background: #cba6f7; color: #0e0e0e; border: none; "
         "border-radius: 16px; font-size: 16px; font-weight: bold; }"
         "QPushButton:hover { background: #dbb9ff; }"
-        "QPushButton:disabled { background: #2a2a2a; color: #3a3a3a; }");
+        "QPushButton:disabled { background: #252525; color: #45475a; }");
 
     layout->addWidget(m_input, 1);
     layout->addWidget(m_sendBtn, 0, Qt::AlignBottom);

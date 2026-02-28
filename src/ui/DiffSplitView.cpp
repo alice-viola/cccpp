@@ -27,8 +27,8 @@ void DiffSplitView::setupUI()
 
     // --- Header bar ---
     auto *headerBar = new QWidget(this);
-    headerBar->setFixedHeight(28);
-    headerBar->setStyleSheet("QWidget { background: #161616; border-bottom: 1px solid #222; }");
+    headerBar->setFixedHeight(26);
+    headerBar->setStyleSheet("QWidget { background: #0e0e0e; border-bottom: 1px solid #2a2a2a; }");
 
     auto *headerLayout = new QHBoxLayout(headerBar);
     headerLayout->setContentsMargins(8, 0, 4, 0);
@@ -39,7 +39,7 @@ void DiffSplitView::setupUI()
     headerLayout->addWidget(m_leftHeader);
 
     auto *arrow = new QLabel("\xe2\x86\x92", this);
-    arrow->setStyleSheet("QLabel { color: #555; font-size: 11px; background: transparent; }");
+    arrow->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; background: transparent; }");
     headerLayout->addWidget(arrow);
 
     m_rightHeader = new QLabel(this);
@@ -49,8 +49,8 @@ void DiffSplitView::setupUI()
     headerLayout->addStretch();
 
     auto btnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: #888; border: none; font-size: 12px; padding: 2px 6px; }"
-        "QPushButton:hover { color: #cdd6f4; background: #2a2a2a; border-radius: 3px; }");
+        "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12px; padding: 2px 6px; }"
+        "QPushButton:hover { color: #cdd6f4; background: #252525; border-radius: 4px; }");
 
     m_prevHunkBtn = new QPushButton("\xe2\x86\x91", this);
     m_prevHunkBtn->setToolTip("Previous Hunk");
@@ -83,7 +83,7 @@ void DiffSplitView::setupUI()
     auto *bpLayout = new QVBoxLayout(m_binaryPlaceholder);
     bpLayout->setAlignment(Qt::AlignCenter);
     auto *bpLabel = new QLabel("Binary file differs", m_binaryPlaceholder);
-    bpLabel->setStyleSheet("color: #555; font-size: 14px;");
+    bpLabel->setStyleSheet("color: #6c7086; font-size: 13px;");
     bpLabel->setAlignment(Qt::AlignCenter);
     bpLayout->addWidget(bpLabel);
     m_binaryPlaceholder->hide();
@@ -91,8 +91,8 @@ void DiffSplitView::setupUI()
 
     // --- Splitter with two editors ---
     m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_splitter->setHandleWidth(2);
-    m_splitter->setStyleSheet("QSplitter::handle { background: #2a2a2a; }");
+    m_splitter->setHandleWidth(1);
+    // Splitter handle styled via QSS
 
     m_leftEditor = createDiffEditor();
     m_rightEditor = createDiffEditor();
@@ -145,15 +145,15 @@ QsciScintilla *DiffSplitView::createDiffEditor()
     ed->setSelectionBackgroundColor(QColor("#3a3a3a"));
     ed->setSelectionForegroundColor(QColor("#cdd6f4"));
 
-    // Define background markers
+    // Define background markers — unified palette
     ed->markerDefine(QsciScintilla::Background, MARKER_ADDED);
-    ed->setMarkerBackgroundColor(QColor(30, 70, 32), MARKER_ADDED);   // dark green
+    ed->setMarkerBackgroundColor(QColor(0x1a, 0x2e, 0x1a), MARKER_ADDED);   // #1a2e1a
 
     ed->markerDefine(QsciScintilla::Background, MARKER_REMOVED);
-    ed->setMarkerBackgroundColor(QColor(70, 32, 30), MARKER_REMOVED); // dark red
+    ed->setMarkerBackgroundColor(QColor(0x2e, 0x1a, 0x1e), MARKER_REMOVED); // #2e1a1e
 
     ed->markerDefine(QsciScintilla::Background, MARKER_PHANTOM);
-    ed->setMarkerBackgroundColor(QColor(30, 30, 46), MARKER_PHANTOM); // dark grey
+    ed->setMarkerBackgroundColor(QColor(0x1e, 0x1e, 0x2e), MARKER_PHANTOM); // #1e1e2e
 
     return ed;
 }

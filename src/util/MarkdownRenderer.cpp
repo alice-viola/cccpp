@@ -88,8 +88,8 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
     // Inline code: `code`
     QRegularExpression inlineCode("`([^`]+)`");
     result.replace(inlineCode,
-        "<code style='background:#2a2a2a;color:#f38ba8;padding:2px 5px;"
-        "border-radius:3px;font-family:\"Menlo\",monospace;font-size:13px;'>\\1</code>");
+        "<code style='background:#252525;color:#cba6f7;padding:2px 5px;"
+        "border-radius:4px;font-family:\"Menlo\",monospace;font-size:12px;'>\\1</code>");
 
     return result;
 }

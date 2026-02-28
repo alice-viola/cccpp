@@ -40,12 +40,13 @@ void ModeSelector::updateButtonStyles()
         if (active)
             btn->setStyleSheet(
                 "QPushButton { background: #a6e3a1; color: #0e0e0e; border: none; "
-                "padding: 2px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; }");
+                "padding: 2px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; }"
+                "QPushButton:hover { background: #b6f0b1; }");
         else
             btn->setStyleSheet(
-                "QPushButton { background: #2a2a2a; color: #6c7086; border: none; "
+                "QPushButton { background: #252525; color: #6c7086; border: none; "
                 "padding: 2px 12px; border-radius: 4px; font-size: 11px; }"
-                "QPushButton:hover { background: #3a3a3a; color: #cdd6f4; }");
+                "QPushButton:hover { background: #333; color: #cdd6f4; }");
     };
     setStyle(m_agentBtn, m_currentMode == "agent");
     setStyle(m_askBtn, m_currentMode == "ask");

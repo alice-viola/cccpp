@@ -30,12 +30,12 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_tabWidget->setDocumentMode(true);
 
     m_historyBtn = new QPushButton("History", this);
-    m_historyBtn->setFixedHeight(22);
+    m_historyBtn->setFixedHeight(26);
     m_historyBtn->setToolTip("Browse previous chats");
     m_historyBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #555; border: none; "
-        "font-size: 10px; padding: 0 8px; }"
-        "QPushButton:hover { color: #999; }");
+        "QPushButton { background: transparent; color: #6c7086; border: none; "
+        "font-size: 11px; padding: 0 8px; }"
+        "QPushButton:hover { color: #a6adc8; }");
     connect(m_historyBtn, &QPushButton::clicked, this, &ChatPanel::showHistoryMenu);
     m_tabWidget->setCornerWidget(m_historyBtn, Qt::TopRightCorner);
 
@@ -506,18 +506,18 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped());
 
     // Code diff area
-    html += "<div style='padding:2px 0;font-family:Menlo,monospace;font-size:11px;line-height:1.4;'>";
+    html += "<div style='padding:2px 0;font-family:Menlo,monospace;font-size:12px;line-height:1.4;'>";
 
     if (!oldStr.isEmpty()) {
         QStringList oldLines = oldStr.split('\n');
         int maxLines = qMin(oldLines.size(), 10);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:#2a1216;color:#eba0ac;padding:0 8px;white-space:pre;'>-%1</div>")
+                "<div style='background:#2e1a1e;color:#f38ba8;padding:0 8px;white-space:pre;'>-%1</div>")
                 .arg(oldLines[i].toHtmlEscaped());
         if (oldLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:#4a4a4a;padding:0 8px;font-size:10px;'>... %1 more</div>")
+                "<div style='color:#45475a;padding:0 8px;font-size:11px;'>... %1 more</div>")
                 .arg(oldLines.size() - maxLines);
     }
 
@@ -526,11 +526,11 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         int maxLines = qMin(newLines.size(), 10);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:#132a17;color:#a6e3a1;padding:0 8px;white-space:pre;'>+%1</div>")
+                "<div style='background:#1a2e1a;color:#a6e3a1;padding:0 8px;white-space:pre;'>+%1</div>")
                 .arg(newLines[i].toHtmlEscaped());
         if (newLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:#4a4a4a;padding:0 8px;font-size:10px;'>... %1 more</div>")
+                "<div style='color:#45475a;padding:0 8px;font-size:11px;'>... %1 more</div>")
                 .arg(newLines.size() - maxLines);
     }
 
@@ -546,11 +546,7 @@ void ChatPanel::showHistoryMenu()
     if (sessions.isEmpty()) return;
 
     QMenu menu(this);
-    menu.setStyleSheet(
-        "QMenu { background: #141414; color: #cdd6f4; border: 1px solid #2a2a2a; "
-        "border-radius: 4px; padding: 4px; }"
-        "QMenu::item { padding: 6px 16px; border-radius: 3px; font-size: 12px; }"
-        "QMenu::item:selected { background: #2a2a2a; }");
+    // Styled via QSS — no inline override needed
 
     // Only show sessions from this workspace that aren't already open
     QSet<QString> openIds;
