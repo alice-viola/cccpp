@@ -4,6 +4,7 @@
 #include <QTreeView>
 #include <QFileSystemModel>
 #include <QStyledItemDelegate>
+#include <QLabel>
 #include <QMap>
 #include "core/GitManager.h"
 
@@ -42,8 +43,22 @@ public:
 
 signals:
     void fileSelected(const QString &filePath);
+    void fileCreated(const QString &filePath);
+    void fileDeleted(const QString &filePath);
+    void folderCreated(const QString &folderPath);
+    void folderDeleted(const QString &folderPath);
+
+private slots:
+    void onContextMenu(const QPoint &pos);
 
 private:
+    void applyThemeColors();
+    void createNewFile(const QString &parentDir);
+    void createNewFolder(const QString &parentDir);
+    void deleteSelected(const QString &path, bool isDir);
+    QString contextDirectory(const QModelIndex &index) const;
+
+    QLabel *m_header = nullptr;
     QTreeView *m_tree;
     QFileSystemModel *m_model;
     ChangedFileDelegate *m_delegate;

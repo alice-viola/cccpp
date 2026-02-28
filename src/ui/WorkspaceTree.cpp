@@ -1,10 +1,15 @@
 #include "ui/WorkspaceTree.h"
 #include "ui/ThemeManager.h"
+#include "ui/ToastManager.h"
 #include <QVBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QPainter>
 #include <QDir>
+#include <QMenu>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QFile>
 
 static QChar gitStatusLetter(GitFileStatus s)
 {
@@ -115,16 +120,9 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *header = new QLabel("  EXPLORER", this);
-    header->setFixedHeight(26);
-    header->setStyleSheet(QStringLiteral(
-        "QLabel { background: %1; color: %2; font-size: 11px; "
-        "font-weight: bold; letter-spacing: 1px; padding-left: 8px; "
-        "border-bottom: 1px solid %3; }")
-        .arg(ThemeManager::instance().palette().bg_base.name(),
-             ThemeManager::instance().palette().text_muted.name(),
-             ThemeManager::instance().palette().border_standard.name()));
-    layout->addWidget(header);
+    m_header = new QLabel("  EXPLORER", this);
+    m_header->setFixedHeight(26);
+    layout->addWidget(m_header);
 
     m_model = new QFileSystemModel(this);
     m_model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
@@ -147,12 +145,30 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 
     layout->addWidget(m_tree);
 
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QTreeView::customContextMenuRequested,
+            this, &WorkspaceTree::onContextMenu);
+
     connect(m_tree, &QTreeView::clicked, this, [this](const QModelIndex &index) {
         QString path = m_model->filePath(index);
         if (m_model->isDir(index))
             return;
         emit fileSelected(path);
     });
+
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &WorkspaceTree::applyThemeColors);
+}
+
+void WorkspaceTree::applyThemeColors()
+{
+    const auto &pal = ThemeManager::instance().palette();
+    m_header->setStyleSheet(QStringLiteral(
+        "QLabel { background: %1; color: %2; font-size: 11px; "
+        "font-weight: bold; letter-spacing: 1px; padding-left: 8px; "
+        "border-bottom: 1px solid %3; }")
+        .arg(pal.bg_base.name(), pal.text_muted.name(), pal.border_standard.name()));
 }
 
 void WorkspaceTree::setRootPath(const QString &path)
@@ -196,4 +212,166 @@ void WorkspaceTree::clearGitStatus()
 {
     m_gitStatus.clear();
     m_tree->viewport()->update();
+}
+
+QString WorkspaceTree::contextDirectory(const QModelIndex &index) const
+{
+    if (!index.isValid())
+        return m_rootPath;
+    QString path = m_model->filePath(index);
+    if (m_model->isDir(index))
+        return path;
+    return QFileInfo(path).absolutePath();
+}
+
+void WorkspaceTree::onContextMenu(const QPoint &pos)
+{
+    QModelIndex index = m_tree->indexAt(pos);
+    QString targetPath = index.isValid() ? m_model->filePath(index) : m_rootPath;
+    QString parentDir = contextDirectory(index);
+    bool isDir = index.isValid() && m_model->isDir(index);
+    bool isFile = index.isValid() && !isDir;
+
+    QMenu menu(this);
+
+    auto *newFileAction = menu.addAction("New File...");
+    connect(newFileAction, &QAction::triggered, this, [this, parentDir] {
+        createNewFile(parentDir);
+    });
+
+    auto *newFolderAction = menu.addAction("New Folder...");
+    connect(newFolderAction, &QAction::triggered, this, [this, parentDir] {
+        createNewFolder(parentDir);
+    });
+
+    if (index.isValid()) {
+        menu.addSeparator();
+
+        auto *renameAction = menu.addAction("Rename...");
+        connect(renameAction, &QAction::triggered, this, [this, targetPath, isDir] {
+            QFileInfo info(targetPath);
+            QString oldName = info.fileName();
+            bool ok = false;
+            QString newName = QInputDialog::getText(
+                this, isDir ? "Rename Folder" : "Rename File",
+                "New name:", QLineEdit::Normal, oldName, &ok);
+            if (!ok || newName.isEmpty() || newName == oldName)
+                return;
+
+            QString newPath = info.absolutePath() + "/" + newName;
+            if (QFile::exists(newPath)) {
+                QMessageBox::warning(this, "Rename",
+                    QStringLiteral("'%1' already exists.").arg(newName),
+                    QMessageBox::Ok);
+                return;
+            }
+            if (QFile::rename(targetPath, newPath)) {
+                ToastManager::instance().show(
+                    QStringLiteral("Renamed to %1").arg(newName),
+                    ToastType::Success, 2000);
+            } else {
+                QMessageBox::warning(this, "Rename", "Failed to rename.",
+                    QMessageBox::Ok);
+            }
+        });
+
+        auto *deleteAction = menu.addAction("Delete");
+        connect(deleteAction, &QAction::triggered, this, [this, targetPath, isDir] {
+            deleteSelected(targetPath, isDir);
+        });
+    }
+
+    menu.exec(m_tree->viewport()->mapToGlobal(pos));
+}
+
+void WorkspaceTree::createNewFile(const QString &parentDir)
+{
+    bool ok = false;
+    QString name = QInputDialog::getText(this, "New File",
+        "File name:", QLineEdit::Normal, "", &ok);
+    if (!ok || name.isEmpty())
+        return;
+
+    QString fullPath = parentDir + "/" + name;
+    if (QFile::exists(fullPath)) {
+        QMessageBox::warning(this, "New File",
+            QStringLiteral("'%1' already exists.").arg(name),
+            QMessageBox::Ok);
+        return;
+    }
+
+    QDir().mkpath(QFileInfo(fullPath).absolutePath());
+    QFile file(fullPath);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.close();
+        emit fileCreated(fullPath);
+        emit fileSelected(fullPath);
+        ToastManager::instance().show(
+            QStringLiteral("Created %1").arg(name), ToastType::Success, 2000);
+    } else {
+        QMessageBox::warning(this, "New File", "Failed to create file.",
+            QMessageBox::Ok);
+    }
+}
+
+void WorkspaceTree::createNewFolder(const QString &parentDir)
+{
+    bool ok = false;
+    QString name = QInputDialog::getText(this, "New Folder",
+        "Folder name:", QLineEdit::Normal, "", &ok);
+    if (!ok || name.isEmpty())
+        return;
+
+    QString fullPath = parentDir + "/" + name;
+    if (QDir(fullPath).exists()) {
+        QMessageBox::warning(this, "New Folder",
+            QStringLiteral("'%1' already exists.").arg(name),
+            QMessageBox::Ok);
+        return;
+    }
+
+    if (QDir().mkpath(fullPath)) {
+        emit folderCreated(fullPath);
+        ToastManager::instance().show(
+            QStringLiteral("Created folder %1").arg(name), ToastType::Success, 2000);
+    } else {
+        QMessageBox::warning(this, "New Folder", "Failed to create folder.",
+            QMessageBox::Ok);
+    }
+}
+
+void WorkspaceTree::deleteSelected(const QString &path, bool isDir)
+{
+    QFileInfo info(path);
+    QString name = info.fileName();
+
+    QString prompt = isDir
+        ? QStringLiteral("Delete folder '%1' and all its contents?\n\nThis cannot be undone.").arg(name)
+        : QStringLiteral("Delete file '%1'?\n\nThis cannot be undone.").arg(name);
+
+    auto result = QMessageBox::warning(this,
+        isDir ? "Delete Folder" : "Delete File",
+        prompt, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+    if (result != QMessageBox::Yes)
+        return;
+
+    bool success = false;
+    if (isDir)
+        success = QDir(path).removeRecursively();
+    else
+        success = QFile::remove(path);
+
+    if (success) {
+        if (isDir)
+            emit folderDeleted(path);
+        else
+            emit fileDeleted(path);
+        ToastManager::instance().show(
+            QStringLiteral("Deleted %1").arg(name), ToastType::Success, 2000);
+    } else {
+        QMessageBox::warning(this, "Delete",
+            QStringLiteral("Failed to delete '%1'.").arg(name),
+            QMessageBox::Ok);
+    }
 }

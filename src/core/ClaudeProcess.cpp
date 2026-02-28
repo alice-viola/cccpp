@@ -1,5 +1,6 @@
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
+#include "util/Config.h"
 #include <QProcessEnvironment>
 #include <QDir>
 #include <QFile>
@@ -106,18 +107,21 @@ void ClaudeProcess::sendMessage(const QString &message)
         qDebug() << "[cccpp] Claude process started";
     });
 
-    // Resolve the full path to the claude binary
-    QString claudeBin = "claude";
-    QStringList searchDirs = {
-        QDir::homePath() + "/.local/bin",
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-    };
-    for (const QString &dir : searchDirs) {
-        QString candidate = dir + "/claude";
-        if (QFile::exists(candidate)) {
-            claudeBin = candidate;
-            break;
+    // Resolve the full path to the claude binary.
+    // If the user configured a path in settings, use it directly.
+    QString claudeBin = Config::instance().claudeBinary();
+    if (claudeBin == "claude" || claudeBin.isEmpty()) {
+        QStringList searchDirs = {
+            QDir::homePath() + "/.local/bin",
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+        };
+        for (const QString &dir : searchDirs) {
+            QString candidate = dir + "/claude";
+            if (QFile::exists(candidate)) {
+                claudeBin = candidate;
+                break;
+            }
         }
     }
 

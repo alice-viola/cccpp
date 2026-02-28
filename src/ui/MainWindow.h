@@ -13,6 +13,7 @@ class CodeViewer;
 class ChatPanel;
 class TerminalPanel;
 class GitPanel;
+class SearchPanel;
 class SessionManager;
 class SnapshotManager;
 class DiffEngine;
@@ -65,6 +66,7 @@ private:
     TerminalPanel *m_terminalPanel;
     ChatPanel *m_chatPanel;
     GitPanel *m_gitPanel;
+    SearchPanel *m_searchPanel;
 
     SessionManager *m_sessionMgr;
     SnapshotManager *m_snapshotMgr;

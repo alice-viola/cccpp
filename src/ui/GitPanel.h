@@ -34,17 +34,21 @@ private slots:
 
 private:
     void setupUI();
+    void applyThemeColors();
     void rebuildTree(const QList<GitFileEntry> &entries);
     QString statusChar(GitFileStatus status) const;
     QColor statusColor(GitFileStatus status) const;
 
     GitManager *m_git = nullptr;
 
+    QWidget *m_headerWidget = nullptr;
     QLabel *m_branchLabel;
     QPushButton *m_refreshBtn;
     QTreeWidget *m_tree;
     QTreeWidgetItem *m_stagedRoot = nullptr;
     QTreeWidgetItem *m_changesRoot = nullptr;
+    QLabel *m_phLabel = nullptr;
+    QWidget *m_commitArea = nullptr;
     QTextEdit *m_commitMsg;
     QPushButton *m_stageAllBtn;
     QPushButton *m_unstageAllBtn;

@@ -64,7 +64,9 @@ set(UI_SOURCES
     src/ui/ThinkingIndicator.cpp
     src/ui/ToastNotification.cpp
     src/ui/ToastManager.cpp
+    src/ui/SettingsDialog.cpp
     src/ui/ThemeManager.cpp
+    src/ui/SearchPanel.cpp
 )
 
 set(UTIL_SOURCES

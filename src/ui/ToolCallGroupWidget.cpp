@@ -51,6 +51,10 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     m_expandAnim->setDuration(180);
     m_expandAnim->setEasingCurve(QEasingCurve::InOutCubic);
 
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &ToolCallGroupWidget::applyThemeColors);
+
     connect(m_expandBtn, &QPushButton::clicked, this, [this] {
         m_expanded = !m_expanded;
         m_expandBtn->setText(m_expanded ? QStringLiteral("\u25BC") : QStringLiteral("\u25B6"));
@@ -84,6 +88,28 @@ void ToolCallGroupWidget::addToolCall(const ToolCallInfo &info)
 
 void ToolCallGroupWidget::finalize()
 {
+    updateSummaryLabel();
+}
+
+void ToolCallGroupWidget::applyThemeColors()
+{
+    auto &tm = ThemeManager::instance();
+    setStyleSheet(
+        QStringLiteral(
+        "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
+        "border-left: 2px solid %3; border-radius: 6px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("green")));
+
+    m_expandBtn->setStyleSheet(
+        QStringLiteral(
+        "QPushButton { background: none; color: %1; border: none; font-size: 9px; padding: 0; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(tm.hex("text_muted"), tm.hex("text_primary")));
+
+    m_summaryLabel->setStyleSheet(
+        QStringLiteral("QLabel { color: %1; font-size: 11px; }")
+        .arg(tm.hex("text_secondary")));
+
     updateSummaryLabel();
 }
 

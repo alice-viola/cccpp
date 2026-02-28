@@ -42,6 +42,7 @@ public:
     explicit CodeViewer(QWidget *parent = nullptr);
 
     void loadFile(const QString &filePath);
+    void closeFile(const QString &filePath);
     void openMarkdown(const QString &filePath);
     void refreshFile(const QString &filePath);
     void showDiff(const FileDiff &diff);

@@ -36,6 +36,7 @@ protected:
 
 private:
     void applyStyle();
+    void applyThemeColors();
     void setupAssistantContent(const QString &content);
     void setupUserContent(const QString &content);
     void setupToolWidget(const QString &toolName, const QString &summary);

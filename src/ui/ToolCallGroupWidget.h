@@ -31,6 +31,7 @@ public:
 private:
     void updateSummaryLabel();
     void rebuildDetailView();
+    void applyThemeColors();
     QWidget *createDiffView(const QString &oldStr, const QString &newStr);
 
     QVBoxLayout *m_layout;

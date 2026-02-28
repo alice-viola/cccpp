@@ -42,6 +42,7 @@ private:
     };
 
     void setupUI();
+    void applyThemeColors();
     void buildAlignedLines(const QString &oldContent, const QString &newContent);
     void populateEditors();
     void applyMarkers();
@@ -53,12 +54,15 @@ private:
     QPlainTextEdit *createDiffEditor();
 #endif
 
+    QWidget *m_headerBar = nullptr;
     QLabel *m_leftHeader;
     QLabel *m_rightHeader;
+    QLabel *m_arrowLabel = nullptr;
     QPushButton *m_closeBtn;
     QPushButton *m_prevHunkBtn;
     QPushButton *m_nextHunkBtn;
     QSplitter *m_splitter;
+    QLabel *m_bpLabel = nullptr;
 
 #ifndef NO_QSCINTILLA
     QsciScintilla *m_leftEditor = nullptr;

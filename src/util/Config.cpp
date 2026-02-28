@@ -49,6 +49,12 @@ QString Config::claudeBinary() const
     return "claude";
 }
 
+void Config::setClaudeBinary(const QString &path)
+{
+    m_data["claude_binary"] = path.toStdString();
+    save();
+}
+
 QStringList Config::agentModeFlags() const
 {
     return {"--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,Task"};

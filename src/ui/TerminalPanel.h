@@ -3,6 +3,8 @@
 #include <QWidget>
 #include <QTabWidget>
 #include <QPushButton>
+#include <QToolButton>
+#include <QLabel>
 
 class TerminalWidget;
 
@@ -21,6 +23,12 @@ signals:
     void visibilityToggled(bool visible);
 
 private:
+    void applyThemeColors();
+
+    QWidget *m_headerWidget = nullptr;
+    QLabel *m_titleLabel = nullptr;
+    QToolButton *m_newBtn = nullptr;
+    QToolButton *m_closeBtn = nullptr;
     QTabWidget *m_tabWidget;
     QString m_workingDir;
 };

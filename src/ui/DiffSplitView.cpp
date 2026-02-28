@@ -26,83 +26,58 @@ void DiffSplitView::setupUI()
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // --- Header bar ---
-    auto *headerBar = new QWidget(this);
-    headerBar->setFixedHeight(26);
-    headerBar->setStyleSheet(QStringLiteral("QWidget { background: %1; border-bottom: 1px solid %2; }")
-        .arg(ThemeManager::instance().palette().bg_base.name(),
-             ThemeManager::instance().palette().border_standard.name()));
+    m_headerBar = new QWidget(this);
+    m_headerBar->setFixedHeight(26);
 
-    auto *headerLayout = new QHBoxLayout(headerBar);
+    auto *headerLayout = new QHBoxLayout(m_headerBar);
     headerLayout->setContentsMargins(8, 0, 4, 0);
     headerLayout->setSpacing(6);
 
     m_leftHeader = new QLabel(this);
-    m_leftHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
-        .arg(ThemeManager::instance().palette().red.name()));
     headerLayout->addWidget(m_leftHeader);
 
-    auto *arrow = new QLabel("\xe2\x86\x92", this);
-    arrow->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
-        .arg(ThemeManager::instance().palette().text_muted.name()));
-    headerLayout->addWidget(arrow);
+    m_arrowLabel = new QLabel("\xe2\x86\x92", this);
+    headerLayout->addWidget(m_arrowLabel);
 
     m_rightHeader = new QLabel(this);
-    m_rightHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
-        .arg(ThemeManager::instance().palette().green.name()));
     headerLayout->addWidget(m_rightHeader);
 
     headerLayout->addStretch();
 
-    auto btnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: %1; border: none; font-size: 12px; padding: 2px 6px; }"
-        "QPushButton:hover { color: %2; background: %3; border-radius: 4px; }")
-        .arg(ThemeManager::instance().palette().text_muted.name(),
-             ThemeManager::instance().palette().text_primary.name(),
-             ThemeManager::instance().palette().bg_raised.name());
-
     m_prevHunkBtn = new QPushButton("\xe2\x86\x91", this);
     m_prevHunkBtn->setToolTip("Previous Hunk");
     m_prevHunkBtn->setFixedSize(24, 20);
-    m_prevHunkBtn->setStyleSheet(btnStyle);
     headerLayout->addWidget(m_prevHunkBtn);
     connect(m_prevHunkBtn, &QPushButton::clicked, this, &DiffSplitView::prevHunk);
 
     m_nextHunkBtn = new QPushButton("\xe2\x86\x93", this);
     m_nextHunkBtn->setToolTip("Next Hunk");
     m_nextHunkBtn->setFixedSize(24, 20);
-    m_nextHunkBtn->setStyleSheet(btnStyle);
     headerLayout->addWidget(m_nextHunkBtn);
     connect(m_nextHunkBtn, &QPushButton::clicked, this, &DiffSplitView::nextHunk);
 
     m_closeBtn = new QPushButton("\xc3\x97", this);
     m_closeBtn->setToolTip("Close Diff View");
     m_closeBtn->setFixedSize(24, 20);
-    m_closeBtn->setStyleSheet(btnStyle);
     headerLayout->addWidget(m_closeBtn);
     connect(m_closeBtn, &QPushButton::clicked, this, [this] {
         clear();
         emit closed();
     });
 
-    mainLayout->addWidget(headerBar);
+    mainLayout->addWidget(m_headerBar);
 
-    // --- Binary file placeholder ---
     m_binaryPlaceholder = new QWidget(this);
     auto *bpLayout = new QVBoxLayout(m_binaryPlaceholder);
     bpLayout->setAlignment(Qt::AlignCenter);
-    auto *bpLabel = new QLabel("Binary file differs", m_binaryPlaceholder);
-    bpLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;")
-        .arg(ThemeManager::instance().palette().text_muted.name()));
-    bpLabel->setAlignment(Qt::AlignCenter);
-    bpLayout->addWidget(bpLabel);
+    m_bpLabel = new QLabel("Binary file differs", m_binaryPlaceholder);
+    m_bpLabel->setAlignment(Qt::AlignCenter);
+    bpLayout->addWidget(m_bpLabel);
     m_binaryPlaceholder->hide();
     mainLayout->addWidget(m_binaryPlaceholder);
 
-    // --- Splitter with two editors ---
     m_splitter = new QSplitter(Qt::Horizontal, this);
     m_splitter->setHandleWidth(1);
-    // Splitter handle styled via QSS
 
     m_leftEditor = createDiffEditor();
     m_rightEditor = createDiffEditor();
@@ -113,7 +88,6 @@ void DiffSplitView::setupUI()
 
     mainLayout->addWidget(m_splitter, 1);
 
-    // Synchronized scrolling
 #ifndef NO_QSCINTILLA
     connect(m_leftEditor->verticalScrollBar(), &QScrollBar::valueChanged,
             this, [this](int val) { syncScroll(val, true); });
@@ -124,6 +98,57 @@ void DiffSplitView::setupUI()
             this, [this](int val) { syncScroll(val, true); });
     connect(m_rightEditor->verticalScrollBar(), &QScrollBar::valueChanged,
             this, [this](int val) { syncScroll(val, false); });
+#endif
+
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &DiffSplitView::applyThemeColors);
+}
+
+void DiffSplitView::applyThemeColors()
+{
+    const auto &pal = ThemeManager::instance().palette();
+
+    m_headerBar->setStyleSheet(QStringLiteral("QWidget { background: %1; border-bottom: 1px solid %2; }")
+        .arg(pal.bg_base.name(), pal.border_standard.name()));
+
+    m_leftHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(pal.red.name()));
+    m_arrowLabel->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(pal.text_muted.name()));
+    m_rightHeader->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 11px; background: transparent; }")
+        .arg(pal.green.name()));
+
+    auto btnStyle = QStringLiteral(
+        "QPushButton { background: transparent; color: %1; border: none; font-size: 12px; padding: 2px 6px; }"
+        "QPushButton:hover { color: %2; background: %3; border-radius: 4px; }")
+        .arg(pal.text_muted.name(), pal.text_primary.name(), pal.bg_raised.name());
+    m_prevHunkBtn->setStyleSheet(btnStyle);
+    m_nextHunkBtn->setStyleSheet(btnStyle);
+    m_closeBtn->setStyleSheet(btnStyle);
+
+    m_bpLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;").arg(pal.text_muted.name()));
+
+#ifndef NO_QSCINTILLA
+    for (auto *ed : {m_leftEditor, m_rightEditor}) {
+        ed->setMarginsForegroundColor(pal.overlay0);
+        ed->setMarginsBackgroundColor(pal.bg_base);
+        ed->setCaretForegroundColor(pal.text_primary);
+        ed->setPaper(pal.bg_window);
+        ed->setColor(pal.text_primary);
+        ed->setSelectionBackgroundColor(pal.pressed_raised);
+        ed->setSelectionForegroundColor(pal.text_primary);
+        ed->setMarkerBackgroundColor(pal.diff_add_bg, MARKER_ADDED);
+        ed->setMarkerBackgroundColor(pal.diff_del_bg, MARKER_REMOVED);
+        ed->setMarkerBackgroundColor(pal.diff_phantom_bg, MARKER_PHANTOM);
+    }
+#else
+    auto edStyle = QStringLiteral(
+        "QPlainTextEdit { background: %1; color: %2; border: none; "
+        "font-family: Menlo, monospace; font-size: 13px; }")
+        .arg(pal.bg_window.name(), pal.text_primary.name());
+    m_leftEditor->setStyleSheet(edStyle);
+    m_rightEditor->setStyleSheet(edStyle);
 #endif
 }
 

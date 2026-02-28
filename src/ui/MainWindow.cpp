@@ -4,9 +4,11 @@
 #include "ui/ChatPanel.h"
 #include "ui/TerminalPanel.h"
 #include "ui/GitPanel.h"
+#include "ui/SearchPanel.h"
 #include "ui/ModelSelector.h"
 #include "ui/ToastManager.h"
 #include "ui/ThemeManager.h"
+#include "ui/SettingsDialog.h"
 #include "core/SessionManager.h"
 #include "core/SnapshotManager.h"
 #include "core/DiffEngine.h"
@@ -35,6 +37,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_database = new Database(this);
     m_database->open();
     m_gitManager = new GitManager(this);
+
+    ThemeManager::instance().initialize();
 
     setupUI();
     setupToolBar();
@@ -80,17 +84,19 @@ void MainWindow::setupUI()
     m_chatPanel = new ChatPanel(this);
     m_gitPanel = new GitPanel(this);
     m_gitPanel->setGitManager(m_gitManager);
+    m_searchPanel = new SearchPanel(this);
 
     m_chatPanel->setSessionManager(m_sessionMgr);
     m_chatPanel->setSnapshotManager(m_snapshotMgr);
     m_chatPanel->setDiffEngine(m_diffEngine);
     m_chatPanel->setDatabase(m_database);
 
-    // Left column: tabbed panel with Files and Git
+    // Left column: tabbed panel with Files, Search, and Git
     m_leftTabs = new QTabWidget(this);
     m_leftTabs->setDocumentMode(true);
     m_leftTabs->setTabPosition(QTabWidget::South);
     m_leftTabs->addTab(m_workspaceTree, "Files");
+    m_leftTabs->addTab(m_searchPanel, "Search");
     m_leftTabs->addTab(m_gitPanel, "Git");
     // Styles applied by applyThemeColors()
 
@@ -119,6 +125,27 @@ void MainWindow::setupUI()
 
     connect(m_workspaceTree, &WorkspaceTree::fileSelected,
             this, &MainWindow::onFileSelected);
+    connect(m_workspaceTree, &WorkspaceTree::fileDeleted, this, [this](const QString &path) {
+        m_codeViewer->closeFile(path);
+        m_gitManager->refreshStatus();
+    });
+    connect(m_workspaceTree, &WorkspaceTree::fileCreated, this, [this](const QString &) {
+        m_gitManager->refreshStatus();
+    });
+    connect(m_workspaceTree, &WorkspaceTree::folderCreated, this, [this](const QString &) {
+        m_gitManager->refreshStatus();
+    });
+    connect(m_workspaceTree, &WorkspaceTree::folderDeleted, this, [this](const QString &) {
+        m_gitManager->refreshStatus();
+    });
+
+    connect(m_searchPanel, &SearchPanel::fileSelected, this,
+            [this](const QString &filePath, int line) {
+        onFileSelected(filePath);
+        if (line > 0)
+            m_codeViewer->scrollToLine(line);
+    });
+
     connect(m_chatPanel, &ChatPanel::fileChanged,
             this, &MainWindow::onFileChanged);
     connect(m_diffEngine, &DiffEngine::fileChanged, this,
@@ -261,6 +288,16 @@ void MainWindow::setupMenuBar()
     pasteAction->setShortcut(QKeySequence::Paste);
     connect(pasteAction, &QAction::triggered, m_codeViewer, &CodeViewer::paste);
 
+    editMenu->addSeparator();
+
+    auto *settingsAction = editMenu->addAction("&Settings...");
+    settingsAction->setShortcut(QKeySequence("Ctrl+,"));
+    settingsAction->setMenuRole(QAction::PreferencesRole);
+    connect(settingsAction, &QAction::triggered, this, [this] {
+        SettingsDialog dlg(this);
+        dlg.exec();
+    });
+
     // --- Git menu ---
     auto *gitMenu = menuBar()->addMenu("&Git");
 
@@ -300,6 +337,14 @@ void MainWindow::setupMenuBar()
 
     // --- View menu ---
     auto *viewMenu = menuBar()->addMenu("&View");
+
+    auto *searchAction = viewMenu->addAction("&Search in Files");
+    searchAction->setShortcut(QKeySequence("Ctrl+Shift+F"));
+    connect(searchAction, &QAction::triggered, this, [this] {
+        m_leftTabs->setVisible(true);
+        m_leftTabs->setCurrentWidget(m_searchPanel);
+        updateToggleButtons();
+    });
 
     auto *toggleTermAction = viewMenu->addAction("Toggle &Terminal");
     toggleTermAction->setShortcut(QKeySequence("Ctrl+`"));
@@ -467,6 +512,7 @@ void MainWindow::openWorkspace(const QString &path)
 {
     m_workspacePath = path;
     m_workspaceTree->setRootPath(path);
+    m_searchPanel->setRootPath(path);
     m_chatPanel->setWorkingDirectory(path);
     m_terminalPanel->setWorkingDirectory(path);
     m_snapshotMgr->setGitManager(m_gitManager);

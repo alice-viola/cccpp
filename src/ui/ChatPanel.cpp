@@ -33,13 +33,6 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setDocumentMode(true);
 
-    auto &thm = ThemeManager::instance();
-    auto cornerBtnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: %1; border: none; "
-        "font-size: 11px; padding: 0 8px; }"
-        "QPushButton:hover { color: %2; }")
-        .arg(thm.hex("text_muted"), thm.hex("text_secondary"));
-
     auto *cornerWidget = new QWidget(this);
     auto *cornerLayout = new QHBoxLayout(cornerWidget);
     cornerLayout->setContentsMargins(0, 0, 0, 0);
@@ -48,13 +41,11 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_newChatBtn = new QPushButton("\xe2\x9e\x95", this);  // ➕
     m_newChatBtn->setFixedHeight(26);
     m_newChatBtn->setToolTip("New Chat (Ctrl+N)");
-    m_newChatBtn->setStyleSheet(cornerBtnStyle);
     connect(m_newChatBtn, &QPushButton::clicked, this, [this] { newChat(); });
 
     m_historyBtn = new QPushButton("History", this);
     m_historyBtn->setFixedHeight(26);
     m_historyBtn->setToolTip("Browse previous chats");
-    m_historyBtn->setStyleSheet(cornerBtnStyle);
     connect(m_historyBtn, &QPushButton::clicked, this, &ChatPanel::showHistoryMenu);
 
     cornerLayout->addWidget(m_newChatBtn);
@@ -95,6 +86,22 @@ ChatPanel::ChatPanel(QWidget *parent)
         }
         m_tabs = reindexed;
     });
+
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &ChatPanel::applyThemeColors);
+}
+
+void ChatPanel::applyThemeColors()
+{
+    auto &thm = ThemeManager::instance();
+    auto cornerBtnStyle = QStringLiteral(
+        "QPushButton { background: transparent; color: %1; border: none; "
+        "font-size: 11px; padding: 0 8px; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(thm.hex("text_muted"), thm.hex("text_secondary"));
+    m_newChatBtn->setStyleSheet(cornerBtnStyle);
+    m_historyBtn->setStyleSheet(cornerBtnStyle);
 }
 
 void ChatPanel::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; }

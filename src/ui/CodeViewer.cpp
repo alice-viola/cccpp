@@ -702,6 +702,23 @@ void CodeViewer::loadFile(const QString &filePath)
     watchFile(filePath);
 }
 
+void CodeViewer::closeFile(const QString &filePath)
+{
+    int idx = indexForFile(filePath);
+    if (idx < 0) return;
+
+    unwatchFile(filePath);
+    m_tabs.remove(idx);
+    m_tabWidget->removeTab(idx);
+
+    QMap<int, FileTab> reindexed;
+    int i = 0;
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it, ++i)
+        reindexed[i] = it.value();
+    m_tabs = reindexed;
+    updateEmptyState();
+}
+
 void CodeViewer::openMarkdown(const QString &filePath)
 {
     for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {

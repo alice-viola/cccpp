@@ -13,61 +13,69 @@ TerminalPanel::TerminalPanel(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Header bar with title and buttons
-    auto *header = new QWidget(this);
-    header->setFixedHeight(28);
-    header->setStyleSheet(QStringLiteral("background: %1; border-top: 1px solid %2;")
-        .arg(ThemeManager::instance().palette().bg_base.name(),
-             ThemeManager::instance().palette().bg_surface.name()));
-    auto *headerLayout = new QHBoxLayout(header);
+    m_headerWidget = new QWidget(this);
+    m_headerWidget->setFixedHeight(28);
+    auto *headerLayout = new QHBoxLayout(m_headerWidget);
     headerLayout->setContentsMargins(8, 0, 4, 0);
     headerLayout->setSpacing(4);
 
-    auto *titleLabel = new QLabel("Terminal", header);
-    titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 11px; font-weight: bold;")
-        .arg(ThemeManager::instance().palette().text_muted.name()));
-    headerLayout->addWidget(titleLabel);
+    m_titleLabel = new QLabel("Terminal", m_headerWidget);
+    headerLayout->addWidget(m_titleLabel);
     headerLayout->addStretch();
 
-    auto *newBtn = new QToolButton(header);
-    newBtn->setText("+");
-    newBtn->setFixedSize(22, 22);
-    newBtn->setStyleSheet(QStringLiteral(
-        "QToolButton { color: %1; background: transparent; border: none; "
-        "font-size: 16px; } QToolButton:hover { color: %2; }")
-        .arg(ThemeManager::instance().palette().text_muted.name(),
-             ThemeManager::instance().palette().text_primary.name()));
-    connect(newBtn, &QToolButton::clicked, this, [this] { newTerminal(); });
-    headerLayout->addWidget(newBtn);
+    m_newBtn = new QToolButton(m_headerWidget);
+    m_newBtn->setText("+");
+    m_newBtn->setFixedSize(22, 22);
+    connect(m_newBtn, &QToolButton::clicked, this, [this] { newTerminal(); });
+    headerLayout->addWidget(m_newBtn);
 
-    auto *closeBtn = new QToolButton(header);
-    closeBtn->setText("\xc3\x97"); // ×
-    closeBtn->setFixedSize(22, 22);
-    closeBtn->setStyleSheet(QStringLiteral(
-        "QToolButton { color: %1; background: transparent; border: none; "
-        "font-size: 14px; } QToolButton:hover { color: %2; }")
-        .arg(ThemeManager::instance().palette().text_muted.name(),
-             ThemeManager::instance().palette().red.name()));
-    connect(closeBtn, &QToolButton::clicked, this, &TerminalPanel::closeCurrentTerminal);
-    headerLayout->addWidget(closeBtn);
+    m_closeBtn = new QToolButton(m_headerWidget);
+    m_closeBtn->setText("\xc3\x97");
+    m_closeBtn->setFixedSize(22, 22);
+    connect(m_closeBtn, &QToolButton::clicked, this, &TerminalPanel::closeCurrentTerminal);
+    headerLayout->addWidget(m_closeBtn);
 
-    layout->addWidget(header);
+    layout->addWidget(m_headerWidget);
 
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabPosition(QTabWidget::South);
     m_tabWidget->setTabsClosable(false);
     m_tabWidget->setDocumentMode(true);
+    layout->addWidget(m_tabWidget);
+
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &TerminalPanel::applyThemeColors);
+}
+
+void TerminalPanel::applyThemeColors()
+{
+    const auto &pal = ThemeManager::instance().palette();
+
+    m_headerWidget->setStyleSheet(QStringLiteral("background: %1; border-top: 1px solid %2;")
+        .arg(pal.bg_base.name(), pal.bg_surface.name()));
+
+    m_titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 11px; font-weight: bold;")
+        .arg(pal.text_muted.name()));
+
+    m_newBtn->setStyleSheet(QStringLiteral(
+        "QToolButton { color: %1; background: transparent; border: none; "
+        "font-size: 16px; } QToolButton:hover { color: %2; }")
+        .arg(pal.text_muted.name(), pal.text_primary.name()));
+
+    m_closeBtn->setStyleSheet(QStringLiteral(
+        "QToolButton { color: %1; background: transparent; border: none; "
+        "font-size: 14px; } QToolButton:hover { color: %2; }")
+        .arg(pal.text_muted.name(), pal.red.name()));
+
     m_tabWidget->setStyleSheet(QStringLiteral(
         "QTabWidget::pane { border: none; background: %1; }"
         "QTabBar { background: %1; }"
         "QTabBar::tab { background: %1; color: %2; border: none; "
         "padding: 3px 12px; font-size: 11px; }"
         "QTabBar::tab:selected { color: %3; border-top: 1px solid %4; }")
-        .arg(ThemeManager::instance().palette().bg_base.name(),
-             ThemeManager::instance().palette().overlay0.name(),
-             ThemeManager::instance().palette().text_primary.name(),
-             ThemeManager::instance().palette().mauve.name()));
-    layout->addWidget(m_tabWidget);
+        .arg(pal.bg_base.name(), pal.overlay0.name(),
+             pal.text_primary.name(), pal.mauve.name()));
 }
 
 void TerminalPanel::setWorkingDirectory(const QString &dir)

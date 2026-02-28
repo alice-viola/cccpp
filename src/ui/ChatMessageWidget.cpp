@@ -83,6 +83,9 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
 
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
     applyStyle();
+    applyThemeColors();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, &ChatMessageWidget::applyThemeColors);
 }
 
 void ChatMessageWidget::setupUserContent(const QString &content)
@@ -285,5 +288,56 @@ void ChatMessageWidget::applyStyle()
         setStyleSheet(
             "ChatMessageWidget { background: transparent; border-radius: 0; }");
         break;
+    }
+}
+
+void ChatMessageWidget::applyThemeColors()
+{
+    auto &tm = ThemeManager::instance();
+
+    applyStyle();
+
+    QString roleColor;
+    switch (m_role) {
+    case User:     roleColor = tm.hex("mauve"); break;
+    case Assistant: roleColor = tm.hex("blue"); break;
+    case Tool:     roleColor = tm.hex("green"); break;
+    }
+    if (m_roleLabel)
+        m_roleLabel->setStyleSheet(
+            QStringLiteral("QLabel { font-weight: bold; font-size: 11px; color: %1; }").arg(roleColor));
+
+    if (m_userLabel)
+        m_userLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 2px 0; }")
+            .arg(tm.hex("text_primary")));
+
+    if (m_acceptBtn)
+        m_acceptBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; }")
+            .arg(tm.hex("green"), tm.hex("on_accent"), tm.hex("teal")));
+
+    if (m_rejectBtn)
+        m_rejectBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; }")
+            .arg(tm.hex("red"), tm.hex("on_accent"), tm.hex("maroon")));
+
+    if (m_revertBtn)
+        m_revertBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
+            "QPushButton:hover { background: %2; color: %3; }")
+            .arg(tm.hex("bg_raised"), tm.hex("red"), tm.hex("on_accent")));
+
+    if (m_contentBrowser && !m_rawContent.isEmpty()) {
+        MarkdownRenderer renderer;
+        m_contentBrowser->setHtml(renderer.toHtml(m_rawContent));
     }
 }

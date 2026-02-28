@@ -14,6 +14,7 @@ public:
     void save();
 
     QString claudeBinary() const;
+    void setClaudeBinary(const QString &path);
     QStringList agentModeFlags() const;
     QStringList askModeFlags() const;
     QStringList planModeFlags() const;

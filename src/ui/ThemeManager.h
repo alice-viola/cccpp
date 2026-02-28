@@ -87,7 +87,14 @@ public:
         m_palettes["latte"] = latte;
     }
 
-    const ThemePalette &palette() const { return m_palettes[m_currentTheme]; }
+    const ThemePalette &palette() const
+    {
+        auto it = m_palettes.constFind(m_currentTheme);
+        if (it != m_palettes.constEnd())
+            return it.value();
+        static const ThemePalette fallback;
+        return fallback;
+    }
     QString currentThemeName() const { return m_currentTheme; }
     QStringList availableThemes() const { return {"mocha", "macchiato", "frappe", "latte"}; }
 

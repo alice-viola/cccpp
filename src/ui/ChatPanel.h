@@ -66,6 +66,7 @@ signals:
 private slots:
     void onSendRequested(const QString &text);
     void onRevertRequested(int turnId);
+    void applyThemeColors();
 
 private:
     ChatTab &currentTab();
