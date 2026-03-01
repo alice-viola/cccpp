@@ -5,6 +5,7 @@
 #include "ui/ChatMessageWidget.h"
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThinkingIndicator.h"
+#include "ui/ThinkingBlockWidget.h"
 #include "ui/QuestionWidget.h"
 #include "ui/SuggestionChips.h"
 #include "ui/ThemeManager.h"
@@ -157,6 +158,53 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         scrollTabToBottom(t);
     });
 
+    connect(proc->streamParser(), &StreamParser::thinkingStarted, this,
+            [this, tabIdx] {
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        t.currentThinkingBlock = new ThinkingBlockWidget;
+        if (t.messagesLayout)
+            t.messagesLayout->insertWidget(insertPosForTab(t), t.currentThinkingBlock);
+        scrollTabToBottom(t);
+    });
+
+    connect(proc->streamParser(), &StreamParser::thinkingDelta, this,
+            [this, tabIdx](const QString &text) {
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        if (t.currentThinkingBlock)
+            t.currentThinkingBlock->appendContent(text);
+        scrollTabToBottom(t);
+    });
+
+    connect(proc->streamParser(), &StreamParser::thinkingStopped, this,
+            [this, tabIdx] {
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        if (t.currentThinkingBlock) {
+            t.currentThinkingBlock->finalize();
+            t.currentThinkingBlock = nullptr;
+        }
+    });
+
+    // Streaming edit: open the file early so the user sees which file is being
+    // edited, but don't place any markers yet. The correct inline diff is
+    // applied later by the editApplied signal once the full tool input (with
+    // old_string) is available and the start line can be computed accurately.
+    connect(proc->streamParser(), &StreamParser::editStreamStarted, this,
+            [this, tabIdx](const QString &toolName, const QString &filePath) {
+        Q_UNUSED(toolName);
+        if (!m_tabs.contains(tabIdx)) return;
+        auto &t = m_tabs[tabIdx];
+        if (m_codeViewer && !filePath.isEmpty()) {
+            QString fullPath = filePath;
+            if (!QFileInfo(fullPath).isAbsolute())
+                fullPath = m_workingDir + "/" + filePath;
+            t.pendingEditFile = fullPath;
+            m_codeViewer->loadFile(fullPath);
+        }
+    });
+
     connect(proc->streamParser(), &StreamParser::checkpointReceived, this,
             [this, tabIdx](const QString &uuid) {
         if (!m_tabs.contains(tabIdx)) return;
@@ -211,7 +259,22 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 QString diffBlock = buildDiffMarkdown(info.filePath, info.oldString, info.newString);
                 t.currentAssistantMsg->appendContent(diffBlock);
             }
-            emit editApplied(info.filePath, info.oldString, info.newString, 0);
+
+            // Compute edit line from old content (file hasn't been modified yet)
+            int editLine = 0;
+            if (!info.oldString.isEmpty()) {
+                QString fullPath = info.filePath;
+                if (!QFileInfo(fullPath).isAbsolute() && !m_workingDir.isEmpty())
+                    fullPath = m_workingDir + "/" + fullPath;
+                QFile f(fullPath);
+                if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    QString content = QString::fromUtf8(f.readAll());
+                    int pos = content.indexOf(info.oldString);
+                    if (pos >= 0)
+                        editLine = content.left(pos).count('\n');
+                }
+            }
+            emit editApplied(info.filePath, info.oldString, info.newString, editLine);
         } else if (name == "Write" && !info.filePath.isEmpty()) {
             info.isEdit = true;
             info.newString = JsonUtils::getString(input, "content",
@@ -306,6 +369,11 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         bool wasCancelled = (exitCode == 15 || exitCode == 9
                              || exitCode == 143 || exitCode == 137);
+
+        if (t.currentThinkingBlock) {
+            t.currentThinkingBlock->finalize();
+            t.currentThinkingBlock = nullptr;
+        }
 
         if (t.currentToolGroup) {
             t.currentToolGroup->finalize();

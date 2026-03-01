@@ -191,11 +191,11 @@ void MainWindow::setupUI()
         syncEditorContextToChat();
     });
 
-    // Show inline diff overlay when Claude edits a file
+    // Show Cursor-style inline diff when Claude edits a file
     connect(m_chatPanel, &ChatPanel::editApplied, this,
             [this](const QString &filePath, const QString &oldText, const QString &newText, int startLine) {
         if (!oldText.isEmpty() || !newText.isEmpty())
-            m_codeViewer->showInlineDiffOverlay(filePath, oldText, newText, startLine);
+            m_codeViewer->showInlineDiff(filePath, oldText, newText, startLine);
     });
 
     // Apply code from chat to editor
@@ -204,7 +204,7 @@ void MainWindow::setupUI()
         Q_UNUSED(language);
         QString currentFile = m_codeViewer->currentFile();
         if (!currentFile.isEmpty())
-            m_codeViewer->showInlineDiffOverlay(currentFile, "", code, 0);
+            m_codeViewer->showInlineDiff(currentFile, "", code, 0);
     });
 
     // Inline edit from CodeViewer -> ChatPanel
@@ -219,13 +219,12 @@ void MainWindow::setupUI()
 
     // Inline diff accept/reject
     connect(m_codeViewer, &CodeViewer::inlineDiffAccepted, this,
-            [this](const QString &) {
-        m_codeViewer->hideInlineDiffOverlay();
+            [this](const QString &filePath) {
+        Q_UNUSED(filePath);
     });
     connect(m_codeViewer, &CodeViewer::inlineDiffRejected, this,
             [this](const QString &filePath, const QString &, const QString &) {
         m_chatPanel->rewindCurrentTurn();
-        m_codeViewer->hideInlineDiffOverlay();
         m_codeViewer->refreshFile(filePath);
     });
 

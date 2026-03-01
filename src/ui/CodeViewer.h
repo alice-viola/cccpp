@@ -24,6 +24,15 @@ class BreadcrumbBar;
 #include <QPlainTextEdit>
 #endif
 
+struct InlineHunkState {
+    int startLine = 0;
+    int addedLineCount = 0;
+    int annotationLine = -1; // line where annotation is attached (line before edit)
+    QString oldText;
+    QString newText;
+    bool resolved = false;
+};
+
 struct FileTab {
     QString filePath;
     bool dirty = false;
@@ -37,6 +46,14 @@ struct FileTab {
     QStackedWidget *stack = nullptr;
     DiffSplitView *diffView = nullptr;
     QTextBrowser *markdownView = nullptr;
+    QList<InlineHunkState> inlineHunks;
+
+    // Streaming edit state (Feature 2)
+    bool streamingEdit = false;
+    int streamEditStartLine = -1;
+    int streamEditInsertLine = -1;
+    QString streamOldText;
+    QString streamAccumulated;
 };
 
 class CodeViewer : public QWidget {
@@ -78,10 +95,24 @@ public:
     void toggleDiffMode();
     bool isInDiffMode() const;
 
-    // Inline diff overlay for AI edits
+    // Inline diff overlay for AI edits (legacy)
     void showInlineDiffOverlay(const QString &filePath, const QString &oldText,
                                const QString &newText, int startLine);
     void hideInlineDiffOverlay();
+
+    // Cursor-style inline diff in the editor
+    void showInlineDiff(const QString &filePath, const QString &oldText,
+                        const QString &newText, int startLine);
+    void acceptInlineHunk(const QString &filePath, int hunkIndex);
+    void rejectInlineHunk(const QString &filePath, int hunkIndex);
+    void acceptAllInlineHunks(const QString &filePath);
+    void rejectAllInlineHunks(const QString &filePath);
+    void clearInlineDiffs(const QString &filePath);
+
+    // Streaming edit visualization (Feature 2)
+    void beginStreamingEdit(const QString &filePath, const QString &oldText, int startLine);
+    void appendStreamingContent(const QString &filePath, const QString &delta);
+    void finalizeStreamingEdit(const QString &filePath);
 
     // Inline edit (Cmd+K)
     void showInlineEditBar();
@@ -119,6 +150,13 @@ private:
     void unwatchFile(const QString &filePath);
     void connectEditorSignals(FileTab &tab);
     void updateEmptyState();
+#ifndef NO_QSCINTILLA
+    void setupInlineDiffMargins(QsciScintilla *ed);
+    void renderInlineHunk(FileTab &tab, int hunkIndex);
+    void clearInlineHunkVisuals(FileTab &tab, int hunkIndex);
+    int findLineOfText(QsciScintilla *ed, const QString &text);
+    void onDiffMarginClicked(int margin, int line, Qt::KeyboardModifiers mods);
+#endif
 
     QTabWidget *m_tabWidget;
     QPushButton *m_diffToggleBtn;

@@ -72,6 +72,7 @@ set(UI_SOURCES
     src/ui/SuggestionChips.cpp
     src/ui/InlineDiffOverlay.cpp
     src/ui/InlineEditBar.cpp
+    src/ui/ThinkingBlockWidget.cpp
 )
 
 set(UTIL_SOURCES

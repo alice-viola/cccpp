@@ -11,6 +11,7 @@ void StreamParser::reset()
     m_accumulatedText.clear();
     m_pendingTools.clear();
     m_emittedToolIds.clear();
+    m_activeThinkingBlockIdx = -1;
 }
 
 void StreamParser::feed(const QByteArray &line)
@@ -91,24 +92,29 @@ void StreamParser::handleInnerEvent(const json &ev)
                 return;
             }
             if (dt == "input_json_delta") {
-                // Accumulate partial tool input JSON
                 int idx = jint(ev, "index");
                 if (m_pendingTools.contains(idx)) {
                     std::string partial;
                     if (ev["delta"].contains("partial_json") && ev["delta"]["partial_json"].is_string())
                         partial = ev["delta"]["partial_json"].get<std::string>();
                     m_pendingTools[idx].accumulatedJson += partial;
+                    processPartialToolJson(idx, partial);
                 }
                 return;
             }
-            if (dt == "thinking_delta" || dt == "signature_delta") {
-                return; // Skip thinking/signature blocks
+            if (dt == "thinking_delta") {
+                QString text = jstr(ev["delta"], "thinking");
+                if (!text.isEmpty())
+                    emit thinkingDelta(text);
+                return;
+            }
+            if (dt == "signature_delta") {
+                return;
             }
         }
         return;
     }
 
-    // --- Tool use block start (input is empty, will be built up by input_json_delta) ---
     if (evType == "content_block_start") {
         if (ev.contains("content_block")) {
             std::string bt = jtype(ev["content_block"]);
@@ -119,19 +125,30 @@ void StreamParser::handleInnerEvent(const json &ev)
                 pending.id = jstr(ev["content_block"], "id");
                 pending.blockIndex = idx;
                 m_pendingTools[idx] = pending;
+            } else if (bt == "thinking") {
+                m_activeThinkingBlockIdx = idx;
+                emit thinkingStarted();
             }
         }
         return;
     }
 
-    // --- Block stop: finalize pending tool_use ---
     if (evType == "content_block_stop") {
         int idx = jint(ev, "index");
+
+        if (idx == m_activeThinkingBlockIdx) {
+            m_activeThinkingBlockIdx = -1;
+            emit thinkingStopped();
+            return;
+        }
+
         if (m_pendingTools.contains(idx)) {
             PendingToolUse &pending = m_pendingTools[idx];
 
-            // Only emit from here if the assistant snapshot hasn't already handled it
-            // AND we have accumulated JSON input (not empty)
+            bool wasStreaming = pending.inNewString || pending.pathEmitted;
+            if (wasStreaming)
+                emit editStreamFinished(idx);
+
             if (!pending.id.isEmpty() && !m_emittedToolIds.contains(pending.id)
                 && !pending.accumulatedJson.empty()) {
                 json toolInput;
@@ -259,4 +276,102 @@ StreamEvent StreamParser::parseEvent(const json &j)
 
     event.type = StreamEvent::Unknown;
     return event;
+}
+
+static std::string unescapeJsonString(const std::string &s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            char c = s[i + 1];
+            if (c == '"')       { out += '"'; ++i; }
+            else if (c == '\\') { out += '\\'; ++i; }
+            else if (c == 'n')  { out += '\n'; ++i; }
+            else if (c == 't')  { out += '\t'; ++i; }
+            else if (c == 'r')  { out += '\r'; ++i; }
+            else if (c == '/')  { out += '/'; ++i; }
+            else                { out += s[i]; }
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+static size_t findJsonFieldStart(const std::string &json, const std::string &field, size_t from)
+{
+    std::string needle = "\"" + field + "\":\"";
+    size_t pos = json.find(needle, from);
+    if (pos != std::string::npos)
+        return pos + needle.size();
+
+    needle = "\"" + field + "\": \"";
+    pos = json.find(needle, from);
+    if (pos != std::string::npos)
+        return pos + needle.size();
+
+    return std::string::npos;
+}
+
+static std::string extractFieldValue(const std::string &json, size_t fieldStart)
+{
+    std::string value;
+    for (size_t i = fieldStart; i < json.size(); ++i) {
+        if (json[i] == '\\' && i + 1 < json.size()) {
+            value += json[i];
+            value += json[i + 1];
+            ++i;
+        } else if (json[i] == '"') {
+            break;
+        } else {
+            value += json[i];
+        }
+    }
+    return value;
+}
+
+void StreamParser::processPartialToolJson(int idx, const std::string &)
+{
+    PendingToolUse &p = m_pendingTools[idx];
+    bool isEdit = (p.name == "Edit" || p.name == "StrReplace" || p.name == "Write");
+    if (!isEdit)
+        return;
+
+    const std::string &json = p.accumulatedJson;
+
+    if (!p.pathEmitted) {
+        size_t pathStart = findJsonFieldStart(json, "path", 0);
+        if (pathStart == std::string::npos)
+            pathStart = findJsonFieldStart(json, "file_path", 0);
+        if (pathStart != std::string::npos) {
+            std::string rawVal = extractFieldValue(json, pathStart);
+            if (json.find('"', pathStart + rawVal.size()) != std::string::npos) {
+                p.extractedPath = unescapeJsonString(rawVal);
+                p.pathEmitted = true;
+                emit editStreamStarted(p.name, QString::fromStdString(p.extractedPath));
+            }
+        }
+    }
+
+    if (p.pathEmitted && !p.inNewString) {
+        std::string fieldName = (p.name == "Write") ? "content" : "new_string";
+        size_t start = findJsonFieldStart(json, fieldName, 0);
+        if (start == std::string::npos && p.name == "Write")
+            start = findJsonFieldStart(json, "contents", 0);
+        if (start != std::string::npos) {
+            p.inNewString = true;
+            p.lastScanPos = start;
+        }
+    }
+
+    if (p.inNewString) {
+        std::string rawVal = extractFieldValue(json, p.lastScanPos);
+        std::string decoded = unescapeJsonString(rawVal);
+        if (decoded.size() > p.newStringBuffer.size()) {
+            std::string delta = decoded.substr(p.newStringBuffer.size());
+            p.newStringBuffer = decoded;
+            emit editContentDelta(idx, QString::fromStdString(delta));
+        }
+    }
 }

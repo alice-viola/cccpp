@@ -14,6 +14,7 @@ class ModelSelector;
 class ChatMessageWidget;
 class ToolCallGroupWidget;
 class ThinkingIndicator;
+class ThinkingBlockWidget;
 class SuggestionChips;
 class ClaudeProcess;
 class SessionManager;
@@ -29,6 +30,7 @@ struct ChatTab {
     ChatMessageWidget *currentAssistantMsg = nullptr;
     ToolCallGroupWidget *currentToolGroup = nullptr;
     ThinkingIndicator *thinkingIndicator = nullptr;
+    ThinkingBlockWidget *currentThinkingBlock = nullptr;
     SuggestionChips *suggestionChips = nullptr;
     QWidget *welcomeWidget = nullptr;
     QString sessionId;

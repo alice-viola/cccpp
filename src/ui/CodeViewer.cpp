@@ -516,9 +516,32 @@ QsciScintilla *CodeViewer::createEditor()
     ed->markerDefine(QsciScintilla::Background, 1);
     ed->markerDefine(QsciScintilla::Background, 2);
 
+    setupInlineDiffMargins(ed);
     applyEditorThemeColors(ed);
 
     return ed;
+}
+
+void CodeViewer::setupInlineDiffMargins(QsciScintilla *ed)
+{
+    // Margin 3: clickable diff action column (accept/reject), hidden by default
+    ed->setMarginType(3, QsciScintilla::SymbolMargin);
+    ed->setMarginWidth(3, 0);
+    ed->setMarginMarkerMask(3, (1 << 5) | (1 << 6));
+    ed->setMarginSensitivity(3, true);
+
+    // Marker 5: accept (green arrow)
+    ed->markerDefine(QsciScintilla::RightArrow, 5);
+    // Marker 6: reject (red minus)
+    ed->markerDefine(QsciScintilla::Minus, 6);
+
+    // Enable annotations (ANNOTATION_STANDARD = 1)
+    ed->SendScintilla(QsciScintillaBase::SCI_ANNOTATIONSETVISIBLE, 1);
+
+    connect(ed, &QsciScintilla::marginClicked, this,
+            [this](int margin, int line, Qt::KeyboardModifiers mods) {
+        onDiffMarginClicked(margin, line, mods);
+    });
 }
 
 void CodeViewer::applyEditorThemeColors(QsciScintilla *ed)
@@ -541,6 +564,29 @@ void CodeViewer::applyEditorThemeColors(QsciScintilla *ed)
     // Diff marker backgrounds
     ed->setMarkerBackgroundColor(pal.diff_add_bg, 1);
     ed->setMarkerBackgroundColor(pal.diff_del_bg, 2);
+
+    // Inline diff action markers
+    ed->setMarkerForegroundColor(pal.green, 5);
+    ed->setMarkerBackgroundColor(pal.diff_add_bg, 5);
+    ed->setMarkerForegroundColor(pal.red, 6);
+    ed->setMarkerBackgroundColor(pal.diff_del_bg, 6);
+
+    // Annotation style for deleted lines (style index 0 relative to offset)
+    constexpr int ANN_STYLE = 200;
+    ed->SendScintilla(QsciScintillaBase::SCI_ANNOTATIONSETSTYLEOFFSET, ANN_STYLE);
+    auto toSciColor = [](const QColor &c) -> long {
+        return c.red() | (c.green() << 8) | (c.blue() << 16);
+    };
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETBACK, ANN_STYLE, toSciColor(pal.diff_del_bg));
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETFORE, ANN_STYLE, toSciColor(pal.red));
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETFONT, ANN_STYLE, "JetBrains Mono");
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETSIZE, ANN_STYLE, 12);
+
+    // Streaming edit (added lines annotation style)
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETBACK, ANN_STYLE + 1, toSciColor(pal.diff_add_bg));
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETFORE, ANN_STYLE + 1, toSciColor(pal.green));
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETFONT, ANN_STYLE + 1, "JetBrains Mono");
+    ed->SendScintilla(QsciScintillaBase::SCI_STYLESETSIZE, ANN_STYLE + 1, 12);
 }
 
 #else // NO_QSCINTILLA fallback
@@ -1591,4 +1637,381 @@ void CodeViewer::hideInlineEditBar()
         m_inlineEditBar->clear();
         m_inlineEditBar->hide();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cursor-style inline diff (Feature 1)
+// ---------------------------------------------------------------------------
+
+#ifndef NO_QSCINTILLA
+
+int CodeViewer::findLineOfText(QsciScintilla *ed, const QString &text)
+{
+    if (text.isEmpty()) return -1;
+    QString content = ed->text();
+    int pos = content.indexOf(text);
+    if (pos < 0) return -1;
+    return content.left(pos).count('\n');
+}
+
+void CodeViewer::showInlineDiff(const QString &filePath, const QString &oldText,
+                                 const QString &newText, int startLine)
+{
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) {
+        loadFile(filePath);
+        tab = tabForFile(filePath);
+    }
+    if (!tab || !tab->editor) return;
+
+    auto *ed = tab->editor;
+
+    // Determine the edit location. The editor may still have the old content
+    // (the CLI tool hasn't finished yet), so search for oldText first.
+    int editLine = startLine;
+    if (editLine <= 0) {
+        if (!oldText.isEmpty())
+            editLine = findLineOfText(ed, oldText);
+        if (editLine <= 0 && !newText.isEmpty())
+            editLine = findLineOfText(ed, newText);
+    }
+    if (editLine < 0)
+        editLine = 0;
+
+    // Force-reload the file so the editor picks up the on-disk changes
+    // (the edit tool may have modified the file by now). Use a short delay
+    // to give the CLI a moment to write, then apply the markers.
+    int newLineCount = newText.isEmpty() ? 0 : newText.count('\n') + 1;
+    QString fp = filePath;
+    QString old = oldText;
+    QString nw = newText;
+
+    auto applyMarkers = [this, fp, old, nw, editLine, newLineCount] {
+        FileTab *t = tabForFile(fp);
+        if (!t || !t->editor) return;
+
+        // Try to reload the file content from disk
+        forceReloadFile(fp);
+        t = tabForFile(fp);
+        if (!t || !t->editor) return;
+        auto *editor = t->editor;
+
+        // Re-check line position after reload: newText should now be in the file
+        int line = editLine;
+        if (!nw.isEmpty()) {
+            int found = findLineOfText(editor, nw);
+            if (found >= 0)
+                line = found;
+        }
+
+        InlineHunkState hunk;
+        hunk.startLine = line;
+        hunk.addedLineCount = newLineCount;
+        hunk.oldText = old;
+        hunk.newText = nw;
+        hunk.annotationLine = (line > 0) ? line - 1 : 0;
+        t->inlineHunks.append(hunk);
+
+        int hunkIdx = t->inlineHunks.size() - 1;
+        renderInlineHunk(*t, hunkIdx);
+
+        editor->setMarginWidth(3, 22);
+        editor->setCursorPosition(line, 0);
+        editor->ensureLineVisible(line);
+
+        int idx = indexForFile(fp);
+        if (idx >= 0)
+            m_tabWidget->setCurrentIndex(idx);
+    };
+
+    // Delay slightly so the CLI tool has time to write the file to disk
+    QTimer::singleShot(150, this, applyMarkers);
+}
+
+void CodeViewer::renderInlineHunk(FileTab &tab, int hunkIndex)
+{
+    if (hunkIndex < 0 || hunkIndex >= tab.inlineHunks.size()) return;
+    auto &hunk = tab.inlineHunks[hunkIndex];
+    auto *ed = tab.editor;
+    if (!ed) return;
+
+    // Mark added lines with green background (marker 1)
+    for (int i = 0; i < hunk.addedLineCount; ++i) {
+        int line = hunk.startLine + i;
+        if (line >= 0 && line < ed->lines())
+            ed->markerAdd(line, 1);
+    }
+
+    // Add gutter accept/reject markers on first added line
+    if (hunk.addedLineCount > 0 && hunk.startLine < ed->lines()) {
+        ed->markerAdd(hunk.startLine, 5);
+        ed->markerAdd(hunk.startLine, 6);
+    }
+
+    // Show deleted lines as annotation on the line before the edit
+    if (!hunk.oldText.isEmpty()) {
+        int annLine = hunk.annotationLine;
+        if (annLine >= 0 && annLine < ed->lines()) {
+            QStringList delLines = hunk.oldText.split('\n');
+            QStringList prefixed;
+            for (const QString &l : delLines)
+                prefixed << QStringLiteral("- %1").arg(l);
+            QString annText = prefixed.join('\n');
+
+            // Use annotation style 0 (which maps to ANN_STYLE_OFFSET + 0 = 200)
+            ed->annotate(annLine, annText, 0);
+        }
+    }
+}
+
+void CodeViewer::clearInlineHunkVisuals(FileTab &tab, int hunkIndex)
+{
+    if (hunkIndex < 0 || hunkIndex >= tab.inlineHunks.size()) return;
+    auto &hunk = tab.inlineHunks[hunkIndex];
+    auto *ed = tab.editor;
+    if (!ed) return;
+
+    // Clear added-line markers
+    for (int i = 0; i < hunk.addedLineCount; ++i) {
+        int line = hunk.startLine + i;
+        if (line >= 0 && line < ed->lines()) {
+            ed->markerDelete(line, 1);
+            ed->markerDelete(line, 5);
+            ed->markerDelete(line, 6);
+        }
+    }
+
+    // Clear annotation
+    if (hunk.annotationLine >= 0 && hunk.annotationLine < ed->lines())
+        ed->clearAnnotations(hunk.annotationLine);
+
+    hunk.resolved = true;
+
+    // If all hunks resolved, hide the action margin
+    bool allResolved = true;
+    for (const auto &h : tab.inlineHunks) {
+        if (!h.resolved) { allResolved = false; break; }
+    }
+    if (allResolved) {
+        ed->setMarginWidth(3, 0);
+        tab.inlineHunks.clear();
+    }
+}
+
+void CodeViewer::onDiffMarginClicked(int margin, int line, Qt::KeyboardModifiers mods)
+{
+    if (margin != 3) return;
+
+    auto *tab = currentTab();
+    if (!tab) return;
+
+    for (int i = 0; i < tab->inlineHunks.size(); ++i) {
+        auto &hunk = tab->inlineHunks[i];
+        if (hunk.resolved) continue;
+        if (line >= hunk.startLine && line < hunk.startLine + qMax(hunk.addedLineCount, 1)) {
+            if (mods & Qt::ShiftModifier)
+                rejectInlineHunk(tab->filePath, i);
+            else
+                acceptInlineHunk(tab->filePath, i);
+            return;
+        }
+    }
+}
+
+#endif // NO_QSCINTILLA
+
+void CodeViewer::acceptInlineHunk(const QString &filePath, int hunkIndex)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab || hunkIndex < 0 || hunkIndex >= tab->inlineHunks.size()) return;
+
+    clearInlineHunkVisuals(*tab, hunkIndex);
+    emit inlineDiffAccepted(filePath);
+#else
+    Q_UNUSED(filePath); Q_UNUSED(hunkIndex);
+#endif
+}
+
+void CodeViewer::rejectInlineHunk(const QString &filePath, int hunkIndex)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab || hunkIndex < 0 || hunkIndex >= tab->inlineHunks.size()) return;
+
+    auto &hunk = tab->inlineHunks[hunkIndex];
+    auto *ed = tab->editor;
+
+    if (ed && !hunk.newText.isEmpty()) {
+        QString content = ed->text();
+        int pos = content.indexOf(hunk.newText);
+        if (pos >= 0) {
+            content.replace(pos, hunk.newText.length(), hunk.oldText);
+            ed->setText(content);
+        }
+    }
+
+    clearInlineHunkVisuals(*tab, hunkIndex);
+    emit inlineDiffRejected(filePath, hunk.oldText, hunk.newText);
+#else
+    Q_UNUSED(filePath); Q_UNUSED(hunkIndex);
+#endif
+}
+
+void CodeViewer::acceptAllInlineHunks(const QString &filePath)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) return;
+    for (int i = tab->inlineHunks.size() - 1; i >= 0; --i) {
+        if (!tab->inlineHunks[i].resolved)
+            acceptInlineHunk(filePath, i);
+    }
+#else
+    Q_UNUSED(filePath);
+#endif
+}
+
+void CodeViewer::rejectAllInlineHunks(const QString &filePath)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) return;
+    for (int i = tab->inlineHunks.size() - 1; i >= 0; --i) {
+        if (!tab->inlineHunks[i].resolved)
+            rejectInlineHunk(filePath, i);
+    }
+#else
+    Q_UNUSED(filePath);
+#endif
+}
+
+void CodeViewer::clearInlineDiffs(const QString &filePath)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab || !tab->editor) return;
+
+    for (int i = 0; i < tab->inlineHunks.size(); ++i) {
+        if (!tab->inlineHunks[i].resolved)
+            clearInlineHunkVisuals(*tab, i);
+    }
+    tab->inlineHunks.clear();
+    tab->editor->setMarginWidth(3, 0);
+#else
+    Q_UNUSED(filePath);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Streaming edit visualization (Feature 2)
+// ---------------------------------------------------------------------------
+
+void CodeViewer::beginStreamingEdit(const QString &filePath, const QString &oldText, int startLine)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab) {
+        loadFile(filePath);
+        tab = tabForFile(filePath);
+    }
+    if (!tab || !tab->editor) return;
+
+    auto *ed = tab->editor;
+    int editLine = startLine;
+    if (editLine <= 0 && !oldText.isEmpty())
+        editLine = findLineOfText(ed, oldText);
+    if (editLine < 0)
+        editLine = 0;
+
+    tab->streamingEdit = true;
+    tab->streamEditStartLine = editLine;
+    tab->streamEditInsertLine = editLine;
+    tab->streamOldText = oldText;
+    tab->streamAccumulated.clear();
+
+    // Mark old lines with red background
+    if (!oldText.isEmpty()) {
+        int oldLineCount = oldText.count('\n') + 1;
+        for (int i = 0; i < oldLineCount; ++i) {
+            int line = editLine + i;
+            if (line >= 0 && line < ed->lines())
+                ed->markerAdd(line, 2);
+        }
+        tab->streamEditInsertLine = editLine + oldLineCount;
+    }
+
+    ed->setCursorPosition(editLine, 0);
+    ed->ensureLineVisible(editLine);
+
+    int idx = indexForFile(filePath);
+    if (idx >= 0)
+        m_tabWidget->setCurrentIndex(idx);
+#else
+    Q_UNUSED(filePath); Q_UNUSED(oldText); Q_UNUSED(startLine);
+#endif
+}
+
+void CodeViewer::appendStreamingContent(const QString &filePath, const QString &delta)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab || !tab->editor || !tab->streamingEdit) return;
+
+    tab->streamAccumulated += delta;
+
+    // Show accumulated new content as a green annotation below the old text region
+    auto *ed = tab->editor;
+    int annLine = tab->streamEditInsertLine - 1;
+    if (annLine < 0) annLine = 0;
+    if (annLine >= ed->lines()) annLine = ed->lines() - 1;
+
+    QStringList newLines = tab->streamAccumulated.split('\n');
+    QStringList prefixed;
+    for (const QString &l : newLines)
+        prefixed << QStringLiteral("+ %1").arg(l);
+
+    // Use annotation style 1 (green, ANN_STYLE_OFFSET + 1 = 201)
+    ed->annotate(annLine, prefixed.join('\n'), 1);
+    ed->ensureLineVisible(annLine);
+#else
+    Q_UNUSED(filePath); Q_UNUSED(delta);
+#endif
+}
+
+void CodeViewer::finalizeStreamingEdit(const QString &filePath)
+{
+#ifndef NO_QSCINTILLA
+    FileTab *tab = tabForFile(filePath);
+    if (!tab || !tab->editor || !tab->streamingEdit) return;
+
+    auto *ed = tab->editor;
+    tab->streamingEdit = false;
+
+    // Clear the streaming annotations
+    int annLine = tab->streamEditInsertLine - 1;
+    if (annLine < 0) annLine = 0;
+    if (annLine < ed->lines())
+        ed->clearAnnotations(annLine);
+
+    // Clear red markers on old text
+    if (!tab->streamOldText.isEmpty()) {
+        int oldLineCount = tab->streamOldText.count('\n') + 1;
+        for (int i = 0; i < oldLineCount; ++i) {
+            int line = tab->streamEditStartLine + i;
+            if (line >= 0 && line < ed->lines())
+                ed->markerDelete(line, 2);
+        }
+    }
+
+    // Now the file has been updated by the tool (old replaced with new).
+    // Refresh the file content and show the inline diff.
+    forceReloadFile(filePath);
+    showInlineDiff(filePath, tab->streamOldText, tab->streamAccumulated, tab->streamEditStartLine);
+
+    tab->streamOldText.clear();
+    tab->streamAccumulated.clear();
+#else
+    Q_UNUSED(filePath);
+#endif
 }

@@ -33,6 +33,13 @@ struct PendingToolUse {
     QString id;
     int blockIndex = -1;
     std::string accumulatedJson;
+
+    // Streaming field extraction state (Feature 2)
+    bool pathEmitted = false;
+    bool inNewString = false;
+    std::string extractedPath;
+    std::string newStringBuffer;
+    size_t lastScanPos = 0;
 };
 
 class StreamParser : public QObject {
@@ -52,11 +59,21 @@ signals:
     void eventParsed(const StreamEvent &event);
     void checkpointReceived(const QString &uuid);
 
+    void thinkingStarted();
+    void thinkingDelta(const QString &text);
+    void thinkingStopped();
+
+    void editStreamStarted(const QString &toolName, const QString &filePath);
+    void editContentDelta(int blockIndex, const QString &partialNewString);
+    void editStreamFinished(int blockIndex);
+
 private:
     StreamEvent parseEvent(const json &j);
     void handleInnerEvent(const json &ev);
+    void processPartialToolJson(int idx, const std::string &partial);
 
     QString m_accumulatedText;
     QMap<int, PendingToolUse> m_pendingTools; // block index -> pending tool
     QSet<QString> m_emittedToolIds;
+    int m_activeThinkingBlockIdx = -1;
 };
