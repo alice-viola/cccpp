@@ -1,7 +1,7 @@
 # C3P2 — Claude Code C++ UI
 
 <p align="center">
-  <img src="assets/logo-c3p2.png" alt="C3P2 Logo" width="200">
+  <img src="assets/logo-c3p2.png" alt="C3P2 Logo" width="300">
 </p>
 
 A native C++ desktop application that provides a Cursor-like three-column UI for [Claude Code](https://docs.claude.com/en/docs/claude-code/cli-reference). Built with Qt6 and QScintilla, it wraps the `claude` CLI to give you a visual interface for agentic coding sessions.
