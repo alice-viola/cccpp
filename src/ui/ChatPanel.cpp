@@ -153,8 +153,23 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             [this, tabIdx](const QString &text) {
         if (!m_tabs.contains(tabIdx)) return;
         auto &t = m_tabs[tabIdx];
-        if (t.currentAssistantMsg)
-            t.currentAssistantMsg->appendContent(text);
+
+        if (t.currentToolGroup) {
+            t.currentToolGroup->finalize();
+            t.currentToolGroup = nullptr;
+        }
+
+        if (!t.currentAssistantMsg) {
+            t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+            t.currentAssistantMsg->setTurnId(t.turnId);
+            if (!t.hasFirstAssistantMsg)
+                t.hasFirstAssistantMsg = true;
+            else
+                t.currentAssistantMsg->setHeaderVisible(false);
+            addMessageToTab(t, t.currentAssistantMsg);
+        }
+        t.currentAssistantMsg->appendContent(text);
+        t.accumulatedRawContent += text;
         scrollTabToBottom(t);
     });
 
@@ -162,6 +177,12 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             [this, tabIdx] {
         if (!m_tabs.contains(tabIdx)) return;
         auto &t = m_tabs[tabIdx];
+        saveCurrentTextSegment(t);
+        t.currentAssistantMsg = nullptr;
+        if (t.currentToolGroup) {
+            t.currentToolGroup->finalize();
+            t.currentToolGroup = nullptr;
+        }
         t.currentThinkingBlock = new ThinkingBlockWidget;
         if (t.messagesLayout)
             t.messagesLayout->insertWidget(insertPosForTab(t), t.currentThinkingBlock);
@@ -183,6 +204,15 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         auto &t = m_tabs[tabIdx];
         if (t.currentThinkingBlock) {
             t.currentThinkingBlock->finalize();
+            if (m_database) {
+                MessageRecord rec;
+                rec.sessionId = t.sessionId;
+                rec.role = "thinking";
+                rec.content = t.currentThinkingBlock->rawContent();
+                rec.turnId = t.turnId;
+                rec.timestamp = QDateTime::currentSecsSinceEpoch();
+                m_database->saveMessage(rec);
+            }
             t.currentThinkingBlock = nullptr;
         }
     });
@@ -224,12 +254,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (!m_tabs.contains(tabIdx)) return;
         auto &t = m_tabs[tabIdx];
 
-        bool hasOldStr = input.contains("old_string");
-        bool hasPath = input.contains("path") || input.contains("file_path");
-        qDebug() << "[cccpp] Tool:" << name
-                 << "hasPath:" << hasPath
-                 << "hasOldString:" << hasOldStr
-                 << "inputKeys:" << QString::fromStdString(input.dump()).left(100);
+        saveCurrentTextSegment(t);
+        t.currentAssistantMsg = nullptr;
 
         ToolCallInfo info;
         info.toolName = name;
@@ -245,7 +271,10 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         else if (input.contains("command"))
             info.summary += ": " + JsonUtils::getString(input, "command");
 
+        bool isEditTool = false;
+
         if ((name == "Edit" || name == "StrReplace") && input.contains("old_string")) {
+            isEditTool = true;
             info.isEdit = true;
             info.oldString = JsonUtils::getString(input, "old_string");
             info.newString = JsonUtils::getString(input, "new_string");
@@ -255,12 +284,6 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
-            if (t.currentAssistantMsg && !info.filePath.isEmpty()) {
-                QString diffBlock = buildDiffMarkdown(info.filePath, info.oldString, info.newString);
-                t.currentAssistantMsg->appendContent(diffBlock);
-            }
-
-            // Compute edit line from old content (file hasn't been modified yet)
             int editLine = 0;
             if (!info.oldString.isEmpty()) {
                 QString fullPath = info.filePath;
@@ -276,6 +299,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             }
             emit editApplied(info.filePath, info.oldString, info.newString, editLine);
         } else if (name == "Write" && !info.filePath.isEmpty()) {
+            isEditTool = true;
             info.isEdit = true;
             info.newString = JsonUtils::getString(input, "content",
                              JsonUtils::getString(input, "contents"));
@@ -285,18 +309,15 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
-            if (t.currentAssistantMsg) {
-                int lineCount = info.newString.count('\n') + 1;
-                QString writeInfo = QStringLiteral("(%1 lines written)").arg(lineCount);
-                QString diffBlock = buildDiffMarkdown(info.filePath, "", writeInfo);
-                t.currentAssistantMsg->appendContent(diffBlock);
-            }
-
             if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
                 emit planFileDetected(info.filePath);
         }
 
         if (name == "AskUserQuestion") {
+            if (t.currentToolGroup) {
+                t.currentToolGroup->finalize();
+                t.currentToolGroup = nullptr;
+            }
             auto *questionWidget = new QuestionWidget(input);
             if (t.messagesLayout)
                 t.messagesLayout->insertWidget(insertPosForTab(t), questionWidget);
@@ -305,26 +326,31 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 if (!m_tabs.contains(tabIdx)) return;
                 auto &tab = m_tabs[tabIdx];
                 tab.process->setMode(m_modeSelector->currentMode());
-                tab.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
-                tab.currentAssistantMsg->setTurnId(tab.turnId);
-                if (tab.messagesLayout)
-                    tab.messagesLayout->insertWidget(insertPosForTab(tab), tab.currentAssistantMsg);
+                tab.currentAssistantMsg = nullptr;
                 setTabProcessingState(tabIdx, true);
                 tab.process->sendMessage(response);
             });
             scrollTabToBottom(t);
-            goto persistTool;
-        }
-
-        if (!t.currentToolGroup) {
-            t.currentToolGroup = new ToolCallGroupWidget;
+        } else if (isEditTool) {
+            if (t.currentToolGroup) {
+                t.currentToolGroup->finalize();
+                t.currentToolGroup = nullptr;
+            }
+            auto *editGroup = new ToolCallGroupWidget;
             if (t.messagesLayout)
-                t.messagesLayout->insertWidget(insertPosForTab(t), t.currentToolGroup);
+                t.messagesLayout->insertWidget(insertPosForTab(t), editGroup);
+            editGroup->addToolCall(info);
+            editGroup->finalize();
+        } else {
+            if (!t.currentToolGroup) {
+                t.currentToolGroup = new ToolCallGroupWidget;
+                if (t.messagesLayout)
+                    t.messagesLayout->insertWidget(insertPosForTab(t), t.currentToolGroup);
+            }
+            t.currentToolGroup->addToolCall(info);
         }
-        t.currentToolGroup->addToolCall(info);
         scrollTabToBottom(t);
 
-        persistTool:
         if (m_database) {
             MessageRecord rec;
             rec.sessionId = t.sessionId;
@@ -380,35 +406,37 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t.currentToolGroup = nullptr;
         }
 
-        if (t.currentAssistantMsg) {
-            if (wasCancelled) {
-                t.currentAssistantMsg->appendContent("\n\n*\\[Stopped by user\\]*");
-            } else if (t.currentAssistantMsg->rawContent().isEmpty()) {
-                t.currentAssistantMsg->appendContent(
-                    QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
+        if (wasCancelled) {
+            if (!t.currentAssistantMsg) {
+                t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+                t.currentAssistantMsg->setTurnId(t.turnId);
+                if (!t.hasFirstAssistantMsg)
+                    t.hasFirstAssistantMsg = true;
+                else
+                    t.currentAssistantMsg->setHeaderVisible(false);
+                addMessageToTab(t, t.currentAssistantMsg);
             }
+            t.currentAssistantMsg->appendContent("\n\n*\\[Stopped by user\\]*");
+            t.accumulatedRawContent += "\n\n*[Stopped by user]*";
+        } else if (t.accumulatedRawContent.isEmpty() && exitCode != 0) {
+            if (!t.currentAssistantMsg) {
+                t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+                t.currentAssistantMsg->setTurnId(t.turnId);
+                if (!t.hasFirstAssistantMsg)
+                    t.hasFirstAssistantMsg = true;
+                else
+                    t.currentAssistantMsg->setHeaderVisible(false);
+                addMessageToTab(t, t.currentAssistantMsg);
+            }
+            t.currentAssistantMsg->appendContent(
+                QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
+            t.accumulatedRawContent += QStringLiteral("*(Process exited with code %1)*").arg(exitCode);
         }
 
-        if (m_database && t.currentAssistantMsg) {
-            QString content = t.currentAssistantMsg->rawContent().trimmed();
-            bool isNoise = content.isEmpty()
-                || content.startsWith("*(Process exited")
-                || content == "*(Process exited with code 0)*";
-            if (!isNoise) {
-                MessageRecord rec;
-                rec.sessionId = t.sessionId;
-                rec.role = "assistant";
-                rec.content = content;
-                rec.turnId = t.turnId;
-                rec.timestamp = QDateTime::currentSecsSinceEpoch();
-                m_database->saveMessage(rec);
-            }
-        }
+        saveCurrentTextSegment(t);
 
-        if (t.currentAssistantMsg) {
-            showSuggestionChips(t, t.currentAssistantMsg->rawContent());
-            t.currentAssistantMsg = nullptr;
-        }
+        showSuggestionChips(t, t.accumulatedRawContent);
+        t.currentAssistantMsg = nullptr;
 
         // Show Revert on the user message that initiated this turn
         bool hasCheckpoint = m_database &&
@@ -525,80 +553,107 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     auto messages = m_database->loadMessages(sessionId);
 
-    struct TurnData {
-        QString userContent;
-        QString assistantContent;
-        QList<MessageRecord> tools;
-    };
-    QMap<int, TurnData> turns;
     int maxTurn = 0;
+    ToolCallGroupWidget *pendingGroup = nullptr;
+    bool firstAssistantInTurn = true;
+    int currentTurn = -1;
+
+    auto flushGroup = [&] {
+        if (pendingGroup) {
+            pendingGroup->finalize();
+            pendingGroup = nullptr;
+        }
+    };
+
+    auto insertPos = [&] {
+        return tab.messagesLayout->count() - 1;
+    };
 
     for (const auto &msg : messages) {
-        int t = msg.turnId;
-        if (t > maxTurn) maxTurn = t;
-        if (msg.role == "user" && !msg.content.trimmed().isEmpty())
-            turns[t].userContent = msg.content;
-        else if (msg.role == "assistant" && !msg.content.trimmed().isEmpty())
-            turns[t].assistantContent = msg.content;
-        else if (msg.role == "tool")
-            turns[t].tools.append(msg);
-    }
+        int turnId = msg.turnId;
+        if (turnId > maxTurn) maxTurn = turnId;
 
-    for (auto it = turns.constBegin(); it != turns.constEnd(); ++it) {
-        const TurnData &td = it.value();
-        int turnId = it.key();
+        if (turnId != currentTurn) {
+            flushGroup();
+            firstAssistantInTurn = true;
+            currentTurn = turnId;
+        }
 
-        if (!td.userContent.isEmpty()) {
-            auto *w = new ChatMessageWidget(ChatMessageWidget::User, td.userContent);
+        if (msg.role == "user" && !msg.content.trimmed().isEmpty()) {
+            flushGroup();
+            auto *w = new ChatMessageWidget(ChatMessageWidget::User, msg.content);
             w->setTurnId(turnId);
-            bool hasCheckpoint = m_database &&
+            bool hasCheckpoint =
                 !m_database->checkpointUuid(sessionId, turnId).isEmpty();
             w->showRevertButton(hasCheckpoint);
-            tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
+            tab.messagesLayout->insertWidget(insertPos(), w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
-        }
-        if (!td.assistantContent.isEmpty()) {
-            auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, td.assistantContent);
+
+        } else if (msg.role == "thinking" && !msg.content.trimmed().isEmpty()) {
+            flushGroup();
+            auto *tb = new ThinkingBlockWidget;
+            tb->appendContent(msg.content);
+            tb->finalize();
+            tab.messagesLayout->insertWidget(insertPos(), tb);
+
+        } else if (msg.role == "assistant" && !msg.content.trimmed().isEmpty()) {
+            flushGroup();
+            auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, msg.content);
             w->setTurnId(turnId);
-            tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
+            if (!firstAssistantInTurn)
+                w->setHeaderVisible(false);
+            firstAssistantInTurn = false;
+            tab.messagesLayout->insertWidget(insertPos(), w);
             connect(w, &ChatMessageWidget::fileNavigationRequested,
                     this, [this](const QString &fp, int line) { emit navigateToFile(fp, line); });
-        }
-        if (!td.tools.isEmpty()) {
-            auto *group = new ToolCallGroupWidget;
-            for (const auto &toolMsg : td.tools) {
-                ToolCallInfo info;
-                info.toolName = toolMsg.toolName;
-                info.summary = toolMsg.content;
+            connect(w, &ChatMessageWidget::applyCodeRequested,
+                    this, [this](const QString &code, const QString &lang) {
+                emit applyCodeRequested(code, lang, "");
+            });
 
-                if (!toolMsg.toolInput.isEmpty()) {
-                    auto parsed = nlohmann::json::parse(
-                        toolMsg.toolInput.toStdString(), nullptr, false);
-                    if (!parsed.is_discarded()) {
-                        if (parsed.contains("path"))
-                            info.filePath = JsonUtils::getString(parsed, "path");
-                        else if (parsed.contains("file_path"))
-                            info.filePath = JsonUtils::getString(parsed, "file_path");
+        } else if (msg.role == "tool") {
+            ToolCallInfo info;
+            info.toolName = msg.toolName;
+            info.summary = msg.content;
 
-                        if ((toolMsg.toolName == "Edit" || toolMsg.toolName == "StrReplace")
-                            && parsed.contains("old_string")) {
-                            info.isEdit = true;
-                            info.oldString = JsonUtils::getString(parsed, "old_string");
-                            info.newString = JsonUtils::getString(parsed, "new_string");
-                        } else if (toolMsg.toolName == "Write") {
-                            info.isEdit = true;
-                            info.newString = JsonUtils::getString(parsed, "content",
-                                             JsonUtils::getString(parsed, "contents"));
-                        }
+            if (!msg.toolInput.isEmpty()) {
+                auto parsed = nlohmann::json::parse(
+                    msg.toolInput.toStdString(), nullptr, false);
+                if (!parsed.is_discarded()) {
+                    if (parsed.contains("path"))
+                        info.filePath = JsonUtils::getString(parsed, "path");
+                    else if (parsed.contains("file_path"))
+                        info.filePath = JsonUtils::getString(parsed, "file_path");
+
+                    if ((msg.toolName == "Edit" || msg.toolName == "StrReplace")
+                        && parsed.contains("old_string")) {
+                        info.isEdit = true;
+                        info.oldString = JsonUtils::getString(parsed, "old_string");
+                        info.newString = JsonUtils::getString(parsed, "new_string");
+                    } else if (msg.toolName == "Write") {
+                        info.isEdit = true;
+                        info.newString = JsonUtils::getString(parsed, "content",
+                                         JsonUtils::getString(parsed, "contents"));
                     }
                 }
-
-                group->addToolCall(info);
             }
-            group->finalize();
-            tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, group);
+
+            if (info.isEdit) {
+                flushGroup();
+                auto *editGroup = new ToolCallGroupWidget;
+                editGroup->addToolCall(info);
+                editGroup->finalize();
+                tab.messagesLayout->insertWidget(insertPos(), editGroup);
+            } else {
+                if (!pendingGroup) {
+                    pendingGroup = new ToolCallGroupWidget;
+                    tab.messagesLayout->insertWidget(insertPos(), pendingGroup);
+                }
+                pendingGroup->addToolCall(info);
+            }
         }
     }
+    flushGroup();
     tab.turnId = maxTurn;
 
     auto *scrollContent = tab.scrollArea->widget();
@@ -649,6 +704,10 @@ void ChatPanel::onSendRequested(const QString &text)
     }
 
     tab.turnId++;
+    tab.accumulatedRawContent.clear();
+    tab.hasFirstAssistantMsg = false;
+    tab.currentAssistantMsg = nullptr;
+    tab.currentToolGroup = nullptr;
     emit aboutToSendMessage();
 
     auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
@@ -673,10 +732,6 @@ void ChatPanel::onSendRequested(const QString &text)
         rec.timestamp = QDateTime::currentSecsSinceEpoch();
         m_database->saveMessage(rec);
     }
-
-    tab.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
-    tab.currentAssistantMsg->setTurnId(tab.turnId);
-    addMessageToTab(tab, tab.currentAssistantMsg);
 
     // Build enriched message with context
     QString enrichedMessage = buildContextPreamble(text);
@@ -1004,6 +1059,20 @@ int ChatPanel::insertPosForTab(const ChatTab &tab) const
         if (idx >= 0) return idx;
     }
     return tab.messagesLayout->count() - 1;
+}
+
+void ChatPanel::saveCurrentTextSegment(ChatTab &tab)
+{
+    if (!tab.currentAssistantMsg || !m_database) return;
+    QString content = tab.currentAssistantMsg->rawContent().trimmed();
+    if (content.isEmpty()) return;
+    MessageRecord rec;
+    rec.sessionId = tab.sessionId;
+    rec.role = "assistant";
+    rec.content = content;
+    rec.turnId = tab.turnId;
+    rec.timestamp = QDateTime::currentSecsSinceEpoch();
+    m_database->saveMessage(rec);
 }
 
 void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)

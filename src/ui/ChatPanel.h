@@ -35,9 +35,11 @@ struct ChatTab {
     QWidget *welcomeWidget = nullptr;
     QString sessionId;
     QString pendingEditFile;
+    QString accumulatedRawContent;
     int turnId = 0;
     int tabIndex = -1;
     bool processing = false;
+    bool hasFirstAssistantMsg = false;
 };
 
 class ChatPanel : public QWidget {
@@ -102,6 +104,7 @@ private:
     QString buildContextPreamble(const QString &userText);
     void updateInputBarContext();
     void showSuggestionChips(ChatTab &tab, const QString &responseText);
+    void saveCurrentTextSegment(ChatTab &tab);
     int insertPosForTab(const ChatTab &tab) const;
     void removeMessagesAfterTurn(int turnId);
 

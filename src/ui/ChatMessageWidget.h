@@ -26,6 +26,7 @@ public:
     void showRevertButton(bool show);
     void showAcceptRejectButtons(bool show);
     void setReverted(bool reverted);
+    void setHeaderVisible(bool visible) { if (m_headerWidget) m_headerWidget->setVisible(visible); }
     QString rawContent() const { return m_rawContent; }
 
 signals:

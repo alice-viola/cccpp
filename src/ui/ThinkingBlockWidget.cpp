@@ -99,7 +99,10 @@ void ThinkingBlockWidget::resizeBrowser()
     int vpWidth = m_contentBrowser->viewport()->width();
     if (vpWidth <= 0)
         vpWidth = m_contentBrowser->width() - 4;
-    if (vpWidth <= 0) return;
+    if (vpWidth <= 0) {
+        QTimer::singleShot(50, this, [this] { resizeBrowser(); });
+        return;
+    }
     m_contentBrowser->document()->setTextWidth(vpWidth);
     int h = qCeil(m_contentBrowser->document()->size().height()) + 2;
     if (h < 2) h = 2;

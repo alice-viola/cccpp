@@ -17,6 +17,7 @@ public:
 
     void appendContent(const QString &text);
     void finalize();
+    QString rawContent() const { return m_rawContent; }
 
     float dotPhase() const { return m_dotPhase; }
     void setDotPhase(float p) { m_dotPhase = p; m_dotsLabel->update(); updateDotsText(); }
