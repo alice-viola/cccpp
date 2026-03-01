@@ -237,15 +237,17 @@ void ClaudeProcess::rewindFiles(const QString &checkpointUuid)
 
     connect(proc, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this, [this, proc](int exitCode, QProcess::ExitStatus) {
+        QString out = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
+        QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
         bool ok = (exitCode == 0);
-        if (!ok)
-            qWarning() << "[cccpp] Rewind failed, exit code:" << exitCode
-                       << proc->readAllStandardError();
+        qDebug() << "[cccpp] Rewind exit:" << exitCode
+                 << "stdout:" << out << "stderr:" << err;
         proc->deleteLater();
         emit rewindCompleted(ok);
     });
 
     proc->start(claudeBin, args);
+    proc->closeWriteChannel();
 }
 
 QStringList ClaudeProcess::buildArguments(const QString &message) const
