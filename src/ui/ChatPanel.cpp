@@ -22,6 +22,7 @@
 #include <QFileInfo>
 #include <QMenu>
 #include <QMessageBox>
+#include <QFileDialog>
 #include <QWidgetAction>
 #include <QTabBar>
 #include <QDebug>
@@ -110,6 +111,10 @@ ChatPanel::ChatPanel(QWidget *parent)
         QString sid = m_tabs[tabIdx].sessionId;
 
         QMenu menu(this);
+        auto *exportAction = menu.addAction("Export as JSON");
+        connect(exportAction, &QAction::triggered, this, [this, sid] {
+            exportChatHistory(sid);
+        });
         auto *delAction = menu.addAction("Delete Chat");
         connect(delAction, &QAction::triggered, this, [this, sid] {
             deleteSession(sid);
@@ -211,10 +216,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             emit fileChanged(info.filePath);
 
             if (t.currentAssistantMsg && !info.filePath.isEmpty()) {
-                QString diffHtml = buildInlineDiffHtml(info.filePath, info.oldString, info.newString);
-                QString summary = QStringLiteral("\n[Edit: %1](%2)\n")
-                    .arg(QFileInfo(info.filePath).fileName(), info.filePath);
-                t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
+                QString diffBlock = buildDiffMarkdown(info.filePath, info.oldString, info.newString);
+                t.currentAssistantMsg->appendContent(diffBlock);
             }
             emit editApplied(info.filePath, info.oldString, info.newString, 0);
         } else if (name == "Write" && !info.filePath.isEmpty()) {
@@ -229,12 +232,9 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
             if (t.currentAssistantMsg) {
                 int lineCount = info.newString.count('\n') + 1;
-                QString diffHtml = buildInlineDiffHtml(
-                    info.filePath, "",
-                    QStringLiteral("(%1 lines written)").arg(lineCount));
-                QString summary = QStringLiteral("\n[Write: %1 (%2 lines)](%3)\n")
-                    .arg(QFileInfo(info.filePath).fileName()).arg(lineCount).arg(info.filePath);
-                t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
+                QString writeInfo = QStringLiteral("(%1 lines written)").arg(lineCount);
+                QString diffBlock = buildDiffMarkdown(info.filePath, "", writeInfo);
+                t.currentAssistantMsg->appendContent(diffBlock);
             }
 
             if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
@@ -1037,6 +1037,98 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
     return html;
 }
 
+QString ChatPanel::buildDiffMarkdown(const QString &filePath, const QString &oldStr, const QString &newStr)
+{
+    QString md;
+    int maxLines = 8;
+
+    auto sanitize = [](const QString &line) {
+        QString s = line;
+        s.replace("```", "` ` `");
+        return s;
+    };
+
+    md += "\n```diff\n";
+    md += "+++ " + filePath + "\n";
+
+    if (!oldStr.isEmpty()) {
+        QStringList lines = oldStr.split('\n');
+        int show = qMin(lines.size(), maxLines);
+        for (int i = 0; i < show; ++i)
+            md += "-" + sanitize(lines[i]) + "\n";
+        if (lines.size() > maxLines)
+            md += "... " + QString::number(lines.size() - maxLines) + " more lines\n";
+    }
+
+    if (!newStr.isEmpty()) {
+        QStringList lines = newStr.split('\n');
+        int show = qMin(lines.size(), maxLines);
+        for (int i = 0; i < show; ++i)
+            md += "+" + sanitize(lines[i]) + "\n";
+        if (lines.size() > maxLines)
+            md += "... " + QString::number(lines.size() - maxLines) + " more lines\n";
+    }
+
+    md += "```\n";
+    return md;
+}
+
+void ChatPanel::exportChatHistory(const QString &sessionId)
+{
+    if (!m_database) return;
+
+    SessionInfo info = m_sessionMgr ? m_sessionMgr->sessionInfo(sessionId) : SessionInfo();
+    auto messages = m_database->loadMessages(sessionId);
+
+    nlohmann::json root;
+    root["session_id"] = sessionId.toStdString();
+    root["title"] = info.title.toStdString();
+    root["workspace"] = info.workspace.toStdString();
+    root["mode"] = info.mode.toStdString();
+    root["created_at"] = info.createdAt;
+    root["updated_at"] = info.updatedAt;
+
+    nlohmann::json msgs = nlohmann::json::array();
+    for (const auto &m : messages) {
+        nlohmann::json obj;
+        obj["id"] = m.id;
+        obj["role"] = m.role.toStdString();
+        obj["content"] = m.content.toStdString();
+        if (!m.toolName.isEmpty())
+            obj["tool_name"] = m.toolName.toStdString();
+        if (!m.toolInput.isEmpty()) {
+            auto parsed = nlohmann::json::parse(m.toolInput.toStdString(),
+                                                nullptr, false);
+            obj["tool_input"] = parsed.is_discarded()
+                ? nlohmann::json(m.toolInput.toStdString())
+                : parsed;
+        }
+        obj["turn_id"] = m.turnId;
+        obj["timestamp"] = m.timestamp;
+        msgs.push_back(obj);
+    }
+    root["messages"] = msgs;
+
+    QString defaultName = info.title.isEmpty()
+        ? sessionId.left(8) : info.title;
+    defaultName.replace(QRegularExpression("[^\\w\\- ]"), "_");
+
+    QString path = QFileDialog::getSaveFileName(
+        this, "Export Chat History",
+        QDir::homePath() + "/" + defaultName + ".json",
+        "JSON Files (*.json)");
+    if (path.isEmpty()) return;
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "Export Failed",
+                             "Could not write to " + path);
+        return;
+    }
+    file.write(QByteArray::fromStdString(root.dump(2)));
+    file.close();
+}
+
 void ChatPanel::deleteSession(const QString &sessionId)
 {
     auto answer = QMessageBox::question(
@@ -1117,19 +1209,27 @@ void ChatPanel::showHistoryMenu()
                 "QPushButton:hover { color: %2; }")
             .arg(thm.hex("text_primary"), thm.hex("blue")));
 
-        auto *delBtn = new QPushButton("\xf0\x9f\x97\x91", row);  // 🗑
-        delBtn->setFixedSize(28, 28);
-        delBtn->setToolTip("Delete chat");
-        delBtn->setCursor(Qt::PointingHandCursor);
-        delBtn->setStyleSheet(
-            QStringLiteral(
-                "QPushButton { border: 1px solid %1; font-size: 14px;"
-                " border-radius: 4px; background: %2; padding: 0; }"
-                "QPushButton:hover { background: %3; border-color: %4; }")
+        auto actionBtnStyle = QStringLiteral(
+            "QPushButton { border: 1px solid %1; font-size: 11px;"
+            " border-radius: 4px; background: %2; padding: 2px 6px; color: %5; }"
+            "QPushButton:hover { background: %3; border-color: %4; }");
+
+        auto *exportBtn = new QPushButton("Export", row);
+        exportBtn->setCursor(Qt::PointingHandCursor);
+        exportBtn->setStyleSheet(actionBtnStyle
             .arg(thm.hex("border_standard"), thm.hex("bg_base"),
-                 thm.hex("bg_surface"), thm.hex("red")));
+                 thm.hex("bg_surface"), thm.hex("blue"),
+                 thm.hex("text_muted")));
+
+        auto *delBtn = new QPushButton("Delete", row);
+        delBtn->setCursor(Qt::PointingHandCursor);
+        delBtn->setStyleSheet(actionBtnStyle
+            .arg(thm.hex("border_standard"), thm.hex("bg_base"),
+                 thm.hex("bg_surface"), thm.hex("red"),
+                 thm.hex("text_muted")));
 
         layout->addWidget(nameBtn, 1);
+        layout->addWidget(exportBtn);
         layout->addWidget(delBtn);
 
         auto *widgetAction = new QWidgetAction(&menu);
@@ -1140,6 +1240,10 @@ void ChatPanel::showHistoryMenu()
         connect(nameBtn, &QPushButton::clicked, this, [this, &menu, sid] {
             menu.close();
             restoreSession(sid);
+        });
+        connect(exportBtn, &QPushButton::clicked, this, [this, &menu, sid] {
+            menu.close();
+            exportChatHistory(sid);
         });
         connect(delBtn, &QPushButton::clicked, this, [this, &menu, sid] {
             menu.close();

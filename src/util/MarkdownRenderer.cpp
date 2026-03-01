@@ -77,110 +77,77 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
 
         auto &tm = ThemeManager::instance();
 
-        // For diff blocks: extract filename from unified diff header and colorize lines
         QString cardTitle;
+        QString diffFilePath;
         bool isDiff = (lang == "diff");
         if (isDiff) {
             QRegularExpression diffFile("^\\+{3}\\s+(?:b/)?(.+?)(?:\\t.*)?$",
                                         QRegularExpression::MultilineOption);
             auto dm = diffFile.match(code);
             if (dm.hasMatch()) {
-                QString fullPath = dm.captured(1).trimmed();
-                QString fname = QFileInfo(fullPath).fileName();
-                cardTitle = fname.isEmpty() ? fullPath : fname;
+                diffFilePath = dm.captured(1).trimmed();
+                QString fname = QFileInfo(diffFilePath).fileName();
+                cardTitle = fname.isEmpty() ? diffFilePath : fname;
             }
 
-            // Colorize diff lines
             QStringList lines = escapedCode.split('\n');
             QStringList highlighted;
             for (const QString &line : lines) {
-                if (line.startsWith('+') && !line.startsWith("+++")) {
-                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
-                        .arg(tm.hex("green"), line);
-                } else if (line.startsWith('-') && !line.startsWith("---")) {
-                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
-                        .arg(tm.hex("red"), line);
-                } else if (line.startsWith("@@")) {
-                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
-                        .arg(tm.hex("blue"), line);
-                } else if (line.startsWith("---") || line.startsWith("+++")) {
-                    highlighted << QStringLiteral("<span style='color:%1;'>%2</span>")
-                        .arg(tm.hex("text_muted"), line);
-                } else {
+                if ((line.startsWith("---") || line.startsWith("+++")) && !cardTitle.isEmpty())
+                    continue;
+
+                QString color;
+                if (line.startsWith('+'))
+                    color = tm.hex("green");
+                else if (line.startsWith('-'))
+                    color = tm.hex("red");
+                else if (line.startsWith("@@"))
+                    color = tm.hex("blue");
+
+                if (!color.isEmpty())
+                    highlighted << "<span style='color:" + color + ";'>" + line + "</span>";
+                else
                     highlighted << line;
-                }
             }
             escapedCode = highlighted.join('\n');
         }
 
         // Card header
-        QString headerHtml;
+        QString titleLabel;
         if (isDiff && !cardTitle.isEmpty()) {
-            // Prominent file-name header for diff blocks
-            headerHtml = QStringLiteral(
-                "<div style='background:%1;padding:5px 10px;border-radius:6px 6px 0 0;"
-                "border:1px solid %2;border-bottom:1px solid %3;'>")
-                .arg(tm.hex("bg_window"), tm.hex("border_standard"), tm.hex("bg_raised"));
-            headerHtml += QStringLiteral(
-                "<span style='color:%1;font-size:12px;font-weight:600;"
-                "font-family:\"JetBrains Mono\";'>%2</span>")
-                .arg(tm.hex("text_primary"), escapeHtml(cardTitle));
-        } else {
-            headerHtml = QStringLiteral(
-                "<div style='background:%1;padding:6px 12px;border-radius:8px 8px 0 0;"
-                "border:1px solid %2;border-bottom:1px solid %2;"
-                "display:flex;font-family:\"JetBrains Mono\";'>")
-                .arg(tm.hex("bg_base"), tm.hex("border_standard"));
-            if (!lang.isEmpty()) {
-                headerHtml += QStringLiteral(
-                    "<span style='color:%1;font-size:11px;'>%2</span>")
-                    .arg(tm.hex("text_muted"), lang);
-            }
+            titleLabel = "<a href='cccpp://open?file=" + escapeHtml(diffFilePath)
+                + "&amp;line=0' style='color:" + tm.hex("blue")
+                + ";text-decoration:none;font-family:\"JetBrains Mono\";font-size:12px;'>"
+                + escapeHtml(cardTitle) + "</a>";
+        } else if (!lang.isEmpty()) {
+            titleLabel = "<span style='color:" + tm.hex("text_muted")
+                + ";font-family:\"JetBrains Mono\";font-size:11px;'>" + lang + "</span>";
         }
 
-        // Copy / Apply buttons
-        headerHtml += QStringLiteral(
-            "<span style='margin-left:auto;'>"
-            "<a href='cccpp://copy?block=%1' style='color:%3;text-decoration:none;font-size:11px;"
-            "padding:1px 6px;border-radius:3px;margin-right:4px;'>Copy</a>"
-            "<a href='cccpp://apply?block=%1&lang=%2' style='color:%4;text-decoration:none;font-size:11px;"
-            "padding:1px 6px;border-radius:3px;background:%5;'>Apply</a>"
-            "</span>")
-            .arg(blockIndex)
-            .arg(lang)
-            .arg(tm.hex("text_muted"))
-            .arg(tm.hex("on_accent"))
-            .arg(tm.hex("blue"));
+        QString copyApply =
+            " <a href='cccpp://copy?block=" + QString::number(blockIndex)
+            + "' style='color:" + tm.hex("text_muted")
+            + ";text-decoration:none;font-size:11px;'>Copy</a>"
+            " <a href='cccpp://apply?block=" + QString::number(blockIndex) + "&amp;lang=" + lang
+            + "' style='color:" + tm.hex("on_accent")
+            + ";text-decoration:none;font-size:11px;background:" + tm.hex("blue")
+            + ";padding:1px 6px;'>Apply</a>";
 
-        headerHtml += "</div>";
+        QString codeAsHtml = escapedCode;
+        codeAsHtml.replace("\n", "<br>");
 
-        QString outerBorder = isDiff
-            ? QStringLiteral("border:1px solid %1;border-radius:8px;margin:4px 0 6px;")
-                .arg(tm.hex("border_standard"))
-            : QString();
-
-        QString replacement;
-        if (isDiff) {
-            replacement = QStringLiteral(
-                "<div style='%6'>"
-                "%1"
-                "<pre style='background:%2;color:%3;padding:10px 14px;"
-                "border-radius:0 0 8px 8px;font-family:\"JetBrains Mono\";"
-                "font-size:12px;overflow-x:auto;margin:0;line-height:1.45;border:none;'><code>%5</code></pre>"
-                "</div>")
-                .arg(headerHtml,
-                     tm.hex("bg_base"), tm.hex("text_primary"),
-                     tm.hex("border_standard"), escapedCode, outerBorder);
-        } else {
-            replacement = QStringLiteral(
-                "%1<pre style='background:%2;color:%3;padding:10px 14px;"
-                "border-radius:0 0 8px 8px;font-family:\"JetBrains Mono\";"
-                "font-size:12px;overflow-x:auto;margin:0 0 4px;line-height:1.45;"
-                "border:1px solid %4;border-top:none;'><code>%5</code></pre>")
-                .arg(headerHtml,
-                     tm.hex("bg_base"), tm.hex("text_primary"),
-                     tm.hex("border_standard"), escapedCode);
-        }
+        QString border = tm.hex("border_standard");
+        QString replacement =
+            "<table cellspacing='0' cellpadding='0' style='width:100%;margin:6px 0;'>"
+            "<tr><td style='background:" + tm.hex("bg_surface") + ";padding:6px 12px;"
+            "border:1px solid " + border + ";'>"
+            + titleLabel + copyApply +
+            "</td></tr>"
+            "<tr><td style='background:" + tm.hex("bg_base") + ";padding:8px 14px;"
+            "border:1px solid " + border + ";border-top:none;"
+            "font-family:\"JetBrains Mono\";font-size:12px;color:" + tm.hex("text_primary") + ";'>"
+            + codeAsHtml +
+            "</td></tr></table>";
         replacements.append(replacement);
         ++blockIndex;
     }
@@ -246,11 +213,11 @@ static QStringList parseAlignments(const QString &separator)
 
 QString MarkdownRenderer::processTables(const QString &text) const
 {
-    QStringList parts = text.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>)"));
+    QStringList parts = text.split(QRegularExpression("(<pre[^>]*>[\\s\\S]*?</pre>|<table[^>]*>[\\s\\S]*?</table>)"));
     QString result;
 
     for (const QString &part : parts) {
-        if (part.startsWith("<pre")) {
+        if (part.startsWith("<pre") || part.startsWith("<table")) {
             result += part;
             continue;
         }
@@ -327,26 +294,6 @@ QString MarkdownRenderer::processInlineFormatting(const QString &text) const
 {
     QString result = text;
     auto &tm = ThemeManager::instance();
-
-    // File operation markers: [Write: file (N lines)](path) or [Edit: file](path) — with clickable link
-    QRegularExpression fileOpLinked("^\\[(Write|Edit):\\s*(.+?)\\]\\((.+?)\\)$",
-                                    QRegularExpression::MultilineOption);
-    result.replace(fileOpLinked,
-        QStringLiteral("<div style='border-left:2px solid %1;padding:3px 10px;margin:6px 0;"
-        "font-family:\"JetBrains Mono\";font-size:12px;'>"
-        "<span style='color:%2;'>\\1:</span> "
-        "<a href='cccpp://open?file=\\3&line=0' style='color:%3;text-decoration:none;'>\\2</a>"
-        "</div>")
-        .arg(tm.hex("border_standard"), tm.hex("text_muted"), tm.hex("blue")));
-
-    // Legacy format without path: [Write: file] or [Edit: file]
-    QRegularExpression fileOp("^\\[(Write|Edit):\\s*(.+?)\\]$", QRegularExpression::MultilineOption);
-    result.replace(fileOp,
-        QStringLiteral("<div style='border-left:2px solid %1;padding:3px 10px;margin:6px 0;"
-        "font-family:\"JetBrains Mono\";font-size:12px;'>"
-        "<span style='color:%2;'>\\1:</span> "
-        "<span style='color:%3;'>\\2</span></div>")
-        .arg(tm.hex("border_standard"), tm.hex("text_muted"), tm.hex("blue")));
 
     QRegularExpression bold("\\*\\*(.+?)\\*\\*");
     result.replace(bold, "<b>\\1</b>");

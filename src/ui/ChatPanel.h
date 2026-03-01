@@ -93,8 +93,10 @@ private:
     void setTabProcessingState(int tabIdx, bool processing);
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
+    void exportChatHistory(const QString &sessionId);
     void deleteSession(const QString &sessionId);
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
+    QString buildDiffMarkdown(const QString &filePath, const QString &oldStr, const QString &newStr);
     QString buildContextPreamble(const QString &userText);
     void updateInputBarContext();
     void showSuggestionChips(ChatTab &tab, const QString &responseText);

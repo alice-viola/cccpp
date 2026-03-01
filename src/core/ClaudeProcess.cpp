@@ -16,7 +16,11 @@ ClaudeProcess::ClaudeProcess(QObject *parent)
 
 ClaudeProcess::~ClaudeProcess()
 {
-    cancel();
+    if (m_process && m_process->state() != QProcess::NotRunning) {
+        m_process->disconnect(this);
+        m_process->terminate();
+        m_process->waitForFinished(2000);
+    }
 }
 
 void ClaudeProcess::setWorkingDirectory(const QString &dir)
@@ -170,11 +174,21 @@ void ClaudeProcess::cancel()
     if (!proc || proc->state() == QProcess::NotRunning)
         return;
 
+    // Disconnect all signals from proc to prevent onProcessFinished from
+    // running inside waitForFinished's nested event loop, which would
+    // deleteLater the QProcess while it's still on the call stack.
+    proc->disconnect(this);
+    m_process = nullptr;
+
     proc->terminate();
     if (!proc->waitForFinished(2000)) {
         proc->kill();
         proc->waitForFinished(1000);
     }
+
+    int code = proc->exitCode();
+    proc->deleteLater();
+    emit finished(code);
 }
 
 bool ClaudeProcess::isRunning() const

@@ -161,8 +161,11 @@ void MainWindow::setupUI()
     });
     connect(m_chatPanel, &ChatPanel::navigateToFile, this,
             [this](const QString &filePath, int line) {
-        m_codeViewer->loadFile(filePath);
-        FileDiff diff = m_diffEngine->diffForFile(filePath);
+        QString resolved = filePath;
+        if (!resolved.startsWith('/') && !m_workspacePath.isEmpty())
+            resolved = m_workspacePath + "/" + resolved;
+        m_codeViewer->loadFile(resolved);
+        FileDiff diff = m_diffEngine->diffForFile(resolved);
         if (!diff.hunks.isEmpty())
             m_codeViewer->showDiff(diff);
         if (line > 0)
