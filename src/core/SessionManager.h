@@ -35,5 +35,4 @@ signals:
 
 private:
     QMap<QString, SessionInfo> m_sessions;
-    int m_nextTempId = 1;
 };

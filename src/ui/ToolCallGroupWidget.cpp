@@ -91,6 +91,14 @@ void ToolCallGroupWidget::finalize()
     updateSummaryLabel();
 }
 
+void ToolCallGroupWidget::setExpandedByDefault()
+{
+    m_expanded = true;
+    m_expandBtn->setText(QStringLiteral("\u25BC"));
+    rebuildDetailView();
+    m_detailContainer->setMaximumHeight(16777215);
+}
+
 void ToolCallGroupWidget::applyThemeColors()
 {
     auto &tm = ThemeManager::instance();

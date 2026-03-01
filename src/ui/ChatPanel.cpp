@@ -147,102 +147,97 @@ void ChatPanel::setCodeViewer(CodeViewer *viewer) { m_codeViewer = viewer; }
 void ChatPanel::wireProcessSignals(ChatTab &tab)
 {
     ClaudeProcess *proc = tab.process;
-    int tabIdx = tab.tabIndex;
 
     connect(proc->streamParser(), &StreamParser::textDelta, this,
-            [this, tabIdx](const QString &text) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
+            [this, proc](const QString &text) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
 
-        if (t.currentToolGroup) {
-            t.currentToolGroup->finalize();
-            t.currentToolGroup = nullptr;
+        if (t->currentToolGroup) {
+            t->currentToolGroup->finalize();
+            t->currentToolGroup = nullptr;
         }
 
-        if (!t.currentAssistantMsg) {
-            t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
-            t.currentAssistantMsg->setTurnId(t.turnId);
-            if (!t.hasFirstAssistantMsg)
-                t.hasFirstAssistantMsg = true;
+        if (!t->currentAssistantMsg) {
+            t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+            t->currentAssistantMsg->setTurnId(t->turnId);
+            if (!t->hasFirstAssistantMsg)
+                t->hasFirstAssistantMsg = true;
             else
-                t.currentAssistantMsg->setHeaderVisible(false);
-            addMessageToTab(t, t.currentAssistantMsg);
+                t->currentAssistantMsg->setHeaderVisible(false);
+            addMessageToTab(*t, t->currentAssistantMsg);
         }
-        t.currentAssistantMsg->appendContent(text);
-        t.accumulatedRawContent += text;
-        scrollTabToBottom(t);
+        t->currentAssistantMsg->appendContent(text);
+        t->accumulatedRawContent += text;
+        scrollTabToBottom(*t);
     });
 
     connect(proc->streamParser(), &StreamParser::thinkingStarted, this,
-            [this, tabIdx] {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        saveCurrentTextSegment(t);
-        t.currentAssistantMsg = nullptr;
-        if (t.currentToolGroup) {
-            t.currentToolGroup->finalize();
-            t.currentToolGroup = nullptr;
+            [this, proc] {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        saveCurrentTextSegment(*t);
+        t->currentAssistantMsg = nullptr;
+        if (t->currentToolGroup) {
+            t->currentToolGroup->finalize();
+            t->currentToolGroup = nullptr;
         }
-        t.currentThinkingBlock = new ThinkingBlockWidget;
-        if (t.messagesLayout)
-            t.messagesLayout->insertWidget(insertPosForTab(t), t.currentThinkingBlock);
-        scrollTabToBottom(t);
+        t->currentThinkingBlock = new ThinkingBlockWidget;
+        if (t->messagesLayout)
+            t->messagesLayout->insertWidget(insertPosForTab(*t), t->currentThinkingBlock);
+        scrollTabToBottom(*t);
     });
 
     connect(proc->streamParser(), &StreamParser::thinkingDelta, this,
-            [this, tabIdx](const QString &text) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (t.currentThinkingBlock)
-            t.currentThinkingBlock->appendContent(text);
-        scrollTabToBottom(t);
+            [this, proc](const QString &text) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (t->currentThinkingBlock)
+            t->currentThinkingBlock->appendContent(text);
+        scrollTabToBottom(*t);
     });
 
     connect(proc->streamParser(), &StreamParser::thinkingStopped, this,
-            [this, tabIdx] {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (t.currentThinkingBlock) {
-            t.currentThinkingBlock->finalize();
+            [this, proc] {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (t->currentThinkingBlock) {
+            t->currentThinkingBlock->finalize();
             if (m_database) {
                 MessageRecord rec;
-                rec.sessionId = t.sessionId;
+                rec.sessionId = t->sessionId;
                 rec.role = "thinking";
-                rec.content = t.currentThinkingBlock->rawContent();
-                rec.turnId = t.turnId;
+                rec.content = t->currentThinkingBlock->rawContent();
+                rec.turnId = t->turnId;
                 rec.timestamp = QDateTime::currentSecsSinceEpoch();
                 m_database->saveMessage(rec);
             }
-            t.currentThinkingBlock = nullptr;
+            t->currentThinkingBlock = nullptr;
         }
     });
 
-    // Streaming edit: open the file early so the user sees which file is being
-    // edited, but don't place any markers yet. The correct inline diff is
-    // applied later by the editApplied signal once the full tool input (with
-    // old_string) is available and the start line can be computed accurately.
     connect(proc->streamParser(), &StreamParser::editStreamStarted, this,
-            [this, tabIdx](const QString &toolName, const QString &filePath) {
+            [this, proc](const QString &toolName, const QString &filePath) {
         Q_UNUSED(toolName);
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
+        auto *t = tabForProcess(proc);
+        if (!t) return;
         if (m_codeViewer && !filePath.isEmpty()) {
             QString fullPath = filePath;
             if (!QFileInfo(fullPath).isAbsolute())
                 fullPath = m_workingDir + "/" + filePath;
-            t.pendingEditFile = fullPath;
+            t->pendingEditFile = fullPath;
             m_codeViewer->loadFile(fullPath);
         }
     });
 
     connect(proc->streamParser(), &StreamParser::checkpointReceived, this,
-            [this, tabIdx](const QString &uuid) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
+            [this, proc](const QString &uuid) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
         if (!uuid.isEmpty() && m_database) {
             CheckpointRecord cp;
-            cp.sessionId = t.sessionId;
-            cp.turnId = t.turnId;
+            cp.sessionId = t->sessionId;
+            cp.turnId = t->turnId;
             cp.uuid = uuid;
             cp.timestamp = QDateTime::currentSecsSinceEpoch();
             m_database->saveCheckpoint(cp);
@@ -250,12 +245,12 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
     });
 
     connect(proc->streamParser(), &StreamParser::toolUseStarted, this,
-            [this, tabIdx](const QString &name, const nlohmann::json &input) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
+            [this, proc](const QString &name, const nlohmann::json &input) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
 
-        saveCurrentTextSegment(t);
-        t.currentAssistantMsg = nullptr;
+        saveCurrentTextSegment(*t);
+        t->currentAssistantMsg = nullptr;
 
         ToolCallInfo info;
         info.toolName = name;
@@ -281,7 +276,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
             if (m_diffEngine)
                 m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString);
-            t.pendingEditFile = info.filePath;
+            t->pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
             int editLine = 0;
@@ -306,7 +301,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             if (m_diffEngine)
                 m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
 
-            t.pendingEditFile = info.filePath;
+            t->pendingEditFile = info.filePath;
             emit fileChanged(info.filePath);
 
             if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
@@ -314,74 +309,76 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
 
         if (name == "AskUserQuestion") {
-            if (t.currentToolGroup) {
-                t.currentToolGroup->finalize();
-                t.currentToolGroup = nullptr;
+            if (t->currentToolGroup) {
+                t->currentToolGroup->finalize();
+                t->currentToolGroup = nullptr;
             }
             auto *questionWidget = new QuestionWidget(input);
-            if (t.messagesLayout)
-                t.messagesLayout->insertWidget(insertPosForTab(t), questionWidget);
+            if (t->messagesLayout)
+                t->messagesLayout->insertWidget(insertPosForTab(*t), questionWidget);
             connect(questionWidget, &QuestionWidget::answered, this,
-                    [this, tabIdx](const QString &response) {
-                if (!m_tabs.contains(tabIdx)) return;
-                auto &tab = m_tabs[tabIdx];
-                tab.process->setMode(m_modeSelector->currentMode());
-                tab.currentAssistantMsg = nullptr;
-                setTabProcessingState(tabIdx, true);
-                tab.process->sendMessage(response);
+                    [this, proc](const QString &response) {
+                auto *tab = tabForProcess(proc);
+                if (!tab) return;
+                tab->process->setMode(m_modeSelector->currentMode());
+                tab->currentAssistantMsg = nullptr;
+                setTabProcessingState(*tab, true);
+                tab->process->sendMessage(response);
             });
-            scrollTabToBottom(t);
+            scrollTabToBottom(*t);
         } else if (isEditTool) {
-            if (t.currentToolGroup) {
-                t.currentToolGroup->finalize();
-                t.currentToolGroup = nullptr;
+            if (t->currentToolGroup) {
+                t->currentToolGroup->finalize();
+                t->currentToolGroup = nullptr;
             }
             auto *editGroup = new ToolCallGroupWidget;
-            if (t.messagesLayout)
-                t.messagesLayout->insertWidget(insertPosForTab(t), editGroup);
+            if (t->messagesLayout)
+                t->messagesLayout->insertWidget(insertPosForTab(*t), editGroup);
             editGroup->addToolCall(info);
             editGroup->finalize();
+            editGroup->setExpandedByDefault();
         } else {
-            if (!t.currentToolGroup) {
-                t.currentToolGroup = new ToolCallGroupWidget;
-                if (t.messagesLayout)
-                    t.messagesLayout->insertWidget(insertPosForTab(t), t.currentToolGroup);
+            if (!t->currentToolGroup) {
+                t->currentToolGroup = new ToolCallGroupWidget;
+                if (t->messagesLayout)
+                    t->messagesLayout->insertWidget(insertPosForTab(*t), t->currentToolGroup);
             }
-            t.currentToolGroup->addToolCall(info);
+            t->currentToolGroup->addToolCall(info);
         }
-        scrollTabToBottom(t);
+        scrollTabToBottom(*t);
 
         if (m_database) {
             MessageRecord rec;
-            rec.sessionId = t.sessionId;
+            rec.sessionId = t->sessionId;
             rec.role = "tool";
             rec.content = info.summary;
             rec.toolName = name;
             rec.toolInput = QString::fromStdString(input.dump());
-            rec.turnId = t.turnId;
+            rec.turnId = t->turnId;
             rec.timestamp = QDateTime::currentSecsSinceEpoch();
             m_database->saveMessage(rec);
         }
     });
 
     connect(proc->streamParser(), &StreamParser::toolResultReceived, this,
-            [this, tabIdx](const QString &) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (!t.pendingEditFile.isEmpty()) {
-            emit fileChanged(t.pendingEditFile);
-            t.pendingEditFile.clear();
+            [this, proc](const QString &) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (!t->pendingEditFile.isEmpty()) {
+            emit fileChanged(t->pendingEditFile);
+            t->pendingEditFile.clear();
         }
     });
 
     connect(proc->streamParser(), &StreamParser::resultReady, this,
-            [this, tabIdx](const QString &sessionId, const nlohmann::json &) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (!sessionId.isEmpty() && t.sessionId != sessionId) {
-            QString oldId = t.sessionId;
-            t.sessionId = sessionId;
-            t.process->setSessionId(sessionId);
+            [this, proc](const QString &sessionId, const nlohmann::json &) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (!sessionId.isEmpty() && t->sessionId != sessionId) {
+            QString oldId = t->sessionId;
+            t->sessionId = sessionId;
+            t->sessionConfirmed = true;
+            t->process->setSessionId(sessionId);
             if (m_sessionMgr)
                 m_sessionMgr->updateSessionId(oldId, sessionId);
             if (m_database)
@@ -389,88 +386,87 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
     });
 
-    connect(proc, &ClaudeProcess::finished, this, [this, tabIdx](int exitCode) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
+    connect(proc, &ClaudeProcess::finished, this, [this, proc](int exitCode) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
 
         bool wasCancelled = (exitCode == 15 || exitCode == 9
                              || exitCode == 143 || exitCode == 137);
 
-        if (t.currentThinkingBlock) {
-            t.currentThinkingBlock->finalize();
-            t.currentThinkingBlock = nullptr;
+        if (t->currentThinkingBlock) {
+            t->currentThinkingBlock->finalize();
+            t->currentThinkingBlock = nullptr;
         }
 
-        if (t.currentToolGroup) {
-            t.currentToolGroup->finalize();
-            t.currentToolGroup = nullptr;
+        if (t->currentToolGroup) {
+            t->currentToolGroup->finalize();
+            t->currentToolGroup = nullptr;
         }
 
         if (wasCancelled) {
-            if (!t.currentAssistantMsg) {
-                t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
-                t.currentAssistantMsg->setTurnId(t.turnId);
-                if (!t.hasFirstAssistantMsg)
-                    t.hasFirstAssistantMsg = true;
+            if (!t->currentAssistantMsg) {
+                t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+                t->currentAssistantMsg->setTurnId(t->turnId);
+                if (!t->hasFirstAssistantMsg)
+                    t->hasFirstAssistantMsg = true;
                 else
-                    t.currentAssistantMsg->setHeaderVisible(false);
-                addMessageToTab(t, t.currentAssistantMsg);
+                    t->currentAssistantMsg->setHeaderVisible(false);
+                addMessageToTab(*t, t->currentAssistantMsg);
             }
-            t.currentAssistantMsg->appendContent("\n\n*\\[Stopped by user\\]*");
-            t.accumulatedRawContent += "\n\n*[Stopped by user]*";
-        } else if (t.accumulatedRawContent.isEmpty() && exitCode != 0) {
-            if (!t.currentAssistantMsg) {
-                t.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
-                t.currentAssistantMsg->setTurnId(t.turnId);
-                if (!t.hasFirstAssistantMsg)
-                    t.hasFirstAssistantMsg = true;
+            t->currentAssistantMsg->appendContent("\n\n*\\[Stopped by user\\]*");
+            t->accumulatedRawContent += "\n\n*[Stopped by user]*";
+        } else if (t->accumulatedRawContent.isEmpty() && exitCode != 0) {
+            if (!t->currentAssistantMsg) {
+                t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
+                t->currentAssistantMsg->setTurnId(t->turnId);
+                if (!t->hasFirstAssistantMsg)
+                    t->hasFirstAssistantMsg = true;
                 else
-                    t.currentAssistantMsg->setHeaderVisible(false);
-                addMessageToTab(t, t.currentAssistantMsg);
+                    t->currentAssistantMsg->setHeaderVisible(false);
+                addMessageToTab(*t, t->currentAssistantMsg);
             }
-            t.currentAssistantMsg->appendContent(
+            t->currentAssistantMsg->appendContent(
                 QStringLiteral("*(Process exited with code %1)*").arg(exitCode));
-            t.accumulatedRawContent += QStringLiteral("*(Process exited with code %1)*").arg(exitCode);
+            t->accumulatedRawContent += QStringLiteral("*(Process exited with code %1)*").arg(exitCode);
         }
 
-        saveCurrentTextSegment(t);
+        saveCurrentTextSegment(*t);
 
-        showSuggestionChips(t, t.accumulatedRawContent);
-        t.currentAssistantMsg = nullptr;
+        showSuggestionChips(*t, t->accumulatedRawContent);
+        t->currentAssistantMsg = nullptr;
 
-        // Show Revert on the user message that initiated this turn
         bool hasCheckpoint = m_database &&
-            !m_database->checkpointUuid(t.sessionId, t.turnId).isEmpty();
-        if (hasCheckpoint && t.messagesLayout) {
-            for (int i = 0; i < t.messagesLayout->count(); ++i) {
+            !m_database->checkpointUuid(t->sessionId, t->turnId).isEmpty();
+        if (hasCheckpoint && t->messagesLayout) {
+            for (int i = 0; i < t->messagesLayout->count(); ++i) {
                 auto *chatMsg = qobject_cast<ChatMessageWidget *>(
-                    t.messagesLayout->itemAt(i)->widget());
-                if (chatMsg && chatMsg->turnId() == t.turnId) {
+                    t->messagesLayout->itemAt(i)->widget());
+                if (chatMsg && chatMsg->turnId() == t->turnId) {
                     chatMsg->showRevertButton(true);
                     break;
                 }
             }
         }
-        setTabProcessingState(tabIdx, false);
-        scrollTabToBottom(t);
+        setTabProcessingState(*t, false);
+        scrollTabToBottom(*t);
     });
 
-    connect(proc, &ClaudeProcess::errorOccurred, this, [this, tabIdx](const QString &err) {
-        qWarning() << "ClaudeProcess error (tab" << tabIdx << "):" << err;
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (t.currentAssistantMsg)
-            t.currentAssistantMsg->appendContent(
+    connect(proc, &ClaudeProcess::errorOccurred, this, [this, proc](const QString &err) {
+        qWarning() << "ClaudeProcess error:" << err;
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Error:** %1").arg(err));
-        setTabProcessingState(tabIdx, false);
+        setTabProcessingState(*t, false);
     });
 
     connect(proc->streamParser(), &StreamParser::errorOccurred, this,
-            [this, tabIdx](const QString &err) {
-        if (!m_tabs.contains(tabIdx)) return;
-        auto &t = m_tabs[tabIdx];
-        if (t.currentAssistantMsg)
-            t.currentAssistantMsg->appendContent(
+            [this, proc](const QString &err) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Stream error:** %1").arg(err));
     });
 }
@@ -550,6 +546,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
     tab.process = new ClaudeProcess(this);
     tab.process->setWorkingDirectory(m_workingDir);
     tab.process->setSessionId(sessionId);
+    tab.sessionConfirmed = true;
 
     auto messages = m_database->loadMessages(sessionId);
 
@@ -643,6 +640,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
                 auto *editGroup = new ToolCallGroupWidget;
                 editGroup->addToolCall(info);
                 editGroup->finalize();
+                editGroup->setExpandedByDefault();
                 tab.messagesLayout->insertWidget(insertPos(), editGroup);
             } else {
                 if (!pendingGroup) {
@@ -738,10 +736,10 @@ void ChatPanel::onSendRequested(const QString &text)
 
     tab.process->setMode(m_modeSelector->currentMode());
     tab.process->setModel(m_modelSelector->currentModelId());
-    if (!tab.sessionId.startsWith("pending-"))
+    if (tab.sessionConfirmed)
         tab.process->setSessionId(tab.sessionId);
 
-    setTabProcessingState(tab.tabIndex, true);
+    setTabProcessingState(tab, true);
 
     QList<QPair<QByteArray, QString>> imagePayload;
     for (const auto &img : attachedImgs) {
@@ -1105,10 +1103,8 @@ void ChatPanel::scrollTabToBottom(ChatTab &tab)
     });
 }
 
-void ChatPanel::setTabProcessingState(int tabIdx, bool processing)
+void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
 {
-    if (!m_tabs.contains(tabIdx)) return;
-    auto &tab = m_tabs[tabIdx];
     tab.processing = processing;
 
     if (tab.thinkingIndicator) {
@@ -1118,7 +1114,7 @@ void ChatPanel::setTabProcessingState(int tabIdx, bool processing)
             tab.thinkingIndicator->stopAnimation();
     }
 
-    if (tabIdx == m_tabWidget->currentIndex())
+    if (tab.tabIndex == m_tabWidget->currentIndex())
         refreshInputBarForCurrentTab();
 
     bool anyProcessing = false;
@@ -1344,7 +1340,6 @@ void ChatPanel::showHistoryMenu()
     int count = 0;
     for (const auto &session : sessions) {
         if (session.workspace != m_workingDir) continue;
-        if (session.sessionId.startsWith("pending-")) continue;
         if (openIds.contains(session.sessionId)) continue;
 
         QString label = session.title;

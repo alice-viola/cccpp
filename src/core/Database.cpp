@@ -130,6 +130,14 @@ void Database::deleteSession(const QString &sessionId)
     q.exec();
 }
 
+void Database::deleteStalePendingSessions()
+{
+    QSqlQuery q(m_db);
+    q.exec("DELETE FROM messages WHERE session_id LIKE 'pending-%'");
+    q.exec("DELETE FROM checkpoints WHERE session_id LIKE 'pending-%'");
+    q.exec("DELETE FROM sessions WHERE session_id LIKE 'pending-%'");
+}
+
 void Database::saveMessage(const MessageRecord &msg)
 {
     QSqlQuery q(m_db);

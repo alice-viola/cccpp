@@ -40,6 +40,7 @@ struct ChatTab {
     int tabIndex = -1;
     bool processing = false;
     bool hasFirstAssistantMsg = false;
+    bool sessionConfirmed = false;
 };
 
 class ChatPanel : public QWidget {
@@ -94,7 +95,7 @@ private:
     QWidget *createChatContent();
     void addMessageToTab(ChatTab &tab, ChatMessageWidget *msg);
     void scrollTabToBottom(ChatTab &tab);
-    void setTabProcessingState(int tabIdx, bool processing);
+    void setTabProcessingState(ChatTab &tab, bool processing);
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
     void exportChatHistory(const QString &sessionId);

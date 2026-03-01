@@ -26,6 +26,7 @@ public:
 
     void addToolCall(const ToolCallInfo &info);
     void finalize();
+    void setExpandedByDefault();
     int toolCount() const { return m_calls.size(); }
 
 private:

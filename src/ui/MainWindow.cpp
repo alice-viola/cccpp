@@ -37,6 +37,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_diffEngine = new DiffEngine(this);
     m_database = new Database(this);
     m_database->open();
+    m_database->deleteStalePendingSessions();
     m_gitManager = new GitManager(this);
 
     ThemeManager::instance().initialize();
@@ -637,7 +638,7 @@ void MainWindow::openWorkspace(const QString &path)
     QString latestSessionId;
     qint64 latestTime = 0;
     for (const auto &s : sessions) {
-        if (s.workspace == path && !s.sessionId.startsWith("pending-") && s.updatedAt > latestTime) {
+        if (s.workspace == path && s.updatedAt > latestTime) {
             latestTime = s.updatedAt;
             latestSessionId = s.sessionId;
         }
@@ -782,7 +783,7 @@ void MainWindow::restoreSessions()
 {
     auto sessions = m_database->loadSessions();
     for (const auto &session : sessions) {
-        if (session.workspace == m_workspacePath && !session.sessionId.startsWith("pending-"))
+        if (session.workspace == m_workspacePath)
             m_sessionMgr->registerSession(session.sessionId, session);
     }
 }

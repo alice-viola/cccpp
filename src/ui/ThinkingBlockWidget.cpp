@@ -34,6 +34,8 @@ ThinkingBlockWidget::ThinkingBlockWidget(QWidget *parent)
     m_contentBrowser->setVisible(true);
     m_contentBrowser->document()->setDocumentMargin(4);
     m_contentBrowser->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    m_contentBrowser->setMinimumHeight(0);
+    m_contentBrowser->setMaximumHeight(0);
     m_layout->addWidget(m_contentBrowser);
 
     m_dotAnim = new QPropertyAnimation(this, "dotPhase", this);

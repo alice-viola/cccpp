@@ -9,8 +9,7 @@ SessionManager::SessionManager(QObject *parent)
 
 QString SessionManager::createSession(const QString &workspace, const QString &mode)
 {
-    // Temporary ID until Claude Code returns the real session_id
-    QString tempId = QStringLiteral("pending-%1").arg(m_nextTempId++);
+    QString tempId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
     SessionInfo info;
     info.sessionId = tempId;

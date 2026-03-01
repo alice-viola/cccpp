@@ -38,6 +38,7 @@ public:
     void saveSession(const SessionInfo &info);
     QList<SessionInfo> loadSessions();
     void deleteSession(const QString &sessionId);
+    void deleteStalePendingSessions();
 
     // Messages
     void saveMessage(const MessageRecord &msg);
