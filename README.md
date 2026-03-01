@@ -8,7 +8,11 @@ A native C++ desktop application that provides a Cursor-like three-column UI for
 
 ## Layout
 
+Here you can see CCCPP building itself:
 
+<p align="center">
+  <img src="assets/cccpp1.png" alt="cccpp building itself" width="200">
+</p>
 
 ## Features
 
