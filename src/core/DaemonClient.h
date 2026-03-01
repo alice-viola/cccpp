@@ -20,6 +20,7 @@ struct DaemonChatSession {
     QString accumulatedText;
     QStringList toolSummary;
     QTimer *flushTimer = nullptr;
+    int turnId = 0;
     bool processing = false;
     bool titleSet = false;
     bool responseSent = false;
@@ -48,6 +49,7 @@ signals:
     void connected();
     void disconnected();
     void connectionFailed();
+    void filesChanged();
 
 private:
     void onConnected();

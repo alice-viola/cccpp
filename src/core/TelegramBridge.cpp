@@ -171,6 +171,19 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
         }
         s.toolSummary.append(summary);
 
+        // Save tool call to DB
+        if (m_database) {
+            MessageRecord rec;
+            rec.sessionId = s.sessionId;
+            rec.role = "tool";
+            rec.content = summary;
+            rec.toolName = toolName;
+            rec.toolInput = QString::fromStdString(input.dump());
+            rec.turnId = s.turnId;
+            rec.timestamp = QDateTime::currentSecsSinceEpoch();
+            m_database->saveMessage(rec);
+        }
+
         if (!s.flushTimer->isActive())
             s.flushTimer->start();
     });
@@ -181,11 +194,14 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
         auto &s = m_sessions[chatId];
 
         // Persist real session ID to DB (replaces the temp UUID)
+        QString oldId = s.sessionId;
         if (!sessionId.isEmpty() && sessionId != s.sessionId) {
+            if (m_database)
+                m_database->deleteSession(oldId); // remove temp UUID row before updateSessionId triggers saveSession
             if (m_sessionMgr) {
                 m_sessionMgr->updateSessionId(s.sessionId, sessionId);
                 if (m_database)
-                    m_database->saveSession(m_sessionMgr->sessionInfo(sessionId));
+                    m_database->updateMessageSessionId(oldId, sessionId);
             }
             s.sessionId = sessionId;
             s.process->setSessionId(sessionId);
@@ -202,6 +218,17 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
         if (!finalText.isEmpty()) {
             sendFinalResponse(s, finalText);
             s.responseSent = true;
+        }
+
+        // Save assistant response to DB
+        if (m_database && !finalText.isEmpty()) {
+            MessageRecord rec;
+            rec.sessionId = s.sessionId;
+            rec.role = "assistant";
+            rec.content = finalText;
+            rec.turnId = s.turnId;
+            rec.timestamp = QDateTime::currentSecsSinceEpoch();
+            m_database->saveMessage(rec);
         }
 
         s.accumulatedText.clear();
@@ -248,6 +275,9 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
         s.toolSummary.clear();
         s.statusMessageId = 0;
         s.responseSent = false;
+
+        if (exitCode == 0)
+            emit filesChanged();
     });
 }
 
@@ -319,11 +349,23 @@ void TelegramBridge::handleFreeText(TelegramSession &session, const QString &tex
              << "session:" << session.sessionId
              << "text:" << text.left(80);
 
+    session.turnId++;
     session.processing = true;
     session.responseSent = false;
     session.accumulatedText.clear();
     session.toolSummary.clear();
     session.statusMessageId = 0;
+
+    // Save user message to DB
+    if (m_database) {
+        MessageRecord rec;
+        rec.sessionId = session.sessionId;
+        rec.role = "user";
+        rec.content = text;
+        rec.turnId = session.turnId;
+        rec.timestamp = QDateTime::currentSecsSinceEpoch();
+        m_database->saveMessage(rec);
+    }
 
     session.process->sendMessage(text);
 }

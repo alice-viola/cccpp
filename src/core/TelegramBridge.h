@@ -22,6 +22,7 @@ struct TelegramSession {
     QString accumulatedText;
     QStringList toolSummary;
     QTimer *flushTimer = nullptr;
+    int turnId = 0;
     bool processing = false;
     bool titleSet = false;
     bool responseSent = false;
@@ -36,6 +37,9 @@ public:
     void setDatabase(Database *db);
     void setGitManager(GitManager *git);
     void setWorkingDirectory(const QString &dir);
+
+signals:
+    void filesChanged();
 
 private:
     void onMessage(const TelegramMessage &msg);

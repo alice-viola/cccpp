@@ -800,6 +800,9 @@ void MainWindow::setupTelegram()
     m_daemonClient->setGitManager(m_gitManager);
     m_daemonClient->setWorkingDirectory(m_workspacePath);
 
+    connect(m_daemonClient, &DaemonClient::filesChanged,
+            this, &MainWindow::onGitRefresh);
+
     if (m_daemonClient->connectToDaemon()) {
         if (!m_workspacePath.isEmpty())
             m_daemonClient->registerWorkspace(m_workspacePath);
@@ -821,6 +824,8 @@ void MainWindow::setupTelegram()
     m_telegramBridge->setDatabase(m_database);
     m_telegramBridge->setGitManager(m_gitManager);
     m_telegramBridge->setWorkingDirectory(m_workspacePath);
+    connect(m_telegramBridge, &TelegramBridge::filesChanged,
+            this, &MainWindow::onGitRefresh);
 
     m_telegramApi->startPolling();
     qDebug() << "[cccpp] Telegram bot polling started (single-instance mode)";

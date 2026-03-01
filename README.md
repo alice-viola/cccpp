@@ -14,6 +14,10 @@ Here you can see CCCPP building itself:
   <img src="assets/cccpp1.png" alt="cccpp building itself" width="700">
 </p>
 
+<p align="center">
+  <img src="assets/cccpp2.png" alt="cccpp building itself" width="700">
+</p>
+
 ## Features
 
 ### Chat & AI
