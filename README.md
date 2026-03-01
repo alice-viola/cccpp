@@ -1,21 +1,21 @@
-# CCCPP — Claude Code C++ UI
+# C3P2 — Claude Code C++ UI
 
 <p align="center">
-  <img src="assets/logo.png" alt="CCCPP Logo" width="200">
+  <img src="assets/logo.png" alt="C3P2 Logo" width="200">
 </p>
 
 A native C++ desktop application that provides a Cursor-like three-column UI for [Claude Code](https://docs.claude.com/en/docs/claude-code/cli-reference). Built with Qt6 and QScintilla, it wraps the `claude` CLI to give you a visual interface for agentic coding sessions.
 
 ## Layout
 
-Here you can see CCCPP building itself:
+Here you can see C3P2 building itself:
 
 <p align="center">
-  <img src="assets/cccpp1.png" alt="cccpp building itself" width="700">
+  <img src="assets/cccpp1.png" alt="c3p2 building itself" width="700">
 </p>
 
 <p align="center">
-  <img src="assets/cccpp2.png" alt="cccpp building itself" width="700">
+  <img src="assets/cccpp2.png" alt="c3p2 building itself" width="700">
 </p>
 
 ## Features
@@ -27,7 +27,7 @@ Here you can see CCCPP building itself:
 - **Multimodal**: accept images in the prompt
 - **Agent / Ask / Plan modes**: maps directly to Claude Code CLI flags — full tool access, read-only, or permission-controlled
 - **Model selection**: switch between Claude models on the fly from the toolbar
-- **Chat persistence**: SQLite database at `~/.cccpp/history.db` stores sessions and messages
+- **Chat persistence**: SQLite database at `~/.c3p2/history.db` stores sessions and messages
 - **Session resume**: uses `--resume SESSION_ID` to continue conversations across restarts
 - **Chat history**: browse and reopen past sessions from the history menu
 - **Telegram bot**: control Claude Code remotely from any device via Telegram — send prompts, browse sessions, view diffs, commit, and more
@@ -107,7 +107,7 @@ cmake .. -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix qscintilla2)"
 cmake --build .
 
 # Run
-./cccpp /path/to/your/project
+./c3p2 /path/to/your/project
 ```
 
 ## Usage
@@ -122,7 +122,7 @@ cmake --build .
 
 ## Configuration
 
-Settings stored in `~/.cccpp/config.json`:
+Settings stored in `~/.c3p2/config.json`:
 
 ```json
 {
@@ -134,20 +134,20 @@ Settings stored in `~/.cccpp/config.json`:
 
 ## Telegram Bot
 
-CCCPP includes a built-in Telegram bot that lets you interact with Claude Code from your phone or any device. It runs as a background daemon process that coordinates across multiple open workspaces.
+C3P2 includes a built-in Telegram bot that lets you interact with Claude Code from your phone or any device. It runs as a background daemon process that coordinates across multiple open workspaces.
 
 ### Setup
 
 1. **Create a bot** — message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, and copy the token
 2. **Get your user ID** — message [@userinfobot](https://t.me/userinfobot) to get your numeric Telegram user ID
-3. **Configure CCCPP** — go to `Settings > Telegram Bot` and fill in:
+3. **Configure C3P2** — go to `Settings > Telegram Bot` and fill in:
    - **Enable Telegram bot**: check the box
    - **Bot token**: paste the token from BotFather
    - **Allowed users**: enter your user ID (comma-separated for multiple users)
    - Click **Test Connection** to verify the token works
-4. **Restart CCCPP** — the daemon starts automatically on launch
+4. **Restart C3P2** — the daemon starts automatically on launch
 
-Alternatively, edit `~/.cccpp/config.json` directly:
+Alternatively, edit `~/.c3p2/config.json` directly:
 
 ```json
 {
@@ -176,7 +176,7 @@ Alternatively, edit `~/.cccpp/config.json` directly:
 
 ### How It Works
 
-The bot runs as a daemon process (`cccpp --daemon`) that owns the Telegram API connection and routes messages to CCCPP instances via local IPC (Unix sockets / Windows named pipes). Each CCCPP instance registers its workspace with the daemon on startup. When you send a message from Telegram, the daemon forwards it to the correct instance, which runs Claude and streams the response back.
+The bot runs as a daemon process (`c3p2 --daemon`) that owns the Telegram API connection and routes messages to C3P2 instances via local IPC (Unix sockets / Windows named pipes). Each C3P2 instance registers its workspace with the daemon on startup. When you send a message from Telegram, the daemon forwards it to the correct instance, which runs Claude and streams the response back.
 
 ## Architecture
 
@@ -189,11 +189,11 @@ The app wraps Claude Code CLI (`claude -p`) rather than calling the Anthropic AP
 
 ## Claude Code Compatibility
 
-CCCPP spawns the **Claude Code CLI binary** (`claude`) as a child process — it does **not** use the [Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-overview) libraries (Python/TypeScript). There is no version check at startup; CCCPP assumes the installed binary supports the `stream-json` protocol.
+C3P2 spawns the **Claude Code CLI binary** (`claude`) as a child process — it does **not** use the [Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-overview) libraries (Python/TypeScript). There is no version check at startup; C3P2 assumes the installed binary supports the `stream-json` protocol.
 
 ### Minimum version
 
-**v2.1.0** (Jan 9, 2026) for full functionality. Earlier versions lack support for flags CCCPP relies on:
+**v2.1.0** (Jan 9, 2026) for full functionality. Earlier versions lack support for flags C3P2 relies on:
 
 | Minimum version | What it unlocks |
 |-----------------|-----------------|
