@@ -97,7 +97,7 @@ void DaemonClient::registerWorkspace(const QString &workspace, const QString &na
 
     QJsonObject msg;
     msg["type"] = "register";
-    msg["workspace"] = workspace;
+    msg["workspace"] = m_workingDir; // send normalized path
     msg["name"] = m_workspaceName;
     sendToDaemon(QJsonDocument(msg).toJson(QJsonDocument::Compact));
 }
@@ -257,9 +257,13 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
 
+        // Persist real session ID to DB (replaces the temp UUID)
         if (!sessionId.isEmpty() && sessionId != s.sessionId) {
-            if (m_sessionMgr)
+            if (m_sessionMgr) {
                 m_sessionMgr->updateSessionId(s.sessionId, sessionId);
+                if (m_database)
+                    m_database->saveSession(m_sessionMgr->sessionInfo(sessionId));
+            }
             s.sessionId = sessionId;
             s.process->setSessionId(sessionId);
         }
@@ -267,16 +271,17 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
         s.processing = false;
         s.flushTimer->stop();
         QString finalText = s.accumulatedText.trimmed();
-        if (finalText.isEmpty()) {
-            if (!s.toolSummary.isEmpty()) {
-                finalText = "Done.\n\nEdited:\n";
-                for (const QString &t : s.toolSummary)
-                    finalText += "  " + t + "\n";
-            } else {
-                finalText = "Done.";
-            }
+        if (finalText.isEmpty() && !s.toolSummary.isEmpty()) {
+            finalText = "Done.\n\nEdited:\n";
+            for (const QString &t : s.toolSummary)
+                finalText += "  " + t + "\n";
         }
-        sendFinalResponse(s, finalText);
+        // Only send if there's actual content; let finished handler
+        // decide what to show for empty results (could be success or error)
+        if (!finalText.isEmpty()) {
+            sendFinalResponse(s, finalText);
+            s.responseSent = true;
+        }
 
         s.accumulatedText.clear();
         s.toolSummary.clear();
@@ -289,6 +294,7 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
         s.processing = false;
+        s.responseSent = true;
         s.accumulatedText.clear();
         s.toolSummary.clear();
         s.statusMessageId = 0;
@@ -300,18 +306,30 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
         qDebug() << "[DaemonClient] process finished for chat" << chatId << "exit code:" << exitCode;
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
-        if (s.processing) {
+        s.flushTimer->stop();
+
+        if (exitCode != 0) {
+            // Always report non-zero exit, regardless of processing state
             s.processing = false;
-            s.flushTimer->stop();
+            if (!s.responseSent)
+                sendResponse(chatId, QString("Error: Claude exited with code %1. The session may be invalid — try /new.").arg(exitCode));
+        } else if (s.processing) {
+            // resultReady didn't fire — process exited cleanly without result JSON
+            s.processing = false;
             QString text = s.accumulatedText.trimmed();
             if (!text.isEmpty())
                 sendFinalResponse(s, text);
-            else
-                sendResponse(chatId, QString("Process exited unexpectedly (code %1)").arg(exitCode));
-            s.accumulatedText.clear();
-            s.toolSummary.clear();
-            s.statusMessageId = 0;
+            else if (!s.responseSent)
+                sendResponse(chatId, "Done.");
+        } else if (!s.responseSent) {
+            // resultReady fired but had no content, exit code 0 = success
+            sendResponse(chatId, "Done.");
         }
+
+        s.accumulatedText.clear();
+        s.toolSummary.clear();
+        s.statusMessageId = 0;
+        s.responseSent = false;
     });
 }
 
@@ -381,19 +399,18 @@ void DaemonClient::handleFreeText(DaemonChatSession &session, const QString &tex
         return;
     }
     // Use first message as session title (mirrors history panel behaviour)
+    // Only set in memory here — DB save happens in resultReady when we have the real session ID
     if (!session.titleSet && !session.sessionId.isEmpty()) {
         session.titleSet = true;
         QString title = text.trimmed().left(50);
-        if (m_sessionMgr) {
+        if (m_sessionMgr)
             m_sessionMgr->setSessionTitle(session.sessionId, title);
-            if (m_database)
-                m_database->saveSession(m_sessionMgr->sessionInfo(session.sessionId));
-        }
     }
     qDebug() << "[DaemonClient] Sending to claude, workspace:" << m_workingDir
              << "session:" << session.sessionId
              << "text:" << text.left(80);
     session.processing = true;
+    session.responseSent = false;
     session.accumulatedText.clear();
     session.toolSummary.clear();
     session.statusMessageId = 0;
@@ -418,7 +435,9 @@ void DaemonClient::handleNew(DaemonChatSession &session)
         return;
     }
     createNewProcess(session);
-    sendResponse(session.chatId, "New session created: " + session.sessionId);
+    session.titleSet = false;
+    session.responseSent = false;
+    sendResponse(session.chatId, "New session started. Send a message to begin.");
 }
 
 static QJsonArray buildSessionKeyboardRows(const QList<SessionInfo> &sessions)
@@ -461,7 +480,7 @@ void DaemonClient::handleSessions(DaemonChatSession &session)
         std::sort(sessions.begin(), sessions.end(), [](const SessionInfo &a, const SessionInfo &b) {
             return a.updatedAt > b.updatedAt;
         });
-        if (sessions.size() > 8) sessions = sessions.mid(0, 8);
+        if (sessions.size() > 15) sessions = sessions.mid(0, 15);
     } else if (m_sessionMgr) {
         sessions = m_sessionMgr->allSessions();
         qDebug() << "[DaemonClient] handleSessions: SessionMgr has" << sessions.size() << "sessions";
@@ -490,6 +509,8 @@ void DaemonClient::handleResume(DaemonChatSession &session, const QString &sessi
     session.process->setWorkingDirectory(m_workingDir);
     session.process->setSessionId(sessionId);
     session.sessionId = sessionId;
+    session.titleSet = true; // already has title from DB
+    session.responseSent = false;
     wireProcessSignals(session);
     sendResponse(session.chatId, "Session resumed. Send a message to continue.");
 }
@@ -639,6 +660,7 @@ void DaemonClient::handleCancel(DaemonChatSession &session)
     }
     if (session.process) session.process->cancel();
     session.processing = false;
+    session.responseSent = true; // prevent finished handler from sending "Done."
     session.flushTimer->stop();
     session.accumulatedText.clear();
     session.toolSummary.clear();

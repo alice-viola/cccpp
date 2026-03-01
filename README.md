@@ -26,6 +26,7 @@ Here you can see CCCPP building itself:
 - **Chat persistence**: SQLite database at `~/.cccpp/history.db` stores sessions and messages
 - **Session resume**: uses `--resume SESSION_ID` to continue conversations across restarts
 - **Chat history**: browse and reopen past sessions from the history menu
+- **Telegram bot**: control Claude Code remotely from any device via Telegram — send prompts, browse sessions, view diffs, commit, and more
 - **Thinking indicator**: animated bouncing-dot indicator while Claude is processing
 - **Markdown rendering**: code blocks, bold, italic, headers, lists, links, blockquotes, and tables
 - **Tool call display**: collapsible tool-call groups per turn with inline diffs for Edit/Write operations
@@ -126,6 +127,52 @@ Settings stored in `~/.cccpp/config.json`:
   "last_workspace": "/path/to/project"
 }
 ```
+
+## Telegram Bot
+
+CCCPP includes a built-in Telegram bot that lets you interact with Claude Code from your phone or any device. It runs as a background daemon process that coordinates across multiple open workspaces.
+
+### Setup
+
+1. **Create a bot** — message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, and copy the token
+2. **Get your user ID** — message [@userinfobot](https://t.me/userinfobot) to get your numeric Telegram user ID
+3. **Configure CCCPP** — go to `Settings > Telegram Bot` and fill in:
+   - **Enable Telegram bot**: check the box
+   - **Bot token**: paste the token from BotFather
+   - **Allowed users**: enter your user ID (comma-separated for multiple users)
+   - Click **Test Connection** to verify the token works
+4. **Restart CCCPP** — the daemon starts automatically on launch
+
+Alternatively, edit `~/.cccpp/config.json` directly:
+
+```json
+{
+  "telegram_enabled": true,
+  "telegram_bot_token": "123456:ABC-DEF...",
+  "telegram_allowed_users": [123456789]
+}
+```
+
+### Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| Free text | Send a prompt to Claude in the active session |
+| `/sessions` | List and switch between sessions (inline keyboard) |
+| `/new` | Start a new session |
+| `/status` | Show current session state |
+| `/files` | List changed files |
+| `/diff [file]` | View a file diff |
+| `/commit [msg]` | Commit staged changes |
+| `/branch` | Show current git branch |
+| `/mode [agent/ask/plan]` | Switch Claude's mode |
+| `/revert` | Revert the last turn's file changes |
+| `/cancel` | Cancel the current request |
+| `/help` | Show available commands |
+
+### How It Works
+
+The bot runs as a daemon process (`cccpp --daemon`) that owns the Telegram API connection and routes messages to CCCPP instances via local IPC (Unix sockets / Windows named pipes). Each CCCPP instance registers its workspace with the daemon on startup. When you send a message from Telegram, the daemon forwards it to the correct instance, which runs Claude and streams the response back.
 
 ## Architecture
 

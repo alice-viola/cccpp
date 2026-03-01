@@ -22,6 +22,7 @@ struct DaemonChatSession {
     QTimer *flushTimer = nullptr;
     bool processing = false;
     bool titleSet = false;
+    bool responseSent = false;
 };
 
 class DaemonClient : public QObject {
