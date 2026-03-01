@@ -8,19 +8,7 @@ A native C++ desktop application that provides a Cursor-like three-column UI for
 
 ## Layout
 
-```
-┌──────────────┬─────────────────────┬──────────────────────┐
-│  Workspace   │    Code Viewer      │    Agent Chat(s)     │
-│  Tree        │                     │   ┌────┬────┬────┐   │
-│              │  - Syntax highlight │   │Tab1│Tab2│Tab3│   │
-│  - Browse    │  - Diff overlay     │   ├────┴────┴────┤   │
-│    files     │  - Line numbers     │   │ Chat messages │   │
-│              │  - Read-only        │   │ (streaming)   │   │
-│              │                     │   ├──────────────┤   │
-│              │                     │   │ [Agent|Ask|Plan] │
-│              │                     │   │ [input] [Send]   │
-└──────────────┴─────────────────────┴──────────────────────┘
-```
+
 
 ## Features
 
@@ -90,21 +78,6 @@ A native C++ desktop application that provides a Cursor-like three-column UI for
 - **Animated focus ring**: input bar border animates on focus
 - **Empty states**: custom illustrations when no files or chats are open
 
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+O` | Open Workspace |
-| `Ctrl+N` | New Chat |
-| `Ctrl+S` | Save File |
-| `Ctrl+Shift+S` | Save All Files |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
-| `Ctrl+X` / `Ctrl+C` / `Ctrl+V` | Cut / Copy / Paste |
-| `` Ctrl+` `` | Toggle Terminal |
-| `` Ctrl+Shift+` `` | New Terminal |
-| `Ctrl+Shift+G` | Refresh Git Status |
-| `Ctrl+Q` | Quit |
-
 ## Requirements
 
 - **Claude Code CLI** (`claude`) installed and authenticated
@@ -157,12 +130,3 @@ The app wraps Claude Code CLI (`claude -p`) rather than calling the Anthropic AP
 - `StreamParser` reads stdout line-by-line, parsing newline-delimited JSON events
 - Text deltas stream into the chat panel; tool events feed the diff engine and snapshot manager
 - `SnapshotManager` runs `git stash create` before each turn for atomic rollback
-
-## Project Structure
-
-```
-src/
-├── core/           # Process management, parsing, diff engine, DB, snapshots
-├── ui/             # Qt widgets: MainWindow, WorkspaceTree, CodeViewer, ChatPanel
-└── util/           # Markdown renderer, JSON helpers, config
-```
