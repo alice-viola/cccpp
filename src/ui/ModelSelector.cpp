@@ -1,74 +1,98 @@
 #include "ui/ModelSelector.h"
 #include "ui/ThemeManager.h"
 #include <QHBoxLayout>
-#include <QLabel>
-
-struct ModelInfo {
-    const char *id;
-    const char *label;
-};
-
-static const ModelInfo MODELS[] = {
-    {"claude-sonnet-4-6",           "Sonnet 4.6"},
-    {"claude-opus-4-6",             "Opus 4.6"},
-    {"claude-opus-4-5-20251101",    "Opus 4.5"},
-    {"claude-haiku-4-5-20251001",   "Haiku 4.5"},
-    {"claude-sonnet-4-5-20250929",  "Sonnet 4.5"},
-};
+#include <QMenu>
 
 ModelSelector::ModelSelector(QWidget *parent)
     : QWidget(parent)
 {
-    auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 2, 8, 2);
-    layout->setSpacing(6);
-
-    auto *label = new QLabel("Model", this);
-    layout->addWidget(label);
-
-    m_combo = new QComboBox(this);
-    m_combo->setFixedHeight(24);
-    m_combo->setMinimumWidth(130);
-
-    for (const auto &m : MODELS)
-        m_combo->addItem(m.label, QString(m.id));
-
-    connect(m_combo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int idx) {
-        emit modelChanged(m_combo->itemData(idx).toString());
-    });
-
-    layout->addWidget(m_combo);
-    layout->addStretch();
-
-    auto applyTheme = [label, this] {
-        const auto &p = ThemeManager::instance().palette();
-        label->setStyleSheet(
-            QStringLiteral("color: %1; font-size: 11px;").arg(p.text_muted.name()));
-        m_combo->setStyleSheet(
-            QStringLiteral("QComboBox QAbstractItemView { selection-background-color: %1; }")
-                .arg(p.bg_raised.name()));
+    m_models = {
+        {"claude-sonnet-4-6",           "Sonnet 4.6"},
+        {"claude-opus-4-6",             "Opus 4.6"},
+        {"claude-opus-4-5-20251101",    "Opus 4.5"},
+        {"claude-haiku-4-5-20251001",   "Haiku 4.5"},
+        {"claude-sonnet-4-5-20250929",  "Sonnet 4.5"},
     };
-    applyTheme();
+
+    auto *layout = new QHBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_button = new QPushButton(this);
+    m_button->setCursor(Qt::PointingHandCursor);
+    m_button->setFixedHeight(24);
+    layout->addWidget(m_button);
+
+    connect(m_button, &QPushButton::clicked, this, &ModelSelector::showModelMenu);
+
+    updateLabel();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
-            this, applyTheme);
+            this, [this] { updateLabel(); });
 }
 
 QString ModelSelector::currentModelId() const
 {
-    return m_combo->currentData().toString();
+    if (m_currentIndex >= 0 && m_currentIndex < m_models.size())
+        return m_models[m_currentIndex].id;
+    return {};
 }
 
 QString ModelSelector::currentModelLabel() const
 {
-    return m_combo->currentText();
+    if (m_currentIndex >= 0 && m_currentIndex < m_models.size())
+        return m_models[m_currentIndex].label;
+    return {};
 }
 
 void ModelSelector::setModel(const QString &modelId)
 {
-    for (int i = 0; i < m_combo->count(); ++i) {
-        if (m_combo->itemData(i).toString() == modelId) {
-            m_combo->setCurrentIndex(i);
+    for (int i = 0; i < m_models.size(); ++i) {
+        if (m_models[i].id == modelId) {
+            if (m_currentIndex == i) return;
+            m_currentIndex = i;
+            updateLabel();
+            emit modelChanged(modelId);
             return;
         }
     }
+}
+
+void ModelSelector::updateLabel()
+{
+    const auto &p = ThemeManager::instance().palette();
+    m_button->setText(QStringLiteral("%1 \u25BE").arg(currentModelLabel()));
+
+    m_button->setStyleSheet(QStringLiteral(
+        "QPushButton { background: transparent; color: %1; border: none; "
+        "padding: 3px 8px; font-size: 12px; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(p.text_muted.name(), p.text_primary.name()));
+}
+
+void ModelSelector::showModelMenu()
+{
+    const auto &p = ThemeManager::instance().palette();
+    QMenu menu(this);
+    menu.setStyleSheet(QStringLiteral(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 6px; padding: 4px; }"
+        "QMenu::item { padding: 6px 20px 6px 12px; color: %3; border-radius: 4px; font-size: 12px; }"
+        "QMenu::item:selected { background: %4; }"
+        "QMenu::separator { height: 1px; background: %2; margin: 2px 8px; }")
+        .arg(p.bg_surface.name(), p.border_standard.name(),
+             p.text_primary.name(), p.bg_raised.name()));
+
+    for (int i = 0; i < m_models.size(); ++i) {
+        auto *action = menu.addAction(m_models[i].label);
+        action->setCheckable(true);
+        action->setChecked(i == m_currentIndex);
+        connect(action, &QAction::triggered, this, [this, i] {
+            m_currentIndex = i;
+            updateLabel();
+            emit modelChanged(m_models[i].id);
+        });
+    }
+
+    QPoint pos = m_button->mapToGlobal(QPoint(0, 0));
+    pos.setY(pos.y() - menu.sizeHint().height());
+    menu.exec(pos);
 }

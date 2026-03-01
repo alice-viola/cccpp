@@ -2,7 +2,6 @@
 
 #include <QWidget>
 #include <QPushButton>
-#include <QHBoxLayout>
 
 class ModeSelector : public QWidget {
     Q_OBJECT
@@ -16,10 +15,9 @@ signals:
     void modeChanged(const QString &mode);
 
 private:
-    void updateButtonStyles();
+    void updateLabel();
+    void showModeMenu();
 
-    QPushButton *m_agentBtn;
-    QPushButton *m_askBtn;
-    QPushButton *m_planBtn;
+    QPushButton *m_button;
     QString m_currentMode = "agent";
 };

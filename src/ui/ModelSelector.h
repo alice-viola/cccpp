@@ -1,7 +1,8 @@
 #pragma once
 
 #include <QWidget>
-#include <QComboBox>
+#include <QPushButton>
+#include <QVector>
 
 class ModelSelector : public QWidget {
     Q_OBJECT
@@ -16,5 +17,11 @@ signals:
     void modelChanged(const QString &modelId);
 
 private:
-    QComboBox *m_combo;
+    void updateLabel();
+    void showModelMenu();
+
+    QPushButton *m_button;
+    struct ModelInfo { QString id; QString label; };
+    QVector<ModelInfo> m_models;
+    int m_currentIndex = 0;
 };

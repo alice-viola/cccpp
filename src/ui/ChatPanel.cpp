@@ -61,20 +61,12 @@ ChatPanel::ChatPanel(QWidget *parent)
 
     mainLayout->addWidget(m_tabWidget, 1);
 
-    // Mode + Model selectors
-    auto *selectorRow = new QWidget(this);
-    auto *selectorLayout = new QHBoxLayout(selectorRow);
-    selectorLayout->setContentsMargins(0, 0, 0, 0);
-    selectorLayout->setSpacing(0);
-
     m_modeSelector = new ModeSelector(this);
     m_modelSelector = new ModelSelector(this);
-    selectorLayout->addWidget(m_modeSelector);
-    selectorLayout->addWidget(m_modelSelector);
-
-    mainLayout->addWidget(selectorRow);
 
     m_inputBar = new InputBar(this);
+    m_inputBar->addFooterWidget(m_modeSelector);
+    m_inputBar->addFooterWidget(m_modelSelector);
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
@@ -510,6 +502,29 @@ void ChatPanel::restoreSession(const QString &sessionId)
                 ToolCallInfo info;
                 info.toolName = toolMsg.toolName;
                 info.summary = toolMsg.content;
+
+                if (!toolMsg.toolInput.isEmpty()) {
+                    auto parsed = nlohmann::json::parse(
+                        toolMsg.toolInput.toStdString(), nullptr, false);
+                    if (!parsed.is_discarded()) {
+                        if (parsed.contains("path"))
+                            info.filePath = JsonUtils::getString(parsed, "path");
+                        else if (parsed.contains("file_path"))
+                            info.filePath = JsonUtils::getString(parsed, "file_path");
+
+                        if ((toolMsg.toolName == "Edit" || toolMsg.toolName == "StrReplace")
+                            && parsed.contains("old_string")) {
+                            info.isEdit = true;
+                            info.oldString = JsonUtils::getString(parsed, "old_string");
+                            info.newString = JsonUtils::getString(parsed, "new_string");
+                        } else if (toolMsg.toolName == "Write") {
+                            info.isEdit = true;
+                            info.newString = JsonUtils::getString(parsed, "content",
+                                             JsonUtils::getString(parsed, "contents"));
+                        }
+                    }
+                }
+
                 group->addToolCall(info);
             }
             group->finalize();

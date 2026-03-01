@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QHBoxLayout>
 #include <QVariantAnimation>
 #include <QLabel>
 #include <QList>
@@ -43,6 +44,8 @@ public:
 
     void setContextIndicator(const QString &text);
 
+    void addFooterWidget(QWidget *w);
+
 signals:
     void sendRequested(const QString &text);
     void stopRequested();
@@ -67,6 +70,8 @@ private:
 
     QTextEdit *m_input;
     QPushButton *m_sendBtn;
+    QWidget *m_inputContainer = nullptr;
+    QHBoxLayout *m_bottomBarLayout = nullptr;
     QVariantAnimation *m_focusAnim = nullptr;
     ContextPopup *m_contextPopup = nullptr;
     SlashCommandPopup *m_slashPopup = nullptr;

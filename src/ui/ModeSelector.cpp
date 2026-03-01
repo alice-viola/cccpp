@@ -1,72 +1,73 @@
 #include "ui/ModeSelector.h"
 #include "ui/ThemeManager.h"
+#include <QHBoxLayout>
+#include <QMenu>
 
 ModeSelector::ModeSelector(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(16, 6, 16, 6);
-    layout->setSpacing(1);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
-    m_agentBtn = new QPushButton("Agent", this);
-    m_askBtn   = new QPushButton("Ask",   this);
-    m_planBtn  = new QPushButton("Plan",  this);
+    m_button = new QPushButton(this);
+    m_button->setCursor(Qt::PointingHandCursor);
+    m_button->setFixedHeight(24);
+    layout->addWidget(m_button);
 
-    m_agentBtn->setToolTip("Agent mode — Claude autonomously edits files and runs tools");
-    m_askBtn->setToolTip("Ask mode — Conversational; Claude answers without making file changes");
-    m_planBtn->setToolTip("Plan mode — Claude writes a plan and waits for your approval before acting");
+    connect(m_button, &QPushButton::clicked, this, &ModeSelector::showModeMenu);
 
-    for (auto *btn : {m_agentBtn, m_askBtn, m_planBtn})
-        btn->setFixedHeight(28);
-
-    layout->addWidget(m_agentBtn);
-    layout->addWidget(m_askBtn);
-    layout->addWidget(m_planBtn);
-
-    connect(m_agentBtn, &QPushButton::clicked, this, [this] { setMode("agent"); });
-    connect(m_askBtn, &QPushButton::clicked, this, [this] { setMode("ask"); });
-    connect(m_planBtn, &QPushButton::clicked, this, [this] { setMode("plan"); });
-
+    updateLabel();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
-            this, [this] { updateButtonStyles(); });
-
-    updateButtonStyles();
+            this, [this] { updateLabel(); });
 }
 
 void ModeSelector::setMode(const QString &mode)
 {
-    if (m_currentMode == mode)
-        return;
+    if (m_currentMode == mode) return;
     m_currentMode = mode;
-    updateButtonStyles();
+    updateLabel();
     emit modeChanged(mode);
 }
 
-void ModeSelector::updateButtonStyles()
+void ModeSelector::updateLabel()
 {
     const auto &p = ThemeManager::instance().palette();
+    QString label = m_currentMode.at(0).toUpper() + m_currentMode.mid(1);
+    m_button->setText(QStringLiteral("\u221E %1 \u25BE").arg(label));
 
-    setStyleSheet(
-        QStringLiteral("ModeSelector { background: %1; border-radius: 8px; padding: 2px; }")
-        .arg(p.bg_raised.name()));
+    m_button->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+        "border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 500; }"
+        "QPushButton:hover { background: %4; border-color: %5; }")
+        .arg(p.bg_raised.name(), p.text_primary.name(), p.border_subtle.name(),
+             p.hover_raised.name(), p.border_standard.name()));
+}
 
-    auto setStyle = [&p](QPushButton *btn, bool active) {
-        if (active)
-            btn->setStyleSheet(
-                QStringLiteral(
-                    "QPushButton { background: %1; color: %2; border: none; "
-                    "padding: 4px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; }"
-                    "QPushButton:hover { background: %3; }")
-                .arg(p.blue.name(), p.on_accent.name(), p.lavender.name()));
-        else
-            btn->setStyleSheet(
-                QStringLiteral(
-                    "QPushButton { background: transparent; color: %1; border: none; "
-                    "padding: 4px 14px; border-radius: 6px; font-size: 12px; }"
-                    "QPushButton:hover { background: %2; color: %3; }")
-                .arg(p.text_muted.name(), p.hover_raised.name(), p.text_primary.name()));
-    };
-    setStyle(m_agentBtn, m_currentMode == "agent");
-    setStyle(m_askBtn, m_currentMode == "ask");
-    setStyle(m_planBtn, m_currentMode == "plan");
+void ModeSelector::showModeMenu()
+{
+    const auto &p = ThemeManager::instance().palette();
+    QMenu menu(this);
+    menu.setStyleSheet(QStringLiteral(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 6px; padding: 4px; }"
+        "QMenu::item { padding: 6px 20px 6px 12px; color: %3; border-radius: 4px; font-size: 12px; }"
+        "QMenu::item:selected { background: %4; }"
+        "QMenu::separator { height: 1px; background: %2; margin: 2px 8px; }")
+        .arg(p.bg_surface.name(), p.border_standard.name(),
+             p.text_primary.name(), p.bg_raised.name()));
+
+    struct ModeEntry { QString key; QString label; };
+    for (const auto &entry : std::initializer_list<ModeEntry>{
+            {"agent", "Agent"}, {"ask", "Ask"}, {"plan", "Plan"}}) {
+        auto *action = menu.addAction(entry.label);
+        action->setCheckable(true);
+        action->setChecked(entry.key == m_currentMode);
+        connect(action, &QAction::triggered, this, [this, key = entry.key] {
+            setMode(key);
+        });
+    }
+
+    QPoint pos = m_button->mapToGlobal(QPoint(0, 0));
+    pos.setY(pos.y() - menu.sizeHint().height());
+    menu.exec(pos);
 }

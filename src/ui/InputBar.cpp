@@ -27,13 +27,11 @@ InputBar::InputBar(QWidget *parent)
     outerLayout->setContentsMargins(16, 4, 16, 10);
     outerLayout->setSpacing(2);
 
-    // Context indicator strip (shows auto-attached context)
     m_contextIndicator = new QLabel(this);
     m_contextIndicator->setVisible(false);
     m_contextIndicator->setWordWrap(true);
     outerLayout->addWidget(m_contextIndicator);
 
-    // Context pills bar (shows @-mentioned files)
     m_contextPillBar = new QWidget(this);
     m_contextPillBar->setVisible(false);
     auto *pillLayout = new QHBoxLayout(m_contextPillBar);
@@ -42,7 +40,6 @@ InputBar::InputBar(QWidget *parent)
     pillLayout->addStretch();
     outerLayout->addWidget(m_contextPillBar);
 
-    // Image thumbnails bar
     m_imageBar = new QWidget(this);
     m_imageBar->setVisible(false);
     auto *imgLayout = new QHBoxLayout(m_imageBar);
@@ -51,12 +48,14 @@ InputBar::InputBar(QWidget *parent)
     imgLayout->addStretch();
     outerLayout->addWidget(m_imageBar);
 
-    // Input row
-    auto *inputRow = new QHBoxLayout;
-    inputRow->setContentsMargins(0, 2, 0, 0);
-    inputRow->setSpacing(6);
+    // Unified input container (rounded card with border)
+    m_inputContainer = new QWidget(this);
+    m_inputContainer->setObjectName("inputContainer");
+    auto *containerLayout = new QVBoxLayout(m_inputContainer);
+    containerLayout->setContentsMargins(2, 2, 2, 2);
+    containerLayout->setSpacing(0);
 
-    m_input = new QTextEdit(this);
+    m_input = new QTextEdit(m_inputContainer);
     m_input->setObjectName("chatInput");
     m_input->setPlaceholderText("Ask Claude anything... (@ to mention files, / for commands)");
     m_input->setMaximumHeight(80);
@@ -64,13 +63,20 @@ InputBar::InputBar(QWidget *parent)
     m_input->setAcceptRichText(false);
     m_input->setAcceptDrops(false);
     m_input->installEventFilter(this);
+    containerLayout->addWidget(m_input);
 
-    m_sendBtn = new QPushButton("\xe2\x86\x91", this); // up arrow
-    m_sendBtn->setFixedSize(32, 32);
+    auto *bottomBar = new QWidget(m_inputContainer);
+    m_bottomBarLayout = new QHBoxLayout(bottomBar);
+    m_bottomBarLayout->setContentsMargins(6, 0, 4, 4);
+    m_bottomBarLayout->setSpacing(4);
+    m_bottomBarLayout->addStretch();
 
-    inputRow->addWidget(m_input, 1);
-    inputRow->addWidget(m_sendBtn, 0, Qt::AlignBottom);
-    outerLayout->addLayout(inputRow);
+    m_sendBtn = new QPushButton("\xe2\x86\x91", m_inputContainer);
+    m_sendBtn->setFixedSize(28, 28);
+    m_bottomBarLayout->addWidget(m_sendBtn);
+
+    containerLayout->addWidget(bottomBar);
+    outerLayout->addWidget(m_inputContainer);
 
     connect(m_sendBtn, &QPushButton::clicked, this, [this] {
         if (m_processing) {
@@ -106,9 +112,17 @@ InputBar::InputBar(QWidget *parent)
 void InputBar::applyThemeColors()
 {
     auto &p = ThemeManager::instance().palette();
+
+    m_input->setStyleSheet(QStringLiteral(
+        "QTextEdit#chatInput { background: transparent; color: %1; "
+        "border: none; padding: 6px 10px; font-size: 13px; }")
+        .arg(p.text_primary.name()));
+
+    applyBorderColor(p.border_standard);
+
     m_sendBtn->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 14px; font-size: 16px; font-weight: bold; }"
+        "border-radius: 14px; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }")
         .arg(p.blue.name(), p.on_accent.name(), p.lavender.name(),
@@ -122,10 +136,15 @@ void InputBar::applyThemeColors()
 void InputBar::applyBorderColor(const QColor &c)
 {
     auto &p = ThemeManager::instance().palette();
-    m_input->setStyleSheet(
-        QStringLiteral("QTextEdit#chatInput { background: %1; color: %2; "
-                       "border: 1px solid %3; border-radius: 12px; padding: 6px 10px; "
-                       "font-size: 13px; }").arg(p.bg_surface.name(), p.text_primary.name(), c.name()));
+    m_inputContainer->setStyleSheet(
+        QStringLiteral("#inputContainer { background: %1; "
+                       "border: 1px solid %2; border-radius: 12px; }")
+        .arg(p.bg_surface.name(), c.name()));
+}
+
+void InputBar::addFooterWidget(QWidget *w)
+{
+    m_bottomBarLayout->insertWidget(m_bottomBarLayout->count() - 2, w);
 }
 
 QString InputBar::text() const
@@ -173,16 +192,16 @@ void InputBar::setProcessing(bool processing)
     if (processing) {
         m_input->setEnabled(false);
         m_sendBtn->setEnabled(true);
-        m_sendBtn->setText("\xe2\x96\xa0"); // ■ (stop square)
+        m_sendBtn->setText("\xe2\x96\xa0");
         m_sendBtn->setStyleSheet(QStringLiteral(
             "QPushButton { background: %1; color: %2; border: none; "
-            "border-radius: 14px; font-size: 14px; font-weight: bold; }"
+            "border-radius: 14px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background: %3; }")
             .arg(p.red.name(), p.on_accent.name(), p.maroon.name()));
     } else {
         m_input->setEnabled(true);
         m_sendBtn->setEnabled(true);
-        m_sendBtn->setText("\xe2\x86\x91"); // ↑ (send arrow)
+        m_sendBtn->setText("\xe2\x86\x91");
         applyThemeColors();
     }
 }
@@ -516,21 +535,7 @@ bool InputBar::eventFilter(QObject *obj, QEvent *event)
                 });
             }
 
-        } else if (event->type() == QEvent::FocusIn) {
-            auto &p = ThemeManager::instance().palette();
-            m_focusAnim->stop();
-            m_focusAnim->setStartValue(p.border_standard);
-            m_focusAnim->setEndValue(p.mauve);
-            m_focusAnim->start();
-        } else if (event->type() == QEvent::FocusOut) {
-            auto &p = ThemeManager::instance().palette();
-            m_focusAnim->stop();
-            m_focusAnim->setStartValue(
-                m_focusAnim->currentValue().isValid()
-                    ? m_focusAnim->currentValue().value<QColor>()
-                    : p.mauve);
-            m_focusAnim->setEndValue(p.border_standard);
-            m_focusAnim->start();
+        } else if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) {
             // Dismiss popups when input loses focus (delay to allow click on popup)
             QTimer::singleShot(200, this, [this] {
                 if (!m_input->hasFocus()) {
@@ -575,13 +580,13 @@ void InputBar::dragEnterEvent(QDragEnterEvent *event)
 void InputBar::dragLeaveEvent(QDragLeaveEvent *)
 {
     auto &p = ThemeManager::instance().palette();
-    applyBorderColor(m_input->hasFocus() ? p.mauve : p.border_standard);
+    applyBorderColor(p.border_standard);
 }
 
 void InputBar::dropEvent(QDropEvent *event)
 {
     auto &p = ThemeManager::instance().palette();
-    applyBorderColor(m_input->hasFocus() ? p.mauve : p.border_standard);
+    applyBorderColor(p.border_standard);
 
     if (!event->mimeData()) return;
 
