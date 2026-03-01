@@ -127,7 +127,7 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 
     m_model = new QFileSystemModel(this);
     m_model->setIconProvider(new FileIconProvider);
-    m_model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
+    m_model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden);
     m_model->setNameFilterDisables(false);
 
     m_tree = new QTreeView(this);
