@@ -99,6 +99,7 @@ private:
     void updateInputBarContext();
     void showSuggestionChips(ChatTab &tab, const QString &responseText);
     int insertPosForTab(const ChatTab &tab) const;
+    void removeMessagesAfterTurn(int turnId);
 
     QTabWidget *m_tabWidget;
     QPushButton *m_newChatBtn;
@@ -113,4 +114,5 @@ private:
     Database *m_database = nullptr;
     CodeViewer *m_codeViewer = nullptr;
     QString m_workingDir;
+    int m_pendingRevertTurnId = 0;
 };

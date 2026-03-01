@@ -72,7 +72,6 @@ set(UI_SOURCES
     src/ui/SuggestionChips.cpp
     src/ui/InlineDiffOverlay.cpp
     src/ui/InlineEditBar.cpp
-    src/ui/CheckpointTimeline.cpp
 )
 
 set(UTIL_SOURCES
@@ -88,11 +87,14 @@ if(NOT APPLE)
     list(APPEND UTIL_SOURCES "${CMAKE_BINARY_DIR}/MacUtils_stub.cpp")
 endif()
 
+qt_add_resources(FONT_RESOURCES resources/fonts.qrc)
+
 add_executable(cccpp
     src/main.cpp
     ${CORE_SOURCES}
     ${UI_SOURCES}
     ${UTIL_SOURCES}
+    ${FONT_RESOURCES}
 )
 
 target_include_directories(cccpp PRIVATE

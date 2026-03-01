@@ -157,7 +157,7 @@ private:
 
         // Inline fallback template (matches theme.qss)
         return QStringLiteral(R"(
-* { font-family: ".AppleSystemUIFont", "Segoe UI", "Helvetica Neue", sans-serif; font-size: 13px; }
+* { font-family: "Inter"; font-size: 13px; }
 QMainWindow, QWidget { background: {{bg_window}}; color: {{text_primary}}; }
 QScrollBar:vertical { background: transparent; width: 8px; border: none; }
 QScrollBar::handle:vertical { background: {{border_subtle}}; border-radius: 4px; min-height: 24px; }

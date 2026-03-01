@@ -14,7 +14,6 @@ class ChatPanel;
 class TerminalPanel;
 class GitPanel;
 class SearchPanel;
-class CheckpointTimeline;
 class SessionManager;
 class DiffEngine;
 class Database;
@@ -69,7 +68,6 @@ private:
     ChatPanel *m_chatPanel;
     GitPanel *m_gitPanel;
     SearchPanel *m_searchPanel;
-    CheckpointTimeline *m_checkpointTimeline;
 
     SessionManager *m_sessionMgr;
     DiffEngine *m_diffEngine;

@@ -178,7 +178,7 @@ private:
             p.setBrush(color);
             p.drawRoundedRect(1, 1, sz - 2, sz - 2, 3, 3);
 
-            QFont f("SF Mono", 7);
+            QFont f("JetBrains Mono", 7);
             f.setBold(true);
             f.setPixelSize(glyph.size() > 2 ? 6 : 8);
             p.setFont(f);

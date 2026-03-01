@@ -156,7 +156,7 @@ void InlineDiffOverlay::rebuild()
         auto *lineLabel = new QLabel(
             QStringLiteral("Line %1").arg(hunk.startLine), hunkHeader);
         lineLabel->setStyleSheet(QStringLiteral(
-            "QLabel { color: %1; font-size: 11px; font-family: monospace; }")
+            "QLabel { color: %1; font-size: 11px; font-family: 'JetBrains Mono'; }")
             .arg(p.text_muted.name()));
         hdrLayout->addWidget(lineLabel);
         hdrLayout->addStretch();
@@ -189,7 +189,7 @@ void InlineDiffOverlay::rebuild()
         diffBrowser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         diffBrowser->setStyleSheet(QStringLiteral(
             "QTextBrowser { background: transparent; border: none; "
-            "font-family: 'SF Mono','JetBrains Mono','Menlo','Consolas',monospace; "
+            "font-family: 'JetBrains Mono'; "
             "font-size: 12px; }"));
 
         QString diffHtml;

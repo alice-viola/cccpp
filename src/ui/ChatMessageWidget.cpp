@@ -267,7 +267,7 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
 
     auto *summaryLabel = new QLabel(summary, this);
     summaryLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: %1; font-size: 11px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; }")
+        QStringLiteral("QLabel { color: %1; font-size: 11px; font-family: 'JetBrains Mono'; }")
         .arg(tm.hex("text_muted")));
     summaryLabel->setWordWrap(true);
     summaryLayout->addWidget(summaryLabel, 1);
@@ -284,7 +284,7 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     detailBrowser->setStyleSheet(
         QStringLiteral(
         "QTextBrowser { background: %1; color: %2; border: none; "
-        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 11px; padding: 4px; }")
+        "font-family: 'JetBrains Mono'; font-size: 11px; padding: 4px; }")
         .arg(tm.hex("bg_base"), tm.hex("text_secondary")));
     detailBrowser->setMaximumHeight(120);
     detailBrowser->setPlainText(summary);

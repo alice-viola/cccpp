@@ -17,7 +17,7 @@
    =================================================================== */
 
 * {
-    font-family: ".AppleSystemUIFont", "Segoe UI", "Helvetica Neue", sans-serif;
+    font-family: "Inter";
     font-size: 13px;
 }
 

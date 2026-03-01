@@ -34,7 +34,7 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     }
 
     return QStringLiteral(
-        "<div style='font-family:\"Inter\",\"SF Pro Text\",\"Segoe UI\",\"Helvetica Neue\",sans-serif;"
+        "<div style='font-family:\"Inter\";"
         "font-size:13px;line-height:1.5;color:%2;'>"
         "<p style='margin:0;'>%1</p></div>")
         .arg(final, ThemeManager::instance().hex("text_primary"));
@@ -123,12 +123,12 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
                 .arg(tm.hex("bg_window"), tm.hex("border_standard"), tm.hex("bg_raised"));
             headerHtml += QStringLiteral(
                 "<span style='color:%1;font-size:12px;font-weight:600;"
-                "font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;'>%2</span>")
+                "font-family:\"JetBrains Mono\";'>%2</span>")
                 .arg(tm.hex("text_primary"), escapeHtml(cardTitle));
         } else {
             headerHtml = QStringLiteral(
                 "<div style='background:%1;padding:4px 8px;border-radius:4px 4px 0 0;"
-                "display:flex;font-family:monospace;'>")
+                "display:flex;font-family:\"JetBrains Mono\";'>")
                 .arg(tm.hex("bg_base"));
             if (!lang.isEmpty()) {
                 headerHtml += QStringLiteral(
@@ -164,7 +164,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
                 "<div style='%6'>"
                 "%1"
                 "<pre style='background:%2;color:%3;padding:6px 8px;"
-                "border-radius:0 0 6px 6px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
+                "border-radius:0 0 6px 6px;font-family:\"JetBrains Mono\";"
                 "font-size:12px;overflow-x:auto;margin:0;line-height:1.3;border:none;'><code>%5</code></pre>"
                 "</div>")
                 .arg(headerHtml,
@@ -173,7 +173,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
         } else {
             replacement = QStringLiteral(
                 "%1<pre style='background:%2;color:%3;padding:6px 8px;"
-                "border-radius:0 0 4px 4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;"
+                "border-radius:0 0 4px 4px;font-family:\"JetBrains Mono\";"
                 "font-size:12px;overflow-x:auto;margin:0 0 4px;line-height:1.3;"
                 "border:1px solid %4;border-top:none;'><code>%5</code></pre>")
                 .arg(headerHtml,
@@ -195,7 +195,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
         result.replace(inlineCode,
             QStringLiteral(
             "<code style='background:%1;color:%2;padding:2px 5px;"
-            "border-radius:4px;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;font-size:12px;'>\\1</code>")
+            "border-radius:4px;font-family:\"JetBrains Mono\";font-size:12px;'>\\1</code>")
             .arg(tm.hex("bg_raised"), tm.hex("mauve")));
     }
 

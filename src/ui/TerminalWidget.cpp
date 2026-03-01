@@ -16,7 +16,7 @@
 
 TerminalWidget::TerminalWidget(QWidget *parent)
     : QWidget(parent)
-    , m_font("SF Mono", 13)
+    , m_font("JetBrains Mono", 13)
 {
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_InputMethodEnabled, true);

@@ -196,7 +196,7 @@ static void applyThemeToLexer(QsciLexer *lexer)
 
     const auto &pal = ThemeManager::instance().palette();
 
-    QFont monoFont("SF Mono", 13);
+    QFont monoFont("JetBrains Mono", 13);
     lexer->setFont(monoFont);
     lexer->setDefaultFont(monoFont);
     lexer->setPaper(pal.bg_window);
@@ -500,8 +500,8 @@ QsciScintilla *CodeViewer::createEditor()
     ed->setReadOnly(false);
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsFont(QFont("SF Mono", 12));
-    ed->setFont(QFont("SF Mono", 13));
+    ed->setMarginsFont(QFont("JetBrains Mono", 12));
+    ed->setFont(QFont("JetBrains Mono", 13));
     ed->setTabWidth(4);
     ed->setIndentationsUseTabs(false);
     ed->setAutoIndent(true);
@@ -553,7 +553,7 @@ QPlainTextEdit *CodeViewer::createEditor()
     ed->setTabStopDistance(32);
     ed->setStyleSheet(
         QStringLiteral("QPlainTextEdit { background: %1; color: %2; border: none; "
-        "font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 13px; }")
+        "font-family: 'JetBrains Mono'; font-size: 13px; }")
             .arg(pal.bg_window.name(), pal.text_primary.name()));
     return ed;
 }
@@ -775,7 +775,7 @@ void CodeViewer::openMarkdown(const QString &filePath)
         QStringLiteral(
         "QTextBrowser {"
         "  background: %1; color: %2;"
-        "  font-family: '.AppleSystemUIFont','Segoe UI','Helvetica Neue',sans-serif;"
+        "  font-family: 'Inter';"
         "  font-size: 13px; padding: 16px 24px;"
         "  selection-background-color: %3;"
         "}")
@@ -787,9 +787,9 @@ void CodeViewer::openMarkdown(const QString &filePath)
         "h3 { color: %3; font-size: 15px; margin: 14px 0 4px 0; }"
         "h4 { color: %4; font-size: 14px; margin: 12px 0 4px 0; }"
         "code { background: %5; color: %6; padding: 1px 4px;"
-        "       border-radius: 3px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 12px; }"
+        "       border-radius: 3px; font-family: 'JetBrains Mono'; font-size: 12px; }"
         "pre  { background: %7; border: 1px solid %8; border-radius: 6px;"
-        "       padding: 10px 12px; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; font-size: 12px;"
+        "       padding: 10px 12px; font-family: 'JetBrains Mono'; font-size: 12px;"
         "       color: %9; }"
         "a    { color: %2; }"
         "table { border-collapse: collapse; margin: 8px 0; }"

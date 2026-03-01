@@ -345,9 +345,10 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
 
         if (t.currentAssistantMsg) {
-            t.currentAssistantMsg->showRevertButton(true);
+            bool hasCheckpoint = m_database &&
+                !m_database->checkpointUuid(t.sessionId, t.turnId).isEmpty();
+            t.currentAssistantMsg->showRevertButton(hasCheckpoint);
 
-            // Generate follow-up suggestions
             showSuggestionChips(t, t.currentAssistantMsg->rawContent());
 
             t.currentAssistantMsg = nullptr;
@@ -485,7 +486,9 @@ void ChatPanel::restoreSession(const QString &sessionId)
         if (!td.assistantContent.isEmpty()) {
             auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, td.assistantContent);
             w->setTurnId(turnId);
-            w->showRevertButton(true);
+            bool hasCheckpoint = m_database &&
+                !m_database->checkpointUuid(sessionId, turnId).isEmpty();
+            w->showRevertButton(hasCheckpoint);
             tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
             connect(w, &ChatMessageWidget::fileNavigationRequested,
@@ -627,8 +630,10 @@ void ChatPanel::onRevertRequested(int turnId)
     const auto &tab = m_tabs[idx];
 
     QString uuid = m_database->checkpointUuid(tab.sessionId, turnId);
-    if (!uuid.isEmpty())
-        rewindToCheckpoint(uuid);
+    if (uuid.isEmpty()) return;
+
+    m_pendingRevertTurnId = turnId;
+    rewindToCheckpoint(uuid);
 }
 
 void ChatPanel::rewindToCheckpoint(const QString &checkpointUuid)
@@ -643,6 +648,9 @@ void ChatPanel::rewindToCheckpoint(const QString &checkpointUuid)
 
     connect(tab.process, &ClaudeProcess::rewindCompleted, this,
             [this](bool success) {
+        if (success && m_pendingRevertTurnId > 0)
+            removeMessagesAfterTurn(m_pendingRevertTurnId);
+        m_pendingRevertTurnId = 0;
         emit rewindCompleted(success);
     }, Qt::SingleShotConnection);
 
@@ -659,6 +667,77 @@ void ChatPanel::rewindCurrentTurn()
     auto checkpoints = m_database->loadCheckpoints(tab.sessionId);
     if (!checkpoints.isEmpty())
         rewindToCheckpoint(checkpoints.last().uuid);
+}
+
+void ChatPanel::removeMessagesAfterTurn(int turnId)
+{
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) return;
+    auto &tab = m_tabs[idx];
+    if (!tab.messagesLayout) return;
+
+    // Walk backwards, removing everything until we hit a ChatMessageWidget
+    // with turnId <= the reverted turn (the assistant message for that turn).
+    // We keep the assistant message of the reverted turn but mark it as reverted.
+    for (int i = tab.messagesLayout->count() - 1; i >= 0; --i) {
+        QLayoutItem *item = tab.messagesLayout->itemAt(i);
+        if (!item || !item->widget()) continue;
+        QWidget *w = item->widget();
+
+        // Never remove the stretch, thinking indicator, or welcome widget
+        if (w == tab.thinkingIndicator || w == tab.welcomeWidget)
+            continue;
+
+        auto *chatMsg = qobject_cast<ChatMessageWidget *>(w);
+        if (chatMsg) {
+            if (chatMsg->turnId() > turnId) {
+                tab.messagesLayout->removeWidget(w);
+                w->deleteLater();
+                continue;
+            }
+            // This is the assistant message for the reverted turn — mark it
+            if (chatMsg->turnId() == turnId
+                && chatMsg->rawContent().isEmpty() == false) {
+                chatMsg->setReverted(true);
+                chatMsg->showRevertButton(false);
+            }
+            continue;
+        }
+
+        // ToolCallGroupWidget / SuggestionChips after the reverted turn:
+        // we can't read turnId from these, so remove anything that appears
+        // after the last kept ChatMessageWidget.
+        // Strategy: once we've processed all ChatMessageWidgets above, come
+        // back and remove orphaned non-message widgets. For now, skip.
+    }
+
+    // Second pass: remove orphaned non-ChatMessageWidget widgets that sit
+    // after the last remaining ChatMessageWidget.
+    int lastMsgIdx = -1;
+    for (int i = tab.messagesLayout->count() - 1; i >= 0; --i) {
+        QLayoutItem *item = tab.messagesLayout->itemAt(i);
+        if (!item || !item->widget()) continue;
+        if (qobject_cast<ChatMessageWidget *>(item->widget())) {
+            lastMsgIdx = i;
+            break;
+        }
+    }
+    if (lastMsgIdx >= 0) {
+        for (int i = tab.messagesLayout->count() - 1; i > lastMsgIdx; --i) {
+            QLayoutItem *item = tab.messagesLayout->itemAt(i);
+            if (!item || !item->widget()) continue;
+            QWidget *w = item->widget();
+            if (w == tab.thinkingIndicator || w == tab.welcomeWidget)
+                continue;
+            tab.messagesLayout->removeWidget(w);
+            w->deleteLater();
+        }
+    }
+
+    tab.turnId = turnId;
+    tab.currentAssistantMsg = nullptr;
+    tab.currentToolGroup = nullptr;
+    tab.suggestionChips = nullptr;
 }
 
 QString ChatPanel::buildContextPreamble(const QString &userText)
@@ -935,11 +1014,11 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         "<div style='background:%4;border:1px solid %5;border-radius:6px;overflow:hidden;'>"
         "<div style='background:%6;padding:4px 8px;border-bottom:1px solid %5;'>"
         "<a href='cccpp://open?file=%1&line=%3' style='color:%7;text-decoration:none;font-size:11px;"
-        "font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;'>\xf0\x9f\x93\x84 %2</a></div>")
+        "font-family:\"JetBrains Mono\";'>\xf0\x9f\x93\x84 %2</a></div>")
         .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine),
              thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"), thm.hex("blue"));
 
-    html += "<div style='padding:2px 0;font-family:\"SF Mono\",\"JetBrains Mono\",\"Fira Code\",\"Menlo\",\"Consolas\",monospace;font-size:12px;line-height:1.4;'>";
+    html += "<div style='padding:2px 0;font-family:\"JetBrains Mono\";font-size:12px;line-height:1.4;'>";
 
     if (!oldStr.isEmpty()) {
         QStringList oldLines = oldStr.split('\n');

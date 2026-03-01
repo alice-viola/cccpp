@@ -60,7 +60,7 @@ void InlineEditBar::applyThemeColors()
         .arg(p.bg_surface.name(), p.blue.name()));
 
     m_contextLabel->setStyleSheet(QStringLiteral(
-        "QLabel { color: %1; font-size: 11px; font-family: monospace; }")
+        "QLabel { color: %1; font-size: 11px; font-family: 'JetBrains Mono'; }")
         .arg(p.text_muted.name()));
 
     m_input->setStyleSheet(QStringLiteral(

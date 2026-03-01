@@ -5,7 +5,6 @@
 #include "ui/TerminalPanel.h"
 #include "ui/GitPanel.h"
 #include "ui/SearchPanel.h"
-#include "ui/CheckpointTimeline.h"
 #include "ui/ModelSelector.h"
 #include "ui/ToastManager.h"
 #include "ui/ThemeManager.h"
@@ -86,8 +85,6 @@ void MainWindow::setupUI()
     m_gitPanel = new GitPanel(this);
     m_gitPanel->setGitManager(m_gitManager);
     m_searchPanel = new SearchPanel(this);
-    m_checkpointTimeline = new CheckpointTimeline(this);
-    m_checkpointTimeline->setDatabase(m_database);
 
     m_chatPanel->setSessionManager(m_sessionMgr);
     m_chatPanel->setDiffEngine(m_diffEngine);
@@ -100,7 +97,6 @@ void MainWindow::setupUI()
     m_leftTabs->addTab(m_workspaceTree, "Files");
     m_leftTabs->addTab(m_searchPanel, "Search");
     m_leftTabs->addTab(m_gitPanel, "Git");
-    m_leftTabs->addTab(m_checkpointTimeline, "History");
 
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
     m_centerSplitter->setHandleWidth(1);
@@ -188,11 +184,6 @@ void MainWindow::setupUI()
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
             this, &MainWindow::onBeforeTurnBegins);
 
-    connect(m_chatPanel, &ChatPanel::activeSessionChanged, this, [this](const QString &sid) {
-        if (!sid.isEmpty() && !sid.startsWith("pending-"))
-            m_checkpointTimeline->setSessionId(sid);
-    });
-
     connect(m_codeViewer, &CodeViewer::fileSaved, this, [this](const QString &) {
         syncEditorContextToChat();
     });
@@ -235,28 +226,16 @@ void MainWindow::setupUI()
         m_codeViewer->refreshFile(filePath);
     });
 
-    // Handle rewind completion (from ChatPanel revert button or CheckpointTimeline)
+    // Handle rewind completion from ChatPanel revert button
     connect(m_chatPanel, &ChatPanel::rewindCompleted, this, [this](bool success) {
         if (success) {
             ToastManager::instance().show("Files restored", ToastType::Success, 2500);
             m_gitManager->refreshStatus();
-            m_checkpointTimeline->refresh();
             for (const QString &fp : m_codeViewer->openFiles())
                 m_codeViewer->forceReloadFile(fp);
         } else {
             ToastManager::instance().show("Rewind failed", ToastType::Error, 3000);
         }
-    });
-
-    // Checkpoint timeline restore
-    connect(m_checkpointTimeline, &CheckpointTimeline::restoreRequested, this,
-            [this](const QString &checkpointUuid) {
-        if (checkpointUuid.isEmpty()) {
-            ToastManager::instance().show("No checkpoint data available", ToastType::Error, 3000);
-            return;
-        }
-        ToastManager::instance().show("Rewinding files...", ToastType::Info, 2000);
-        m_chatPanel->rewindToCheckpoint(checkpointUuid);
     });
 
     // Git panel: open files on request
@@ -318,12 +297,6 @@ void MainWindow::setupStatusBar()
         } else {
             m_statusProcessing->setStyleSheet("");
             m_statusProcessing->clear();
-
-            // Refresh checkpoint timeline after a turn completes
-            // (session ID may have changed from pending-* to real ID)
-            QString sid = m_chatPanel->currentSessionId();
-            if (!sid.isEmpty() && !sid.startsWith("pending-"))
-                m_checkpointTimeline->setSessionId(sid);
         }
     });
 }
@@ -439,15 +412,6 @@ void MainWindow::setupMenuBar()
     connect(searchAction, &QAction::triggered, this, [this] {
         m_leftTabs->setVisible(true);
         m_leftTabs->setCurrentWidget(m_searchPanel);
-        updateToggleButtons();
-    });
-
-    auto *checkpointAction = viewMenu->addAction("&Checkpoints");
-    checkpointAction->setShortcut(QKeySequence("Ctrl+Shift+H"));
-    connect(checkpointAction, &QAction::triggered, this, [this] {
-        m_leftTabs->setVisible(true);
-        m_leftTabs->setCurrentWidget(m_checkpointTimeline);
-        m_checkpointTimeline->refresh();
         updateToggleButtons();
     });
 
@@ -676,8 +640,6 @@ void MainWindow::openWorkspace(const QString &path)
             latestSessionId = s.sessionId;
         }
     }
-    if (!latestSessionId.isEmpty())
-        m_checkpointTimeline->setSessionId(latestSessionId);
 }
 
 void MainWindow::onFileSelected(const QString &filePath)
@@ -735,11 +697,6 @@ void MainWindow::onBeforeTurnBegins()
 {
     if (m_codeViewer->hasDirtyTabs())
         m_codeViewer->saveAllFiles();
-
-    // Keep checkpoint timeline in sync with the active chat session
-    QString sid = m_chatPanel->currentSessionId();
-    if (!sid.isEmpty() && !sid.startsWith("pending-"))
-        m_checkpointTimeline->setSessionId(sid);
 }
 
 void MainWindow::onToggleTerminal()

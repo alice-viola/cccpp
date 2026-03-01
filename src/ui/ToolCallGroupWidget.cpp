@@ -188,7 +188,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
     browser->setFrameShape(QFrame::NoFrame);
     browser->setStyleSheet(
         QStringLiteral(
-        "QTextBrowser { background: %1; border: none; font-family: 'SF Mono','JetBrains Mono','Fira Code','Menlo','Consolas',monospace; "
+        "QTextBrowser { background: %1; border: none; font-family: 'JetBrains Mono'; "
         "font-size: 12px; }")
         .arg(tm.hex("bg_base")));
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
