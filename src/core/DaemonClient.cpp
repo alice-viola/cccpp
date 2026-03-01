@@ -9,10 +9,13 @@
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QProcess>
 #include <QThread>
+#include <algorithm>
 #include <QFileInfo>
 #include <QUuid>
+#include <QDateTime>
 #include <QDebug>
 
 DaemonClient::DaemonClient(QObject *parent)
@@ -33,9 +36,17 @@ void DaemonClient::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; 
 void DaemonClient::setDatabase(Database *db) { m_database = db; }
 void DaemonClient::setGitManager(GitManager *git) { m_gitManager = git; }
 
+static QString normalizePath(const QString &path)
+{
+    QString p = path;
+    while (p.endsWith('/') && p.length() > 1)
+        p.chop(1);
+    return p;
+}
+
 void DaemonClient::setWorkingDirectory(const QString &dir)
 {
-    m_workingDir = dir;
+    m_workingDir = normalizePath(dir);
     // Update existing sessions
     for (auto &s : m_sessions) {
         if (s.process)
@@ -81,7 +92,7 @@ bool DaemonClient::spawnDaemon()
 
 void DaemonClient::registerWorkspace(const QString &workspace, const QString &name)
 {
-    m_workingDir = workspace;
+    m_workingDir = normalizePath(workspace);
     m_workspaceName = name.isEmpty() ? QFileInfo(workspace).fileName() : name;
 
     QJsonObject msg;
@@ -136,6 +147,7 @@ void DaemonClient::processMessage(const QByteArray &line)
 {
     QJsonObject msg = QJsonDocument::fromJson(line).object();
     QString type = msg["type"].toString();
+    qDebug() << "[DaemonClient] IPC received:" << type;
 
     if (type == "message") {
         qint64 chatId = static_cast<qint64>(msg["chat_id"].toDouble());
@@ -148,6 +160,12 @@ void DaemonClient::processMessage(const QByteArray &line)
         QString args = msg["args"].toString();
         auto &session = getOrCreateSession(chatId);
         handleCommand(session, cmd, args);
+    } else if (type == "callback_query") {
+        qint64 chatId = static_cast<qint64>(msg["chat_id"].toDouble());
+        QString queryId = msg["callback_query_id"].toString();
+        QString data = msg["data"].toString();
+        auto &session = getOrCreateSession(chatId);
+        handleCallbackQuery(session, queryId, data);
     } else if (type == "message_id") {
         // Response to send_message_with_id request
         QString requestId = msg["request_id"].toString();
@@ -190,11 +208,11 @@ void DaemonClient::createNewProcess(DaemonChatSession &session)
 
     session.process = new ClaudeProcess(this);
     session.process->setWorkingDirectory(m_workingDir);
+    qDebug() << "[DaemonClient] New process, workspace:" << m_workingDir;
 
-    if (m_sessionMgr) {
+    // Don't pass a session ID yet — let Claude start fresh and return the real one via resultReady
+    if (m_sessionMgr)
         session.sessionId = m_sessionMgr->createSession(m_workingDir);
-        session.process->setSessionId(session.sessionId);
-    }
 
     wireProcessSignals(session);
 }
@@ -203,6 +221,10 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
 {
     auto *parser = session.process->streamParser();
     qint64 chatId = session.chatId;
+
+    connect(session.process, &ClaudeProcess::started, this, [chatId] {
+        qDebug() << "[DaemonClient] claude process started for chat" << chatId;
+    });
 
     connect(parser, &StreamParser::textDelta, this, [this, chatId](const QString &text) {
         if (!m_sessions.contains(chatId)) return;
@@ -245,7 +267,15 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
         s.processing = false;
         s.flushTimer->stop();
         QString finalText = s.accumulatedText.trimmed();
-        if (finalText.isEmpty()) finalText = "(No text response)";
+        if (finalText.isEmpty()) {
+            if (!s.toolSummary.isEmpty()) {
+                finalText = "Done.\n\nEdited:\n";
+                for (const QString &t : s.toolSummary)
+                    finalText += "  " + t + "\n";
+            } else {
+                finalText = "Done.";
+            }
+        }
         sendFinalResponse(s, finalText);
 
         s.accumulatedText.clear();
@@ -255,6 +285,7 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
 
     connect(session.process, &ClaudeProcess::errorOccurred, this,
             [this, chatId](const QString &error) {
+        qDebug() << "[DaemonClient] process error for chat" << chatId << ":" << error;
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
         s.processing = false;
@@ -266,6 +297,7 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
 
     connect(session.process, &ClaudeProcess::finished, this,
             [this, chatId](int exitCode) {
+        qDebug() << "[DaemonClient] process finished for chat" << chatId << "exit code:" << exitCode;
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
         if (s.processing) {
@@ -274,8 +306,8 @@ void DaemonClient::wireProcessSignals(DaemonChatSession &session)
             QString text = s.accumulatedText.trimmed();
             if (!text.isEmpty())
                 sendFinalResponse(s, text);
-            else if (exitCode != 0)
-                sendResponse(chatId, QString("Process exited with code %1").arg(exitCode));
+            else
+                sendResponse(chatId, QString("Process exited unexpectedly (code %1)").arg(exitCode));
             s.accumulatedText.clear();
             s.toolSummary.clear();
             s.statusMessageId = 0;
@@ -348,6 +380,19 @@ void DaemonClient::handleFreeText(DaemonChatSession &session, const QString &tex
         sendResponse(session.chatId, "Still processing the previous message. Use /cancel to abort.");
         return;
     }
+    // Use first message as session title (mirrors history panel behaviour)
+    if (!session.titleSet && !session.sessionId.isEmpty()) {
+        session.titleSet = true;
+        QString title = text.trimmed().left(50);
+        if (m_sessionMgr) {
+            m_sessionMgr->setSessionTitle(session.sessionId, title);
+            if (m_database)
+                m_database->saveSession(m_sessionMgr->sessionInfo(session.sessionId));
+        }
+    }
+    qDebug() << "[DaemonClient] Sending to claude, workspace:" << m_workingDir
+             << "session:" << session.sessionId
+             << "text:" << text.left(80);
     session.processing = true;
     session.accumulatedText.clear();
     session.toolSummary.clear();
@@ -376,23 +421,92 @@ void DaemonClient::handleNew(DaemonChatSession &session)
     sendResponse(session.chatId, "New session created: " + session.sessionId);
 }
 
+static QJsonArray buildSessionKeyboardRows(const QList<SessionInfo> &sessions)
+{
+    QJsonArray rows;
+    for (const auto &s : sessions) {
+        QString title = s.title.isEmpty() ? s.sessionId.left(8) : s.title;
+        if (title.length() > 22) title = title.left(19) + "...";
+
+        QString dateStr;
+        if (s.updatedAt > 0) {
+            QDateTime dt = QDateTime::fromSecsSinceEpoch(s.updatedAt);
+            dateStr = "  " + dt.toString("MMM d, HH:mm");
+        }
+
+        QJsonObject btn;
+        btn["text"] = title + dateStr;
+        btn["callback_data"] = "resume:" + s.sessionId;
+        rows.append(QJsonArray{btn});
+    }
+
+    QJsonObject newBtn;
+    newBtn["text"] = "+ New chat";
+    newBtn["callback_data"] = "new";
+    rows.append(QJsonArray{newBtn});
+    return rows;
+}
+
 void DaemonClient::handleSessions(DaemonChatSession &session)
 {
-    if (!m_sessionMgr) {
-        sendResponse(session.chatId, "Session manager not available.");
+    QList<SessionInfo> sessions;
+
+    if (m_database) {
+        auto all = m_database->loadSessions();
+        qDebug() << "[DaemonClient] handleSessions: DB has" << all.size() << "total sessions, workingDir:" << m_workingDir;
+        for (const auto &s : all) {
+            if (normalizePath(s.workspace) == m_workingDir)
+                sessions.append(s);
+        }
+        std::sort(sessions.begin(), sessions.end(), [](const SessionInfo &a, const SessionInfo &b) {
+            return a.updatedAt > b.updatedAt;
+        });
+        if (sessions.size() > 8) sessions = sessions.mid(0, 8);
+    } else if (m_sessionMgr) {
+        sessions = m_sessionMgr->allSessions();
+        qDebug() << "[DaemonClient] handleSessions: SessionMgr has" << sessions.size() << "sessions";
+    } else {
+        qDebug() << "[DaemonClient] handleSessions: no database or sessionMgr!";
+    }
+
+    qDebug() << "[DaemonClient] handleSessions: sending keyboard with" << sessions.size() << "sessions to chatId" << session.chatId;
+    QString prompt = sessions.isEmpty()
+        ? "No previous sessions. Start a new chat:"
+        : "Choose a session to resume:";
+    sendWithKeyboard(session.chatId, prompt, buildSessionKeyboardRows(sessions));
+}
+
+void DaemonClient::handleResume(DaemonChatSession &session, const QString &sessionId)
+{
+    if (session.processing) {
+        sendResponse(session.chatId, "Cannot switch while processing. Use /cancel first.");
         return;
     }
-    auto sessions = m_sessionMgr->allSessions();
-    if (sessions.isEmpty()) {
-        sendResponse(session.chatId, "No sessions.");
-        return;
+    if (session.process) {
+        session.process->cancel();
+        session.process->deleteLater();
     }
-    QString text = "Sessions:\n";
-    for (const auto &s : sessions) {
-        text += QString("  %1 - %2 [%3]\n")
-            .arg(s.sessionId.left(8), s.title.isEmpty() ? "(untitled)" : s.title, s.mode);
-    }
-    sendResponse(session.chatId, text);
+    session.process = new ClaudeProcess(this);
+    session.process->setWorkingDirectory(m_workingDir);
+    session.process->setSessionId(sessionId);
+    session.sessionId = sessionId;
+    wireProcessSignals(session);
+    sendResponse(session.chatId, "Session resumed. Send a message to continue.");
+}
+
+void DaemonClient::handleCallbackQuery(DaemonChatSession &session,
+                                       const QString &queryId, const QString &data)
+{
+    // Acknowledge to Telegram (removes the spinner on the button)
+    QJsonObject answer;
+    answer["type"] = "answer_callback";
+    answer["callback_query_id"] = queryId;
+    sendToDaemon(QJsonDocument(answer).toJson(QJsonDocument::Compact));
+
+    if (data == "new")
+        handleNew(session);
+    else if (data.startsWith("resume:"))
+        handleResume(session, data.mid(7));
 }
 
 void DaemonClient::handleFiles(DaemonChatSession &session)
@@ -569,6 +683,17 @@ void DaemonClient::sendResponse(qint64 chatId, const QString &text)
     msg["type"] = "response";
     msg["chat_id"] = chatId;
     msg["text"] = text;
+    sendToDaemon(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+}
+
+void DaemonClient::sendWithKeyboard(qint64 chatId, const QString &text, const QJsonArray &keyboard)
+{
+    qDebug() << "[DaemonClient] sendWithKeyboard chatId:" << chatId << "connected:" << isConnected();
+    QJsonObject msg;
+    msg["type"] = "send_keyboard";
+    msg["chat_id"] = chatId;
+    msg["text"] = text;
+    msg["keyboard"] = keyboard;
     sendToDaemon(QJsonDocument(msg).toJson(QJsonDocument::Compact));
 }
 

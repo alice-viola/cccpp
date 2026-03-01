@@ -6,9 +6,41 @@
 #include "core/Database.h"
 #include "core/GitManager.h"
 
+#include <QJsonArray>
+#include <QDateTime>
 #include <QDebug>
+#include <algorithm>
 
 static const int kFlushIntervalMs = 2000;
+
+static QJsonObject buildSessionKeyboard(const QList<SessionInfo> &sessions)
+{
+    QJsonArray rows;
+    for (const auto &s : sessions) {
+        QString title = s.title.isEmpty() ? s.sessionId.left(8) : s.title;
+        if (title.length() > 22) title = title.left(19) + "...";
+
+        QString dateStr;
+        if (s.updatedAt > 0) {
+            QDateTime dt = QDateTime::fromSecsSinceEpoch(s.updatedAt);
+            dateStr = "  " + dt.toString("MMM d, HH:mm");
+        }
+
+        QJsonObject btn;
+        btn["text"] = title + dateStr;
+        btn["callback_data"] = "resume:" + s.sessionId;
+        rows.append(QJsonArray{btn});
+    }
+
+    QJsonObject newBtn;
+    newBtn["text"] = "+ New chat";
+    newBtn["callback_data"] = "new";
+    rows.append(QJsonArray{newBtn});
+
+    QJsonObject markup;
+    markup["inline_keyboard"] = rows;
+    return markup;
+}
 
 TelegramBridge::TelegramBridge(TelegramApi *api, QObject *parent)
     : QObject(parent)
@@ -16,21 +48,32 @@ TelegramBridge::TelegramBridge(TelegramApi *api, QObject *parent)
 {
     connect(m_api, &TelegramApi::messageReceived,
             this, &TelegramBridge::onMessage);
+    connect(m_api, &TelegramApi::callbackQueryReceived,
+            this, &TelegramBridge::onCallbackQuery);
 }
 
 void TelegramBridge::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; }
 void TelegramBridge::setDatabase(Database *db) { m_database = db; }
 void TelegramBridge::setGitManager(GitManager *git) { m_gitManager = git; }
 
+static QString normalizePath(const QString &path)
+{
+    QString p = path;
+    while (p.endsWith('/') && p.length() > 1)
+        p.chop(1);
+    return p;
+}
+
 void TelegramBridge::setWorkingDirectory(const QString &dir)
 {
-    m_workingDir = dir;
+    m_workingDir = normalizePath(dir);
 }
 
 // ---- Message routing ----
 
 void TelegramBridge::onMessage(const TelegramMessage &msg)
 {
+    qDebug() << "[TelegramBridge] Message from" << msg.userId << ":" << msg.text.left(80);
     auto &session = getOrCreateSession(msg.chatId);
     QString text = msg.text.trimmed();
 
@@ -88,11 +131,11 @@ void TelegramBridge::createNewProcess(TelegramSession &session)
 
     session.process = new ClaudeProcess(this);
     session.process->setWorkingDirectory(session.workspace);
+    qDebug() << "[TelegramBridge] New process, workspace:" << session.workspace;
 
-    if (m_sessionMgr) {
+    // Don't pass a session ID yet — let Claude start fresh and return the real one via resultReady
+    if (m_sessionMgr)
         session.sessionId = m_sessionMgr->createSession(session.workspace);
-        session.process->setSessionId(session.sessionId);
-    }
 
     wireProcessSignals(session);
 }
@@ -101,6 +144,10 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
 {
     auto *parser = session.process->streamParser();
     qint64 chatId = session.chatId;
+
+    connect(session.process, &ClaudeProcess::started, this, [chatId] {
+        qDebug() << "[TelegramBridge] claude process started for chat" << chatId;
+    });
 
     connect(parser, &StreamParser::textDelta, this, [this, chatId](const QString &text) {
         if (!m_sessions.contains(chatId)) return;
@@ -146,8 +193,15 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
         // Send final accumulated text
         s.flushTimer->stop();
         QString finalText = s.accumulatedText.trimmed();
-        if (finalText.isEmpty())
-            finalText = "(No text response)";
+        if (finalText.isEmpty()) {
+            if (!s.toolSummary.isEmpty()) {
+                finalText = "Done.\n\nEdited:\n";
+                for (const QString &t : s.toolSummary)
+                    finalText += "  " + t + "\n";
+            } else {
+                finalText = "Done.";
+            }
+        }
         sendFinalResponse(s, finalText);
 
         s.accumulatedText.clear();
@@ -157,6 +211,7 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
 
     connect(session.process, &ClaudeProcess::errorOccurred, this,
             [this, chatId](const QString &error) {
+        qDebug() << "[TelegramBridge] process error for chat" << chatId << ":" << error;
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
         s.processing = false;
@@ -168,17 +223,17 @@ void TelegramBridge::wireProcessSignals(TelegramSession &session)
 
     connect(session.process, &ClaudeProcess::finished, this,
             [this, chatId](int exitCode) {
+        qDebug() << "[TelegramBridge] process finished for chat" << chatId << "exit code:" << exitCode;
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
         if (s.processing) {
-            // Process ended unexpectedly
             s.processing = false;
             s.flushTimer->stop();
             QString text = s.accumulatedText.trimmed();
             if (!text.isEmpty())
                 sendFinalResponse(s, text);
-            else if (exitCode != 0)
-                send(chatId, QString("Process exited with code %1").arg(exitCode));
+            else
+                send(chatId, QString("Process exited unexpectedly (code %1)").arg(exitCode));
             s.accumulatedText.clear();
             s.toolSummary.clear();
             s.statusMessageId = 0;
@@ -241,6 +296,21 @@ void TelegramBridge::handleFreeText(TelegramSession &session, const QString &tex
         return;
     }
 
+    // Use first message as session title (mirrors history panel behaviour)
+    if (!session.titleSet && !session.sessionId.isEmpty()) {
+        session.titleSet = true;
+        QString title = text.trimmed().left(50);
+        if (m_sessionMgr) {
+            m_sessionMgr->setSessionTitle(session.sessionId, title);
+            if (m_database)
+                m_database->saveSession(m_sessionMgr->sessionInfo(session.sessionId));
+        }
+    }
+
+    qDebug() << "[TelegramBridge] Sending to claude, workspace:" << session.workspace
+             << "session:" << session.sessionId
+             << "text:" << text.left(80);
+
     session.processing = true;
     session.accumulatedText.clear();
     session.toolSummary.clear();
@@ -272,23 +342,60 @@ void TelegramBridge::handleNew(TelegramSession &session)
 
 void TelegramBridge::handleSessions(TelegramSession &session)
 {
-    if (!m_sessionMgr) {
-        send(session.chatId, "Session manager not available.");
-        return;
+    QList<SessionInfo> sessions;
+
+    if (m_database) {
+        auto all = m_database->loadSessions();
+        for (const auto &s : all) {
+            if (normalizePath(s.workspace) == normalizePath(session.workspace))
+                sessions.append(s);
+        }
+        std::sort(sessions.begin(), sessions.end(), [](const SessionInfo &a, const SessionInfo &b) {
+            return a.updatedAt > b.updatedAt;
+        });
+        if (sessions.size() > 8) sessions = sessions.mid(0, 8);
+    } else if (m_sessionMgr) {
+        sessions = m_sessionMgr->allSessions();
     }
 
-    auto sessions = m_sessionMgr->allSessions();
-    if (sessions.isEmpty()) {
-        send(session.chatId, "No sessions.");
+    QString prompt = sessions.isEmpty()
+        ? "No previous sessions. Start a new chat:"
+        : "Choose a session to resume:";
+    sendWithKeyboard(session.chatId, prompt, buildSessionKeyboard(sessions));
+}
+
+void TelegramBridge::handleResume(TelegramSession &session, const QString &sessionId)
+{
+    if (session.processing) {
+        send(session.chatId, "Cannot switch while processing. Use /cancel first.");
         return;
     }
-
-    QString text = "Sessions:\n";
-    for (const auto &s : sessions) {
-        text += QString("  %1 - %2 [%3]\n")
-            .arg(s.sessionId.left(8), s.title.isEmpty() ? "(untitled)" : s.title, s.mode);
+    if (session.process) {
+        session.process->cancel();
+        session.process->deleteLater();
     }
-    send(session.chatId, text);
+    session.process = new ClaudeProcess(this);
+    session.process->setWorkingDirectory(session.workspace);
+    session.process->setSessionId(sessionId);
+    session.sessionId = sessionId;
+    wireProcessSignals(session);
+    send(session.chatId, "Session resumed. Send a message to continue.");
+}
+
+void TelegramBridge::onCallbackQuery(const TelegramCallback &cb)
+{
+    m_api->answerCallbackQuery(cb.callbackQueryId);
+    auto &session = getOrCreateSession(cb.chatId);
+
+    if (cb.data == "new")
+        handleNew(session);
+    else if (cb.data.startsWith("resume:"))
+        handleResume(session, cb.data.mid(7));
+}
+
+void TelegramBridge::sendWithKeyboard(qint64 chatId, const QString &text, const QJsonObject &keyboard)
+{
+    m_api->sendMessage(chatId, text, {}, nullptr, keyboard);
 }
 
 void TelegramBridge::handleFiles(TelegramSession &session)

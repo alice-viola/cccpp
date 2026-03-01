@@ -4,6 +4,7 @@
 #include <QLocalSocket>
 #include <QTimer>
 #include <QMap>
+#include <QJsonArray>
 
 class ClaudeProcess;
 class StreamParser;
@@ -20,6 +21,7 @@ struct DaemonChatSession {
     QStringList toolSummary;
     QTimer *flushTimer = nullptr;
     bool processing = false;
+    bool titleSet = false;
 };
 
 class DaemonClient : public QObject {
@@ -58,6 +60,8 @@ private:
     void handleStatus(DaemonChatSession &session);
     void handleNew(DaemonChatSession &session);
     void handleSessions(DaemonChatSession &session);
+    void handleResume(DaemonChatSession &session, const QString &sessionId);
+    void handleCallbackQuery(DaemonChatSession &session, const QString &queryId, const QString &data);
     void handleFiles(DaemonChatSession &session);
     void handleDiff(DaemonChatSession &session, const QString &args);
     void handleRevert(DaemonChatSession &session);
@@ -80,6 +84,7 @@ private:
     void sendToDaemon(const QByteArray &data);
     void sendResponse(qint64 chatId, const QString &text);
     void sendEditResponse(qint64 chatId, qint64 messageId, const QString &text);
+    void sendWithKeyboard(qint64 chatId, const QString &text, const QJsonArray &keyboard);
     void requestSendMessage(qint64 chatId, const QString &text,
                             std::function<void(qint64 messageId)> callback);
 

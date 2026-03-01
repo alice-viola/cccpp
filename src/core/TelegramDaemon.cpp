@@ -31,6 +31,8 @@ TelegramDaemon::TelegramDaemon(QObject *parent)
             this, &TelegramDaemon::onNewConnection);
     connect(m_api, &TelegramApi::messageReceived,
             this, &TelegramDaemon::onTelegramMessage);
+    connect(m_api, &TelegramApi::callbackQueryReceived,
+            this, &TelegramDaemon::onTelegramCallback);
 }
 
 TelegramDaemon::~TelegramDaemon()
@@ -194,9 +196,14 @@ void TelegramDaemon::onInstanceData(QLocalSocket *socket)
     for (auto &i : m_instances) {
         if (i.socket == socket) { inst = &i; break; }
     }
-    if (!inst) return;
+    if (!inst) {
+        qDebug() << "[TelegramDaemon] onInstanceData: socket NOT in m_instances!";
+        return;
+    }
 
-    inst->readBuffer.append(socket->readAll());
+    QByteArray newData = socket->readAll();
+    qDebug() << "[TelegramDaemon] onInstanceData: received" << newData.size() << "bytes from" << inst->name;
+    inst->readBuffer.append(newData);
 
     // Process newline-delimited JSON messages
     while (true) {
@@ -210,6 +217,7 @@ void TelegramDaemon::onInstanceData(QLocalSocket *socket)
 
         QJsonObject msg = QJsonDocument::fromJson(line).object();
         QString type = msg["type"].toString();
+        qDebug() << "[TelegramDaemon] processing IPC type:" << type << "(line size:" << line.size() << ")";
 
         if (type == "register") {
             inst->workspace = msg["workspace"].toString();
@@ -232,6 +240,16 @@ void TelegramDaemon::onInstanceData(QLocalSocket *socket)
             QByteArray imageData = QByteArray::fromBase64(msg["image_base64"].toString().toLatin1());
             QString caption = msg["caption"].toString();
             m_api->sendPhoto(chatId, imageData, caption);
+        } else if (type == "send_keyboard") {
+            qint64 chatId = static_cast<qint64>(msg["chat_id"].toDouble());
+            QString text = msg["text"].toString();
+            QJsonObject markup;
+            markup["inline_keyboard"] = msg["keyboard"].toArray();
+            qDebug() << "[TelegramDaemon] send_keyboard to chatId:" << chatId << "text:" << text << "markup:" << QJsonDocument(markup).toJson(QJsonDocument::Compact);
+            m_api->sendMessage(chatId, text, {}, nullptr, markup);
+        } else if (type == "answer_callback") {
+            QString queryId = msg["callback_query_id"].toString();
+            m_api->answerCallbackQuery(queryId);
         } else if (type == "send_message_with_id") {
             // Instance wants to send a message and get the message_id back
             qint64 chatId = static_cast<qint64>(msg["chat_id"].toDouble());
@@ -312,6 +330,29 @@ void TelegramDaemon::onTelegramMessage(const TelegramMessage &msg)
         ipcMsg["text"] = text;
         sendToSocket(inst->socket, QJsonDocument(ipcMsg).toJson(QJsonDocument::Compact));
     }
+}
+
+void TelegramDaemon::onTelegramCallback(const TelegramCallback &cb)
+{
+    auto it = m_userStates.find(cb.userId);
+    if (it == m_userStates.end() || it->activeWorkspace.isEmpty()) {
+        m_api->answerCallbackQuery(cb.callbackQueryId, "No active workspace");
+        return;
+    }
+
+    ConnectedInstance *inst = findInstance(it->activeWorkspace);
+    if (!inst) {
+        m_api->answerCallbackQuery(cb.callbackQueryId, "Workspace not connected");
+        m_userStates[cb.userId].activeWorkspace.clear();
+        return;
+    }
+
+    QJsonObject ipcMsg;
+    ipcMsg["type"] = "callback_query";
+    ipcMsg["chat_id"] = cb.chatId;
+    ipcMsg["callback_query_id"] = cb.callbackQueryId;
+    ipcMsg["data"] = cb.data;
+    sendToSocket(inst->socket, QJsonDocument(ipcMsg).toJson(QJsonDocument::Compact));
 }
 
 void TelegramDaemon::handleWsCommand(qint64 chatId)

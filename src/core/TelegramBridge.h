@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QMap>
 #include <QTimer>
+#include <QJsonObject>
 
 class TelegramApi;
 class ClaudeProcess;
@@ -10,6 +11,7 @@ class SessionManager;
 class Database;
 class GitManager;
 struct TelegramMessage;
+struct TelegramCallback;
 
 struct TelegramSession {
     ClaudeProcess *process = nullptr;
@@ -21,6 +23,7 @@ struct TelegramSession {
     QStringList toolSummary;
     QTimer *flushTimer = nullptr;
     bool processing = false;
+    bool titleSet = false;
 };
 
 class TelegramBridge : public QObject {
@@ -35,12 +38,14 @@ public:
 
 private:
     void onMessage(const TelegramMessage &msg);
+    void onCallbackQuery(const TelegramCallback &cb);
 
     // Command handlers
     void handleFreeText(TelegramSession &session, const QString &text);
     void handleStatus(TelegramSession &session);
     void handleNew(TelegramSession &session);
     void handleSessions(TelegramSession &session);
+    void handleResume(TelegramSession &session, const QString &sessionId);
     void handleFiles(TelegramSession &session);
     void handleDiff(TelegramSession &session, const QString &args);
     void handleRevert(TelegramSession &session);
@@ -61,6 +66,7 @@ private:
 
     // Helpers
     void send(qint64 chatId, const QString &text);
+    void sendWithKeyboard(qint64 chatId, const QString &text, const QJsonObject &keyboard);
     static QString escapeMarkdown(const QString &text);
 
     TelegramApi *m_api = nullptr;

@@ -149,7 +149,8 @@ void TelegramApi::handlePollResponse(QNetworkReply *reply)
 
 void TelegramApi::sendMessage(qint64 chatId, const QString &text,
                               const QString &parseMode,
-                              std::function<void(qint64)> callback)
+                              std::function<void(qint64)> callback,
+                              const QJsonObject &replyMarkup)
 {
     // Telegram limit: 4096 chars per message
     const int kMaxLen = 4096;
@@ -159,14 +160,20 @@ void TelegramApi::sendMessage(qint64 chatId, const QString &text,
         body["text"] = text;
         if (!parseMode.isEmpty())
             body["parse_mode"] = parseMode;
+        if (!replyMarkup.isEmpty())
+            body["reply_markup"] = replyMarkup;
 
         auto *reply = apiCall("sendMessage", QJsonDocument(body).toJson(QJsonDocument::Compact));
         connect(reply, &QNetworkReply::finished, this, [reply, callback] {
             qint64 msgId = 0;
             if (reply->error() == QNetworkReply::NoError) {
-                QJsonObject resp = QJsonDocument::fromJson(reply->readAll()).object();
-                if (resp["ok"].toBool())
+                QByteArray data = reply->readAll();
+                QJsonObject resp = QJsonDocument::fromJson(data).object();
+                if (resp["ok"].toBool()) {
                     msgId = static_cast<qint64>(resp["result"].toObject()["message_id"].toDouble());
+                } else {
+                    qWarning() << "[TelegramApi] sendMessage API error:" << data;
+                }
             } else {
                 qWarning() << "[TelegramApi] sendMessage error:" << reply->errorString();
             }

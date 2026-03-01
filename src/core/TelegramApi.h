@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QJsonObject>
 
 struct TelegramMessage {
     qint64 chatId = 0;
@@ -37,8 +38,9 @@ public:
 
     // Bot API methods — all return the message_id on success via callback
     void sendMessage(qint64 chatId, const QString &text,
-                     const QString &parseMode = "Markdown",
-                     std::function<void(qint64 messageId)> callback = nullptr);
+                     const QString &parseMode = {},
+                     std::function<void(qint64 messageId)> callback = nullptr,
+                     const QJsonObject &replyMarkup = {});
     void editMessage(qint64 chatId, qint64 messageId, const QString &text,
                      const QString &parseMode = "Markdown");
     void sendPhoto(qint64 chatId, const QByteArray &imageData,
