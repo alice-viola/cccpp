@@ -166,11 +166,14 @@ void ClaudeProcess::sendMessage(const QString &message)
 
 void ClaudeProcess::cancel()
 {
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        m_process->terminate();
-        if (!m_process->waitForFinished(2000))
-            m_process->kill();
-        m_process->waitForFinished(1000);
+    QProcess *proc = m_process;
+    if (!proc || proc->state() == QProcess::NotRunning)
+        return;
+
+    proc->terminate();
+    if (!proc->waitForFinished(2000)) {
+        proc->kill();
+        proc->waitForFinished(1000);
     }
 }
 

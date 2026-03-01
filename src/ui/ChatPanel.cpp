@@ -212,7 +212,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
             if (t.currentAssistantMsg && !info.filePath.isEmpty()) {
                 QString diffHtml = buildInlineDiffHtml(info.filePath, info.oldString, info.newString);
-                QString summary = QStringLiteral("\n[Edit: %1]\n").arg(QFileInfo(info.filePath).fileName());
+                QString summary = QStringLiteral("\n[Edit: %1](%2)\n")
+                    .arg(QFileInfo(info.filePath).fileName(), info.filePath);
                 t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
             }
             emit editApplied(info.filePath, info.oldString, info.newString, 0);
@@ -231,8 +232,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 QString diffHtml = buildInlineDiffHtml(
                     info.filePath, "",
                     QStringLiteral("(%1 lines written)").arg(lineCount));
-                QString summary = QStringLiteral("\n[Write: %1 (%2 lines)]\n")
-                    .arg(QFileInfo(info.filePath).fileName()).arg(lineCount);
+                QString summary = QStringLiteral("\n[Write: %1 (%2 lines)](%3)\n")
+                    .arg(QFileInfo(info.filePath).fileName()).arg(lineCount).arg(info.filePath);
                 t.currentAssistantMsg->appendRawHtml(diffHtml, summary);
             }
 
@@ -836,11 +837,6 @@ void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)
     QStringList suggestions;
 
     // Heuristic: if response mentions files that were edited, suggest reviewing them
-    if (responseText.contains("Edit:") || responseText.contains("Write:") ||
-        responseText.contains("created") || responseText.contains("modified")) {
-        suggestions << "Run tests" << "Show diff";
-    }
-
     if (responseText.contains("error") || responseText.contains("fix") ||
         responseText.contains("bug")) {
         suggestions << "Explain the fix" << "Are there similar issues?";
@@ -1000,43 +996,44 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
     auto &thm = ThemeManager::instance();
 
     html += QStringLiteral(
-        "\n\n<table cellspacing='0' cellpadding='0' style='width:100%%;margin:6px 0;'><tr><td>"
-        "<div style='background:%4;border:1px solid %5;border-radius:6px;overflow:hidden;'>"
-        "<div style='background:%6;padding:4px 8px;border-bottom:1px solid %5;'>"
-        "<a href='cccpp://open?file=%1&line=%3' style='color:%7;text-decoration:none;font-size:11px;"
-        "font-family:\"JetBrains Mono\";'>\xf0\x9f\x93\x84 %2</a></div>")
-        .arg(filePath.toHtmlEscaped(), fi.fileName().toHtmlEscaped(), QString::number(editLine),
-             thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"), thm.hex("blue"));
+        "<br><table cellspacing='0' cellpadding='0' style='width:100%%;margin:4px 0;'><tr><td>"
+        "<table cellspacing='0' cellpadding='0' style='width:100%%;background:%1;border:1px solid %2;'>"
+        "<tr><td style='background:%3;padding:6px 10px;border-bottom:1px solid %2;'>"
+        "<a href='cccpp://open?file=%4&line=%5' style='color:%6;text-decoration:none;"
+        "font-family:\"JetBrains Mono\";font-size:12px;'>%7</a></td></tr>")
+        .arg(thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"),
+             filePath.toHtmlEscaped(), QString::number(editLine),
+             thm.hex("blue"), fi.fileName().toHtmlEscaped());
 
-    html += "<div style='padding:2px 0;font-family:\"JetBrains Mono\";font-size:12px;line-height:1.4;'>";
+    html += QStringLiteral("<tr><td style='padding:4px 0;font-family:\"JetBrains Mono\";font-size:12px;'>");
 
     if (!oldStr.isEmpty()) {
         QStringList oldLines = oldStr.split('\n');
-        int maxLines = qMin(oldLines.size(), 10);
+        int maxLines = qMin(oldLines.size(), 8);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:%2;color:%3;padding:0 8px;white-space:pre;'>-%1</div>")
+                "<div style='background:%2;color:%3;padding:1px 10px;white-space:pre;'>-%1</div>")
                 .arg(oldLines[i].toHtmlEscaped(), thm.hex("diff_del_bg"), thm.hex("red"));
         if (oldLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:%2;padding:0 8px;font-size:11px;'>... %1 more</div>")
+                "<div style='color:%2;padding:1px 10px;font-size:11px;'>... %1 more lines</div>")
                 .arg(oldLines.size() - maxLines).arg(thm.hex("text_faint"));
     }
 
     if (!newStr.isEmpty()) {
         QStringList newLines = newStr.split('\n');
-        int maxLines = qMin(newLines.size(), 10);
+        int maxLines = qMin(newLines.size(), 8);
         for (int i = 0; i < maxLines; ++i)
             html += QStringLiteral(
-                "<div style='background:%2;color:%3;padding:0 8px;white-space:pre;'>+%1</div>")
+                "<div style='background:%2;color:%3;padding:1px 10px;white-space:pre;'>+%1</div>")
                 .arg(newLines[i].toHtmlEscaped(), thm.hex("diff_add_bg"), thm.hex("green"));
         if (newLines.size() > maxLines)
             html += QStringLiteral(
-                "<div style='color:%2;padding:0 8px;font-size:11px;'>... %1 more</div>")
+                "<div style='color:%2;padding:1px 10px;font-size:11px;'>... %1 more lines</div>")
                 .arg(newLines.size() - maxLines).arg(thm.hex("text_faint"));
     }
 
-    html += "</div></div></td></tr></table>";
+    html += "</td></tr></table></td></tr></table>";
     return html;
 }
 

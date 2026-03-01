@@ -328,6 +328,26 @@ QString MarkdownRenderer::processInlineFormatting(const QString &text) const
     QString result = text;
     auto &tm = ThemeManager::instance();
 
+    // File operation markers: [Write: file (N lines)](path) or [Edit: file](path) — with clickable link
+    QRegularExpression fileOpLinked("^\\[(Write|Edit):\\s*(.+?)\\]\\((.+?)\\)$",
+                                    QRegularExpression::MultilineOption);
+    result.replace(fileOpLinked,
+        QStringLiteral("<div style='border-left:2px solid %1;padding:3px 10px;margin:6px 0;"
+        "font-family:\"JetBrains Mono\";font-size:12px;'>"
+        "<span style='color:%2;'>\\1:</span> "
+        "<a href='cccpp://open?file=\\3&line=0' style='color:%3;text-decoration:none;'>\\2</a>"
+        "</div>")
+        .arg(tm.hex("border_standard"), tm.hex("text_muted"), tm.hex("blue")));
+
+    // Legacy format without path: [Write: file] or [Edit: file]
+    QRegularExpression fileOp("^\\[(Write|Edit):\\s*(.+?)\\]$", QRegularExpression::MultilineOption);
+    result.replace(fileOp,
+        QStringLiteral("<div style='border-left:2px solid %1;padding:3px 10px;margin:6px 0;"
+        "font-family:\"JetBrains Mono\";font-size:12px;'>"
+        "<span style='color:%2;'>\\1:</span> "
+        "<span style='color:%3;'>\\2</span></div>")
+        .arg(tm.hex("border_standard"), tm.hex("text_muted"), tm.hex("blue")));
+
     QRegularExpression bold("\\*\\*(.+?)\\*\\*");
     result.replace(bold, "<b>\\1</b>");
 

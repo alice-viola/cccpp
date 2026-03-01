@@ -17,70 +17,104 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     , m_rawContent(content)
 {
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(16, 14, 16, 14);
     m_layout->setSpacing(6);
 
-    // Header: role label + buttons
-    auto *headerLayout = new QHBoxLayout;
-    headerLayout->setSpacing(4);
-    headerLayout->setContentsMargins(0, 0, 0, 0);
-
     auto &tm = ThemeManager::instance();
-    QString roleName, roleColor;
-    switch (role) {
-    case User:     roleName = "You";    roleColor = tm.hex("text_primary"); break;
-    case Assistant: roleName = "Claude"; roleColor = tm.hex("text_secondary"); break;
-    case Tool:     roleName = "Tool";   roleColor = tm.hex("green"); break;
-    }
 
-    m_roleLabel = new QLabel(roleName, this);
-    m_roleLabel->setStyleSheet(
-        QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }").arg(roleColor));
-    headerLayout->addWidget(m_roleLabel);
-    headerLayout->addStretch();
-
-    m_acceptBtn = new QPushButton("Accept", this);
-    m_acceptBtn->setFixedHeight(20);
-    m_acceptBtn->setStyleSheet(
-        QStringLiteral(
-        "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
-        "QPushButton:hover { background: %3; }")
-        .arg(tm.hex("green"), tm.hex("on_accent"), tm.hex("teal")));
-    m_acceptBtn->setVisible(false);
-    connect(m_acceptBtn, &QPushButton::clicked, this, [this] { emit acceptRequested(m_turnId); });
-    headerLayout->addWidget(m_acceptBtn);
-
-    m_rejectBtn = new QPushButton("Reject", this);
-    m_rejectBtn->setFixedHeight(20);
-    m_rejectBtn->setStyleSheet(
-        QStringLiteral(
-        "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
-        "QPushButton:hover { background: %3; }")
-        .arg(tm.hex("red"), tm.hex("on_accent"), tm.hex("maroon")));
-    m_rejectBtn->setVisible(false);
-    connect(m_rejectBtn, &QPushButton::clicked, this, [this] { emit rejectRequested(m_turnId); });
-    headerLayout->addWidget(m_rejectBtn);
-
-    m_revertBtn = new QPushButton("Revert", this);
-    m_revertBtn->setFixedHeight(20);
-    m_revertBtn->setStyleSheet(
-        QStringLiteral(
-        "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
-        "QPushButton:hover { background: %2; color: %3; }")
-        .arg(tm.hex("bg_raised"), tm.hex("red"), tm.hex("on_accent")));
-    m_revertBtn->setVisible(false);
-    connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
-    headerLayout->addWidget(m_revertBtn);
-
-    m_layout->addLayout(headerLayout);
-
-    // Content depends on role
     if (role == User) {
-        setupUserContent(content);
+        m_layout->setContentsMargins(14, 10, 14, 10);
+
+        auto *contentRow = new QHBoxLayout;
+        contentRow->setSpacing(8);
+        contentRow->setContentsMargins(0, 0, 0, 0);
+
+        m_userLabel = new QLabel(content, this);
+        m_userLabel->setWordWrap(true);
+        m_userLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 13px; }")
+            .arg(tm.hex("text_primary")));
+        m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        contentRow->addWidget(m_userLabel);
+
+        m_revertBtn = new QPushButton("Revert", this);
+        m_revertBtn->setFixedHeight(22);
+        m_revertBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; color: %4; }")
+            .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
+                 tm.hex("border_standard"), tm.hex("text_primary")));
+        m_revertBtn->setVisible(false);
+        connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
+        contentRow->addWidget(m_revertBtn, 0, Qt::AlignTop);
+
+        m_layout->addLayout(contentRow);
+
+        m_acceptBtn = nullptr;
+        m_rejectBtn = nullptr;
+        m_roleLabel = nullptr;
+        m_headerWidget = nullptr;
     } else {
+        m_layout->setContentsMargins(16, 14, 16, 14);
+
+        m_headerWidget = new QWidget(this);
+        auto *headerLayout = new QHBoxLayout(m_headerWidget);
+        headerLayout->setSpacing(4);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+
+        QString roleName, roleColor;
+        switch (role) {
+        case Assistant: roleName = "Claude"; roleColor = tm.hex("text_secondary"); break;
+        case Tool:     roleName = "Tool";   roleColor = tm.hex("green"); break;
+        default:       roleName = ""; roleColor = tm.hex("text_primary"); break;
+        }
+
+        m_roleLabel = new QLabel(roleName, m_headerWidget);
+        m_roleLabel->setStyleSheet(
+            QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }").arg(roleColor));
+        headerLayout->addWidget(m_roleLabel);
+        headerLayout->addStretch();
+
+        m_acceptBtn = new QPushButton("Accept", m_headerWidget);
+        m_acceptBtn->setFixedHeight(20);
+        m_acceptBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; }")
+            .arg(tm.hex("green"), tm.hex("on_accent"), tm.hex("teal")));
+        m_acceptBtn->setVisible(false);
+        connect(m_acceptBtn, &QPushButton::clicked, this, [this] { emit acceptRequested(m_turnId); });
+        headerLayout->addWidget(m_acceptBtn);
+
+        m_rejectBtn = new QPushButton("Reject", m_headerWidget);
+        m_rejectBtn->setFixedHeight(20);
+        m_rejectBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; "
+            "border-radius: 4px; font-size: 11px; font-weight: bold; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; }")
+            .arg(tm.hex("red"), tm.hex("on_accent"), tm.hex("maroon")));
+        m_rejectBtn->setVisible(false);
+        connect(m_rejectBtn, &QPushButton::clicked, this, [this] { emit rejectRequested(m_turnId); });
+        headerLayout->addWidget(m_rejectBtn);
+
+        m_revertBtn = new QPushButton("Revert", m_headerWidget);
+        m_revertBtn->setFixedHeight(20);
+        m_revertBtn->setStyleSheet(
+            QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
+            "QPushButton:hover { background: %3; color: %4; }")
+            .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
+                 tm.hex("border_standard"), tm.hex("text_primary")));
+        m_revertBtn->setVisible(false);
+        connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
+        headerLayout->addWidget(m_revertBtn);
+
+        m_layout->addWidget(m_headerWidget);
+
         setupAssistantContent(content);
     }
 
@@ -89,17 +123,6 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     applyThemeColors();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
             this, &ChatMessageWidget::applyThemeColors);
-}
-
-void ChatMessageWidget::setupUserContent(const QString &content)
-{
-    m_userLabel = new QLabel(content, this);
-    m_userLabel->setWordWrap(true);
-    m_userLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 4px 0; }")
-        .arg(ThemeManager::instance().hex("text_primary")));
-    m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    m_layout->addWidget(m_userLabel);
 }
 
 void ChatMessageWidget::setupAssistantContent(const QString &content)
@@ -299,10 +322,15 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
     });
 }
 
-void ChatMessageWidget::showRevertButton(bool show) { m_revertBtn->setVisible(show); }
-void ChatMessageWidget::showAcceptRejectButtons(bool show) {
-    m_acceptBtn->setVisible(show);
-    m_rejectBtn->setVisible(show);
+void ChatMessageWidget::showRevertButton(bool show)
+{
+    if (m_revertBtn) m_revertBtn->setVisible(show);
+}
+
+void ChatMessageWidget::showAcceptRejectButtons(bool show)
+{
+    if (m_acceptBtn) m_acceptBtn->setVisible(show);
+    if (m_rejectBtn) m_rejectBtn->setVisible(show);
 }
 
 void ChatMessageWidget::setReverted(bool reverted)
@@ -311,8 +339,10 @@ void ChatMessageWidget::setReverted(bool reverted)
         setStyleSheet(
             QStringLiteral("ChatMessageWidget { background: %1; border-radius: 6px; }")
             .arg(ThemeManager::instance().hex("bg_base")));
-        m_revertBtn->setEnabled(false);
-        m_revertBtn->setText("Reverted");
+        if (m_revertBtn) {
+            m_revertBtn->setEnabled(false);
+            m_revertBtn->setText("Reverted");
+        }
     }
 }
 
@@ -356,7 +386,7 @@ void ChatMessageWidget::applyThemeColors()
 
     if (m_userLabel)
         m_userLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 4px 0; }")
+            QStringLiteral("QLabel { color: %1; font-size: 13px; }")
             .arg(tm.hex("text_primary")));
 
     if (m_acceptBtn)
@@ -378,10 +408,11 @@ void ChatMessageWidget::applyThemeColors()
     if (m_revertBtn)
         m_revertBtn->setStyleSheet(
             QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: none; "
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
             "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
-            "QPushButton:hover { background: %2; color: %3; }")
-            .arg(tm.hex("bg_raised"), tm.hex("red"), tm.hex("on_accent")));
+            "QPushButton:hover { background: %3; color: %4; }")
+            .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
+                 tm.hex("border_standard"), tm.hex("text_primary")));
 
     if (m_contentBrowser && !m_rawContent.isEmpty()) {
         MarkdownRenderer renderer;

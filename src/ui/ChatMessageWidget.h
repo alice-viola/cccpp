@@ -41,7 +41,6 @@ private:
     void applyStyle();
     void applyThemeColors();
     void setupAssistantContent(const QString &content);
-    void setupUserContent(const QString &content);
     void setupToolWidget(const QString &toolName, const QString &summary);
     void resizeBrowser();
 
@@ -50,6 +49,7 @@ private:
     QLabel *m_roleLabel = nullptr;
     QLabel *m_userLabel = nullptr;
     QTextBrowser *m_contentBrowser = nullptr;
+    QWidget *m_headerWidget = nullptr;
     QWidget *m_toolDetailWidget = nullptr;
     QPushButton *m_revertBtn = nullptr;
     QPushButton *m_acceptBtn = nullptr;
