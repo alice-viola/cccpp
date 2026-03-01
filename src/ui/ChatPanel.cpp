@@ -382,8 +382,10 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t->process->setSessionId(sessionId);
             if (m_sessionMgr)
                 m_sessionMgr->updateSessionId(oldId, sessionId);
-            if (m_database)
+            if (m_database) {
                 m_database->updateMessageSessionId(oldId, sessionId);
+                m_database->deleteSession(oldId);
+            }
         }
     });
 
@@ -1336,8 +1338,6 @@ void ChatPanel::deleteSession(const QString &sessionId)
     if (m_sessionMgr)
         m_sessionMgr->removeSession(sessionId);
 
-    if (m_tabs.isEmpty())
-        newChat();
 }
 
 void ChatPanel::showHistoryMenu()

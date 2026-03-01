@@ -64,7 +64,7 @@ void ModelSelector::updateLabel()
 
     m_button->setStyleSheet(QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: none; "
-        "padding: 3px 8px; font-size: 12px; }"
+        "padding: 4px 10px; font-size: 12px; }"
         "QPushButton:hover { color: %2; }")
         .arg(p.text_muted.name(), p.text_primary.name()));
 }

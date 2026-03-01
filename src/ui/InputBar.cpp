@@ -197,7 +197,7 @@ void InputBar::setProcessing(bool processing)
             "QPushButton { background: %1; color: %2; border: none; "
             "border-radius: 14px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background: %3; }")
-            .arg(p.red.name(), p.on_accent.name(), p.maroon.name()));
+            .arg(p.mauve.name(), p.bg_base.name(), p.lavender.name()));
     } else {
         m_input->setEnabled(true);
         m_sendBtn->setEnabled(true);

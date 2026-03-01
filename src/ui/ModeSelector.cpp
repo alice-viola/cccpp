@@ -38,7 +38,7 @@ void ModeSelector::updateLabel()
 
     m_button->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 500; }"
+        "border-radius: 12px; padding: 4px 12px; font-size: 12px; font-weight: 500; }"
         "QPushButton:hover { background: %4; border-color: %5; }")
         .arg(p.bg_raised.name(), p.text_primary.name(), p.border_subtle.name(),
              p.hover_raised.name(), p.border_standard.name()));

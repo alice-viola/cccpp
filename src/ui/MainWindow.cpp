@@ -49,13 +49,11 @@ MainWindow::MainWindow(QWidget *parent)
     connectGitSignals();
     ToastManager::instance().setParentWidget(this);
 
-    if (auto *screen = QApplication::primaryScreen()) {
-        QSize screenSize = screen->availableSize();
-        resize(screenSize.width() * 4 / 5, screenSize.height() * 4 / 5);
-    }
+    showMaximized();
 
     QTimer::singleShot(0, this, [this] {
         m_splitter->setSizes({150, 0, m_splitter->width() - 150});
+        updateToggleButtons();
     });
 
     QString lastWorkspace = Config::instance().lastWorkspace();
@@ -564,11 +562,10 @@ void MainWindow::applyThemeColors()
 
     auto toggleStyle = QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: none; "
-        "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 2px 8px; margin: 0 1px; }"
-        "QPushButton:hover { background: %4; color: %2; }"
-        "QPushButton:checked { background: %4; color: %3; }")
-        .arg(p.text_muted.name(), p.text_secondary.name(),
-             p.text_primary.name(), p.bg_raised.name());
+        "border-radius: 4px; font-size: 11px; font-weight: 500; padding: 2px 12px; margin: 0 1px; }"
+        "QPushButton:hover { color: %2; }"
+        "QPushButton:checked { color: %3; }")
+        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name());
 
     m_toggleTree->setStyleSheet(toggleStyle);
     m_toggleEditor->setStyleSheet(toggleStyle);
@@ -614,10 +611,10 @@ void MainWindow::openWorkspace(const QString &path)
     Config::instance().setLastWorkspace(path);
     setWindowTitle(QStringLiteral("CCCPP - %1").arg(path));
 
+    syncEditorContextToChat();
+
     if (m_chatPanel->tabCount() == 0)
         m_chatPanel->newChat();
-
-    syncEditorContextToChat();
 
     // Load the most recent session for this workspace into the checkpoint timeline
     auto sessions = m_database->loadSessions();
