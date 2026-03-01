@@ -23,6 +23,13 @@ public:
     QString lastWorkspace() const;
     void setLastWorkspace(const QString &path);
 
+    bool telegramEnabled() const;
+    void setTelegramEnabled(bool enabled);
+    QString telegramBotToken() const;
+    void setTelegramBotToken(const QString &token);
+    QList<qint64> telegramAllowedUsers() const;
+    void setTelegramAllowedUsers(const QList<qint64> &users);
+
 private:
     Config();
     QString m_configPath;

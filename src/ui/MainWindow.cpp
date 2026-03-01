@@ -14,6 +14,10 @@
 #include "core/DiffEngine.h"
 #include "core/Database.h"
 #include "core/GitManager.h"
+#include "core/TelegramApi.h"
+#include "core/TelegramBridge.h"
+#include "core/TelegramDaemon.h"
+#include "core/DaemonClient.h"
 #include "util/Config.h"
 #include "util/MacUtils.h"
 #include <QMenuBar>
@@ -66,6 +70,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sessionMgr, &SessionManager::sessionUpdated, this, [this](const QString &id) {
         m_database->saveSession(m_sessionMgr->sessionInfo(id));
     });
+
+    setupTelegram();
 }
 
 MainWindow::~MainWindow() {}
@@ -604,6 +610,12 @@ void MainWindow::openWorkspace(const QString &path)
     m_terminalPanel->setWorkingDirectory(path);
     m_gitManager->setWorkingDirectory(path);
     m_codeViewer->setRootPath(path);
+    if (m_telegramBridge)
+        m_telegramBridge->setWorkingDirectory(path);
+    if (m_daemonClient) {
+        m_daemonClient->setWorkingDirectory(path);
+        m_daemonClient->registerWorkspace(path);
+    }
 
     if (!m_gitManager->isGitRepo())
         m_gitPanel->showNotARepo();
@@ -769,4 +781,47 @@ void MainWindow::restoreSessions()
         if (session.workspace == m_workspacePath)
             m_sessionMgr->registerSession(session.sessionId, session);
     }
+}
+
+void MainWindow::setupTelegram()
+{
+    auto &cfg = Config::instance();
+    if (!cfg.telegramEnabled() || cfg.telegramBotToken().isEmpty())
+        return;
+
+    // Try daemon mode first: connect to existing daemon, or spawn one
+    if (TelegramDaemon::isDaemonRunning() || TelegramDaemon::removeStale()) {
+        // Daemon exists or stale was cleaned — try connecting
+    }
+
+    m_daemonClient = new DaemonClient(this);
+    m_daemonClient->setSessionManager(m_sessionMgr);
+    m_daemonClient->setDatabase(m_database);
+    m_daemonClient->setGitManager(m_gitManager);
+    m_daemonClient->setWorkingDirectory(m_workspacePath);
+
+    if (m_daemonClient->connectToDaemon()) {
+        if (!m_workspacePath.isEmpty())
+            m_daemonClient->registerWorkspace(m_workspacePath);
+        qDebug() << "[cccpp] Connected to Telegram daemon";
+        return;
+    }
+
+    // Daemon connection failed — fall back to direct single-instance mode
+    qDebug() << "[cccpp] Daemon unavailable, using direct Telegram polling";
+    delete m_daemonClient;
+    m_daemonClient = nullptr;
+
+    m_telegramApi = new TelegramApi(this);
+    m_telegramApi->setToken(cfg.telegramBotToken());
+    m_telegramApi->setAllowedUsers(cfg.telegramAllowedUsers());
+
+    m_telegramBridge = new TelegramBridge(m_telegramApi, this);
+    m_telegramBridge->setSessionManager(m_sessionMgr);
+    m_telegramBridge->setDatabase(m_database);
+    m_telegramBridge->setGitManager(m_gitManager);
+    m_telegramBridge->setWorkingDirectory(m_workspacePath);
+
+    m_telegramApi->startPolling();
+    qDebug() << "[cccpp] Telegram bot polling started (single-instance mode)";
 }

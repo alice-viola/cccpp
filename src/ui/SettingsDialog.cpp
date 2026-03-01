@@ -1,5 +1,6 @@
 #include "ui/SettingsDialog.h"
 #include "util/Config.h"
+#include "core/TelegramApi.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -47,6 +48,47 @@ SettingsDialog::SettingsDialog(QWidget *parent)
 
     groupLayout->addLayout(pathRow);
     mainLayout->addWidget(claudeGroup);
+
+    // --- Telegram group ---
+    auto &cfg = Config::instance();
+
+    auto *telegramGroup = new QGroupBox("Telegram Bot");
+    auto *tgLayout = new QVBoxLayout(telegramGroup);
+
+    m_telegramEnabled = new QCheckBox("Enable Telegram bot");
+    m_telegramEnabled->setChecked(cfg.telegramEnabled());
+    tgLayout->addWidget(m_telegramEnabled);
+
+    auto *tokenLabel = new QLabel("Bot token (from @BotFather):");
+    tgLayout->addWidget(tokenLabel);
+
+    m_telegramToken = new QLineEdit;
+    m_telegramToken->setEchoMode(QLineEdit::Password);
+    m_telegramToken->setPlaceholderText("123456:ABC-DEF...");
+    m_telegramToken->setText(cfg.telegramBotToken());
+    tgLayout->addWidget(m_telegramToken);
+
+    auto *usersLabel = new QLabel("Allowed user IDs (comma-separated, empty = allow all):");
+    tgLayout->addWidget(usersLabel);
+
+    m_telegramUsers = new QLineEdit;
+    m_telegramUsers->setPlaceholderText("123456789, 987654321");
+    QStringList userStrs;
+    for (qint64 id : cfg.telegramAllowedUsers())
+        userStrs.append(QString::number(id));
+    m_telegramUsers->setText(userStrs.join(", "));
+    tgLayout->addWidget(m_telegramUsers);
+
+    auto *testRow = new QHBoxLayout;
+    auto *testBtn = new QPushButton("Test Connection");
+    connect(testBtn, &QPushButton::clicked, this, &SettingsDialog::onTestTelegram);
+    testRow->addWidget(testBtn);
+
+    m_telegramStatus = new QLabel;
+    testRow->addWidget(m_telegramStatus, 1);
+    tgLayout->addLayout(testRow);
+
+    mainLayout->addWidget(telegramGroup);
 
     // --- Buttons ---
     mainLayout->addStretch();
@@ -107,9 +149,48 @@ void SettingsDialog::onDetect()
 
 void SettingsDialog::onAccept()
 {
+    // Save Claude binary
     QString path = m_claudePath->text().trimmed();
     if (path.isEmpty())
         path = "claude";
     Config::instance().setClaudeBinary(path);
+
+    // Save Telegram settings
+    auto &cfg = Config::instance();
+    cfg.setTelegramEnabled(m_telegramEnabled->isChecked());
+    cfg.setTelegramBotToken(m_telegramToken->text().trimmed());
+
+    QList<qint64> userIds;
+    QString usersText = m_telegramUsers->text().trimmed();
+    if (!usersText.isEmpty()) {
+        for (const QString &s : usersText.split(',')) {
+            bool ok;
+            qint64 id = s.trimmed().toLongLong(&ok);
+            if (ok) userIds.append(id);
+        }
+    }
+    cfg.setTelegramAllowedUsers(userIds);
+
     accept();
+}
+
+void SettingsDialog::onTestTelegram()
+{
+    QString token = m_telegramToken->text().trimmed();
+    if (token.isEmpty()) {
+        m_telegramStatus->setText("Enter a token first.");
+        return;
+    }
+
+    m_telegramStatus->setText("Testing...");
+
+    auto *api = new TelegramApi(this);
+    api->setToken(token);
+    api->getMe([this, api](bool ok, const QString &username) {
+        if (ok)
+            m_telegramStatus->setText("Connected: @" + username);
+        else
+            m_telegramStatus->setText("Failed to connect. Check token.");
+        api->deleteLater();
+    });
 }

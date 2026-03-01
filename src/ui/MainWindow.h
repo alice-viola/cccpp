@@ -17,6 +17,9 @@ class SessionManager;
 class DiffEngine;
 class Database;
 class GitManager;
+class TelegramApi;
+class TelegramBridge;
+class DaemonClient;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -51,6 +54,7 @@ private:
     void updateToggleButtons();
     void connectGitSignals();
     void syncEditorContextToChat();
+    void setupTelegram();
 
     QPushButton *m_toggleTree = nullptr;
     QPushButton *m_toggleEditor = nullptr;
@@ -70,6 +74,9 @@ private:
     DiffEngine *m_diffEngine;
     Database *m_database;
     GitManager *m_gitManager;
+    TelegramApi *m_telegramApi = nullptr;
+    TelegramBridge *m_telegramBridge = nullptr;
+    DaemonClient *m_daemonClient = nullptr;
 
     QString m_workspacePath;
 

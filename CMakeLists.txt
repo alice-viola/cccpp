@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql Network)
 
 # QScintilla - try pkg-config first, then manual search
 find_package(PkgConfig QUIET)
@@ -43,6 +43,10 @@ set(CORE_SOURCES
     src/core/PtyProcess.cpp
     src/core/UnixPty.cpp
     src/core/WinPty.cpp
+    src/core/TelegramApi.cpp
+    src/core/TelegramBridge.cpp
+    src/core/TelegramDaemon.cpp
+    src/core/DaemonClient.cpp
 )
 
 set(UI_SOURCES
@@ -107,6 +111,7 @@ target_link_libraries(cccpp PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Sql
+    Qt6::Network
     vterm
 )
 

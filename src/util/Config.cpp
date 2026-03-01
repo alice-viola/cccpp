@@ -95,3 +95,50 @@ void Config::setLastWorkspace(const QString &path)
     m_data["last_workspace"] = path.toStdString();
     save();
 }
+
+bool Config::telegramEnabled() const
+{
+    if (m_data.contains("telegram_enabled") && m_data["telegram_enabled"].is_boolean())
+        return m_data["telegram_enabled"].get<bool>();
+    return false;
+}
+
+void Config::setTelegramEnabled(bool enabled)
+{
+    m_data["telegram_enabled"] = enabled;
+    save();
+}
+
+QString Config::telegramBotToken() const
+{
+    if (m_data.contains("telegram_bot_token") && m_data["telegram_bot_token"].is_string())
+        return QString::fromStdString(m_data["telegram_bot_token"].get<std::string>());
+    return {};
+}
+
+void Config::setTelegramBotToken(const QString &token)
+{
+    m_data["telegram_bot_token"] = token.toStdString();
+    save();
+}
+
+QList<qint64> Config::telegramAllowedUsers() const
+{
+    QList<qint64> result;
+    if (m_data.contains("telegram_allowed_users") && m_data["telegram_allowed_users"].is_array()) {
+        for (const auto &v : m_data["telegram_allowed_users"]) {
+            if (v.is_number_integer())
+                result.append(v.get<qint64>());
+        }
+    }
+    return result;
+}
+
+void Config::setTelegramAllowedUsers(const QList<qint64> &users)
+{
+    auto arr = nlohmann::json::array();
+    for (qint64 id : users)
+        arr.push_back(id);
+    m_data["telegram_allowed_users"] = arr;
+    save();
+}
