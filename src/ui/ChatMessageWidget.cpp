@@ -203,13 +203,13 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
             int blockIdx = q.queryItemValue("block").toInt();
             // Extract code from raw content for the given block index
             QString raw = m_rawContent;
-            QRegularExpression fenced("```\\w*\\n([\\s\\S]*?)\\n```");
+            const auto &fenced = MarkdownRenderer::fencedCodeRegex();
             auto it = fenced.globalMatch(raw);
             int idx = 0;
             while (it.hasNext()) {
                 auto match = it.next();
                 if (idx == blockIdx) {
-                    QApplication::clipboard()->setText(match.captured(1));
+                    QApplication::clipboard()->setText(match.captured(2));
                     break;
                 }
                 ++idx;
@@ -219,13 +219,13 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
             int blockIdx = q.queryItemValue("block").toInt();
             QString lang = q.queryItemValue("lang");
             QString raw = m_rawContent;
-            QRegularExpression fenced("```\\w*\\n([\\s\\S]*?)\\n```");
+            const auto &fenced = MarkdownRenderer::fencedCodeRegex();
             auto it = fenced.globalMatch(raw);
             int idx = 0;
             while (it.hasNext()) {
                 auto match = it.next();
                 if (idx == blockIdx) {
-                    emit applyCodeRequested(match.captured(1), lang);
+                    emit applyCodeRequested(match.captured(2), lang);
                     break;
                 }
                 ++idx;

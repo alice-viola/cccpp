@@ -2,8 +2,8 @@
 
 #include <QObject>
 #include <QString>
-#include <QTextDocument>
 #include <QList>
+#include <QRegularExpression>
 
 struct CodeBlockInfo {
     QString language;
@@ -22,11 +22,17 @@ public:
     // Returns info about code blocks found during last toHtml() call
     QList<CodeBlockInfo> lastCodeBlocks() const { return m_lastCodeBlocks; }
 
+    /// Regex for fenced code blocks — shared with ChatMessageWidget for Copy/Apply.
+    static const QRegularExpression &fencedCodeRegex();
+
 private:
     QString escapeHtml(const QString &text) const;
-    QString processCodeBlocks(const QString &text) const;
-    QString processTables(const QString &text) const;
+    QString extractFencedBlocks(const QString &text, QStringList &blocks) const;
+    QString extractInlineCode(const QString &text, QStringList &blocks) const;
+    QString processTables(const QString &text, QStringList &blocks) const;
     QString processInlineFormatting(const QString &text) const;
+
+    static QString placeholder(int index);
 
     mutable QList<CodeBlockInfo> m_lastCodeBlocks;
 };
