@@ -2,7 +2,6 @@
 
 #include <QMainWindow>
 #include <QSplitter>
-#include <QToolBar>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QLabel>
@@ -44,7 +43,6 @@ private slots:
 
 private:
     void setupMenuBar();
-    void setupToolBar();
     void setupUI();
     void setupStatusBar();
     void loadStylesheet();
@@ -54,7 +52,6 @@ private:
     void connectGitSignals();
     void syncEditorContextToChat();
 
-    QToolBar *m_toolBar = nullptr;
     QPushButton *m_toggleTree = nullptr;
     QPushButton *m_toggleEditor = nullptr;
     QPushButton *m_toggleChat = nullptr;

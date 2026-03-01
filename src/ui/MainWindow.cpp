@@ -43,7 +43,6 @@ MainWindow::MainWindow(QWidget *parent)
     ThemeManager::instance().initialize();
 
     setupUI();
-    setupToolBar();
     setupMenuBar();
     setupStatusBar();
     loadStylesheet();
@@ -283,6 +282,78 @@ void MainWindow::setupStatusBar()
     statusBar()->addPermanentWidget(m_statusBranch);
     statusBar()->addPermanentWidget(m_statusProcessing);
 
+    // --- View toggle buttons (right side of status bar) ---
+    auto makeToggle = [this](const QString &label, const QString &tip) -> QPushButton* {
+        auto *btn = new QPushButton(label, this);
+        btn->setToolTip(tip);
+        btn->setCheckable(true);
+        btn->setChecked(true);
+        btn->setFixedHeight(20);
+        return btn;
+    };
+
+    m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
+    m_toggleEditor = makeToggle("Editor", "Toggle Editor (Ctrl+2)");
+    m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
+    m_toggleTerminal = makeToggle("Terminal", "Toggle Terminal (Ctrl+`)");
+    m_toggleTerminal->setChecked(false);
+
+    statusBar()->addPermanentWidget(m_toggleTree);
+    statusBar()->addPermanentWidget(m_toggleEditor);
+    statusBar()->addPermanentWidget(m_toggleTerminal);
+    statusBar()->addPermanentWidget(m_toggleChat);
+
+    connect(m_toggleTree, &QPushButton::clicked, this, [this] {
+        bool currentlyUsable = m_leftTabs->isVisible() && m_leftTabs->width() > 10;
+        if (currentlyUsable) {
+            m_leftTabs->setVisible(false);
+        } else {
+            m_leftTabs->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[0] < 50) {
+                sizes[0] = 180;
+                m_splitter->setSizes(sizes);
+            }
+        }
+        updateToggleButtons();
+    });
+    connect(m_toggleEditor, &QPushButton::clicked, this, [this] {
+        bool currentlyUsable = m_codeViewer->isVisible() && m_centerSplitter->width() > 10;
+        if (currentlyUsable) {
+            m_codeViewer->setVisible(false);
+        } else {
+            m_codeViewer->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[1] < 50) {
+                int total = m_splitter->width();
+                sizes[1] = static_cast<int>(total * 0.4);
+                sizes[2] = total - sizes[0] - sizes[1];
+                m_splitter->setSizes(sizes);
+            }
+        }
+        updateToggleButtons();
+    });
+    connect(m_toggleChat, &QPushButton::clicked, this, [this] {
+        bool currentlyUsable = m_chatPanel->isVisible() && m_chatPanel->width() > 10;
+        if (currentlyUsable) {
+            m_chatPanel->setVisible(false);
+        } else {
+            m_chatPanel->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[2] < 50) {
+                int total = m_splitter->width();
+                sizes[2] = static_cast<int>(total * 0.35);
+                sizes[1] = total - sizes[0] - sizes[2];
+                m_splitter->setSizes(sizes);
+            }
+        }
+        updateToggleButtons();
+    });
+    connect(m_toggleTerminal, &QPushButton::clicked, this, [this] {
+        onToggleTerminal();
+    });
+
+    // --- Status bar signal connections ---
     connect(m_gitManager, &GitManager::branchChanged, this, [this](const QString &branch) {
         m_statusBranch->setText(QStringLiteral("\u2387 %1").arg(branch));
     });
@@ -451,91 +522,6 @@ void MainWindow::setupMenuBar()
 
     auto *clearTermAction = termMenu->addAction("&Clear");
     connect(clearTermAction, &QAction::triggered, this, &MainWindow::onClearTerminal);
-}
-
-void MainWindow::setupToolBar()
-{
-    m_toolBar = new QToolBar(this);
-    m_toolBar->setMovable(false);
-    m_toolBar->setFloatable(false);
-    m_toolBar->setFixedHeight(26);
-    addToolBar(Qt::TopToolBarArea, m_toolBar);
-
-    auto makeToggle = [this](const QString &label, const QString &tip) -> QPushButton* {
-        auto *btn = new QPushButton(label, this);
-        btn->setToolTip(tip);
-        btn->setCheckable(true);
-        btn->setChecked(true);
-        btn->setFixedHeight(20);
-        return btn;
-    };
-
-    m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
-    m_toggleEditor = makeToggle("Editor", "Toggle Editor (Ctrl+2)");
-    m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
-    m_toggleTerminal = makeToggle("Terminal", "Toggle Terminal (Ctrl+`)");
-    m_toggleTerminal->setChecked(false);
-
-    auto *spacer = new QWidget(this);
-    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    spacer->setFixedHeight(1);
-    spacer->setStyleSheet("background: transparent;");
-    m_toolBar->addWidget(spacer);
-
-    m_toolBar->addWidget(m_toggleTree);
-    m_toolBar->addWidget(m_toggleEditor);
-    m_toolBar->addWidget(m_toggleTerminal);
-    m_toolBar->addWidget(m_toggleChat);
-
-    connect(m_toggleTree, &QPushButton::clicked, this, [this] {
-        bool currentlyUsable = m_leftTabs->isVisible() && m_leftTabs->width() > 10;
-        if (currentlyUsable) {
-            m_leftTabs->setVisible(false);
-        } else {
-            m_leftTabs->setVisible(true);
-            QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 3 && sizes[0] < 50) {
-                sizes[0] = 180;
-                m_splitter->setSizes(sizes);
-            }
-        }
-        updateToggleButtons();
-    });
-    connect(m_toggleEditor, &QPushButton::clicked, this, [this] {
-        bool currentlyUsable = m_codeViewer->isVisible() && m_centerSplitter->width() > 10;
-        if (currentlyUsable) {
-            m_codeViewer->setVisible(false);
-        } else {
-            m_codeViewer->setVisible(true);
-            QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 3 && sizes[1] < 50) {
-                int total = m_splitter->width();
-                sizes[1] = static_cast<int>(total * 0.4);
-                sizes[2] = total - sizes[0] - sizes[1];
-                m_splitter->setSizes(sizes);
-            }
-        }
-        updateToggleButtons();
-    });
-    connect(m_toggleChat, &QPushButton::clicked, this, [this] {
-        bool currentlyUsable = m_chatPanel->isVisible() && m_chatPanel->width() > 10;
-        if (currentlyUsable) {
-            m_chatPanel->setVisible(false);
-        } else {
-            m_chatPanel->setVisible(true);
-            QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 3 && sizes[2] < 50) {
-                int total = m_splitter->width();
-                sizes[2] = static_cast<int>(total * 0.35);
-                sizes[1] = total - sizes[0] - sizes[2];
-                m_splitter->setSizes(sizes);
-            }
-        }
-        updateToggleButtons();
-    });
-    connect(m_toggleTerminal, &QPushButton::clicked, this, [this] {
-        onToggleTerminal();
-    });
 }
 
 void MainWindow::updateToggleButtons()
