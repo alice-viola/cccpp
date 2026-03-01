@@ -9,11 +9,11 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 3px solid %3; border-radius: 8px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("blue")));
+        "border-left: 2px solid %3; border-radius: 10px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(8, 6, 8, 6);
+    m_layout->setContentsMargins(10, 8, 10, 8);
     m_layout->setSpacing(0);
 
     // Header: expand button + summary
@@ -97,8 +97,8 @@ void ToolCallGroupWidget::applyThemeColors()
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 3px solid %3; border-radius: 8px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("blue")));
+        "border-left: 2px solid %3; border-radius: 10px; }")
+        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_expandBtn->setStyleSheet(
         QStringLiteral(

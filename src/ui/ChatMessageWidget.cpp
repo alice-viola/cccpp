@@ -17,8 +17,8 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     , m_rawContent(content)
 {
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(12, 10, 12, 10);
-    m_layout->setSpacing(4);
+    m_layout->setContentsMargins(16, 14, 16, 14);
+    m_layout->setSpacing(6);
 
     // Header: role label + buttons
     auto *headerLayout = new QHBoxLayout;
@@ -28,14 +28,14 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     auto &tm = ThemeManager::instance();
     QString roleName, roleColor;
     switch (role) {
-    case User:     roleName = "You";    roleColor = tm.hex("mauve"); break;
-    case Assistant: roleName = "Claude"; roleColor = tm.hex("blue"); break;
+    case User:     roleName = "You";    roleColor = tm.hex("text_primary"); break;
+    case Assistant: roleName = "Claude"; roleColor = tm.hex("text_secondary"); break;
     case Tool:     roleName = "Tool";   roleColor = tm.hex("green"); break;
     }
 
     m_roleLabel = new QLabel(roleName, this);
     m_roleLabel->setStyleSheet(
-        QStringLiteral("QLabel { font-weight: bold; font-size: 11px; color: %1; }").arg(roleColor));
+        QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }").arg(roleColor));
     headerLayout->addWidget(m_roleLabel);
     headerLayout->addStretch();
 
@@ -96,7 +96,7 @@ void ChatMessageWidget::setupUserContent(const QString &content)
     m_userLabel = new QLabel(content, this);
     m_userLabel->setWordWrap(true);
     m_userLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 2px 0; }")
+        QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 4px 0; }")
         .arg(ThemeManager::instance().hex("text_primary")));
     m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_layout->addWidget(m_userLabel);
@@ -241,7 +241,7 @@ void ChatMessageWidget::setToolInfo(const QString &toolName, const QString &summ
 {
     m_roleLabel->setText(QStringLiteral("Tool: %1").arg(toolName));
     m_roleLabel->setStyleSheet(
-        QStringLiteral("QLabel { font-weight: bold; font-size: 11px; color: %1; }")
+        QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }")
         .arg(ThemeManager::instance().hex("green")));
     setupToolWidget(toolName, summary);
 }
@@ -324,19 +324,16 @@ void ChatMessageWidget::applyStyle()
         setStyleSheet(
             QStringLiteral(
             "ChatMessageWidget { background: %1; border: 1px solid %2; "
-            "border-radius: 8px; }")
+            "border-radius: 10px; }")
             .arg(tm.hex("bg_surface"), tm.hex("border_standard")));
         break;
     case Assistant:
         setStyleSheet(
-            QStringLiteral(
-            "ChatMessageWidget { background: %1; "
-            "border-radius: 8px; }")
-            .arg(tm.hex("bg_surface")));
+            QStringLiteral("ChatMessageWidget { background: transparent; }"));
         break;
     case Tool:
         setStyleSheet(
-            "ChatMessageWidget { background: transparent; border-radius: 0; }");
+            QStringLiteral("ChatMessageWidget { background: transparent; }"));
         break;
     }
 }
@@ -349,17 +346,17 @@ void ChatMessageWidget::applyThemeColors()
 
     QString roleColor;
     switch (m_role) {
-    case User:     roleColor = tm.hex("mauve"); break;
-    case Assistant: roleColor = tm.hex("blue"); break;
+    case User:     roleColor = tm.hex("text_primary"); break;
+    case Assistant: roleColor = tm.hex("text_secondary"); break;
     case Tool:     roleColor = tm.hex("green"); break;
     }
     if (m_roleLabel)
         m_roleLabel->setStyleSheet(
-            QStringLiteral("QLabel { font-weight: bold; font-size: 11px; color: %1; }").arg(roleColor));
+            QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }").arg(roleColor));
 
     if (m_userLabel)
         m_userLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 2px 0; }")
+            QStringLiteral("QLabel { color: %1; font-size: 13px; padding: 4px 0; }")
             .arg(tm.hex("text_primary")));
 
     if (m_acceptBtn)

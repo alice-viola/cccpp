@@ -345,13 +345,22 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
 
         if (t.currentAssistantMsg) {
-            bool hasCheckpoint = m_database &&
-                !m_database->checkpointUuid(t.sessionId, t.turnId).isEmpty();
-            t.currentAssistantMsg->showRevertButton(hasCheckpoint);
-
             showSuggestionChips(t, t.currentAssistantMsg->rawContent());
-
             t.currentAssistantMsg = nullptr;
+        }
+
+        // Show Revert on the user message that initiated this turn
+        bool hasCheckpoint = m_database &&
+            !m_database->checkpointUuid(t.sessionId, t.turnId).isEmpty();
+        if (hasCheckpoint && t.messagesLayout) {
+            for (int i = 0; i < t.messagesLayout->count(); ++i) {
+                auto *chatMsg = qobject_cast<ChatMessageWidget *>(
+                    t.messagesLayout->itemAt(i)->widget());
+                if (chatMsg && chatMsg->turnId() == t.turnId) {
+                    chatMsg->showRevertButton(true);
+                    break;
+                }
+            }
         }
         setTabProcessingState(tabIdx, false);
         scrollTabToBottom(t);
@@ -481,16 +490,16 @@ void ChatPanel::restoreSession(const QString &sessionId)
         if (!td.userContent.isEmpty()) {
             auto *w = new ChatMessageWidget(ChatMessageWidget::User, td.userContent);
             w->setTurnId(turnId);
-            tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
-        }
-        if (!td.assistantContent.isEmpty()) {
-            auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, td.assistantContent);
-            w->setTurnId(turnId);
             bool hasCheckpoint = m_database &&
                 !m_database->checkpointUuid(sessionId, turnId).isEmpty();
             w->showRevertButton(hasCheckpoint);
             tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
+        }
+        if (!td.assistantContent.isEmpty()) {
+            auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, td.assistantContent);
+            w->setTurnId(turnId);
+            tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, w);
             connect(w, &ChatMessageWidget::fileNavigationRequested,
                     this, [this](const QString &fp, int line) { emit navigateToFile(fp, line); });
         }
@@ -555,11 +564,12 @@ void ChatPanel::onSendRequested(const QString &text)
         tab.suggestionChips = nullptr;
     }
 
-    auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
-    addMessageToTab(tab, userMsg);
-
     tab.turnId++;
     emit aboutToSendMessage();
+
+    auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
+    userMsg->setTurnId(tab.turnId);
+    addMessageToTab(tab, userMsg);
 
     if (m_database) {
         MessageRecord rec;
@@ -676,65 +686,45 @@ void ChatPanel::removeMessagesAfterTurn(int turnId)
     auto &tab = m_tabs[idx];
     if (!tab.messagesLayout) return;
 
-    // Walk backwards, removing everything until we hit a ChatMessageWidget
-    // with turnId <= the reverted turn (the assistant message for that turn).
-    // We keep the assistant message of the reverted turn but mark it as reverted.
+    // Remove all widgets belonging to turnId and later turns.
+    // Walk backwards so indices stay valid as we remove.
     for (int i = tab.messagesLayout->count() - 1; i >= 0; --i) {
         QLayoutItem *item = tab.messagesLayout->itemAt(i);
         if (!item || !item->widget()) continue;
         QWidget *w = item->widget();
 
-        // Never remove the stretch, thinking indicator, or welcome widget
         if (w == tab.thinkingIndicator || w == tab.welcomeWidget)
             continue;
 
         auto *chatMsg = qobject_cast<ChatMessageWidget *>(w);
         if (chatMsg) {
-            if (chatMsg->turnId() > turnId) {
+            if (chatMsg->turnId() >= turnId) {
                 tab.messagesLayout->removeWidget(w);
                 w->deleteLater();
-                continue;
-            }
-            // This is the assistant message for the reverted turn — mark it
-            if (chatMsg->turnId() == turnId
-                && chatMsg->rawContent().isEmpty() == false) {
-                chatMsg->setReverted(true);
-                chatMsg->showRevertButton(false);
             }
             continue;
         }
 
-        // ToolCallGroupWidget / SuggestionChips after the reverted turn:
-        // we can't read turnId from these, so remove anything that appears
-        // after the last kept ChatMessageWidget.
-        // Strategy: once we've processed all ChatMessageWidgets above, come
-        // back and remove orphaned non-message widgets. For now, skip.
-    }
-
-    // Second pass: remove orphaned non-ChatMessageWidget widgets that sit
-    // after the last remaining ChatMessageWidget.
-    int lastMsgIdx = -1;
-    for (int i = tab.messagesLayout->count() - 1; i >= 0; --i) {
-        QLayoutItem *item = tab.messagesLayout->itemAt(i);
-        if (!item || !item->widget()) continue;
-        if (qobject_cast<ChatMessageWidget *>(item->widget())) {
-            lastMsgIdx = i;
-            break;
+        // Non-ChatMessageWidget (ToolCallGroupWidget, SuggestionChips):
+        // check if it sits after the last remaining ChatMessageWidget.
+        // If so, it belonged to a removed turn — delete it.
+        bool afterLastKept = true;
+        for (int j = i + 1; j < tab.messagesLayout->count(); ++j) {
+            QLayoutItem *next = tab.messagesLayout->itemAt(j);
+            if (!next || !next->widget()) continue;
+            auto *nextMsg = qobject_cast<ChatMessageWidget *>(next->widget());
+            if (nextMsg && nextMsg->turnId() < turnId) {
+                afterLastKept = false;
+                break;
+            }
         }
-    }
-    if (lastMsgIdx >= 0) {
-        for (int i = tab.messagesLayout->count() - 1; i > lastMsgIdx; --i) {
-            QLayoutItem *item = tab.messagesLayout->itemAt(i);
-            if (!item || !item->widget()) continue;
-            QWidget *w = item->widget();
-            if (w == tab.thinkingIndicator || w == tab.welcomeWidget)
-                continue;
+        if (afterLastKept) {
             tab.messagesLayout->removeWidget(w);
             w->deleteLater();
         }
     }
 
-    tab.turnId = turnId;
+    tab.turnId = turnId - 1;
     tab.currentAssistantMsg = nullptr;
     tab.currentToolGroup = nullptr;
     tab.suggestionChips = nullptr;
@@ -908,8 +898,8 @@ QWidget *ChatPanel::createChatContent()
     auto *scrollContent = new QWidget;
     auto *messagesLayout = new QVBoxLayout(scrollContent);
     messagesLayout->setObjectName("messagesLayout");
-    messagesLayout->setContentsMargins(16, 12, 16, 12);
-    messagesLayout->setSpacing(12);
+    messagesLayout->setContentsMargins(20, 16, 20, 16);
+    messagesLayout->setSpacing(6);
     messagesLayout->addStretch();
 
     scrollArea->setWidget(scrollContent);
