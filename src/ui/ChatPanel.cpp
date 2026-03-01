@@ -242,10 +242,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         if (name == "AskUserQuestion") {
             auto *questionWidget = new QuestionWidget(input);
-            if (t.messagesLayout) {
-                int count = t.messagesLayout->count();
-                t.messagesLayout->insertWidget(count - 1, questionWidget);
-            }
+            if (t.messagesLayout)
+                t.messagesLayout->insertWidget(insertPosForTab(t), questionWidget);
             connect(questionWidget, &QuestionWidget::answered, this,
                     [this, tabIdx](const QString &response) {
                 if (!m_tabs.contains(tabIdx)) return;
@@ -253,10 +251,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 tab.process->setMode(m_modeSelector->currentMode());
                 tab.currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
                 tab.currentAssistantMsg->setTurnId(tab.turnId);
-                if (tab.messagesLayout) {
-                    int count = tab.messagesLayout->count();
-                    tab.messagesLayout->insertWidget(count - 1, tab.currentAssistantMsg);
-                }
+                if (tab.messagesLayout)
+                    tab.messagesLayout->insertWidget(insertPosForTab(tab), tab.currentAssistantMsg);
                 setTabProcessingState(tabIdx, true);
                 tab.process->sendMessage(response);
             });
@@ -266,10 +262,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         if (!t.currentToolGroup) {
             t.currentToolGroup = new ToolCallGroupWidget;
-            if (t.messagesLayout) {
-                int count = t.messagesLayout->count();
-                t.messagesLayout->insertWidget(count - 1, t.currentToolGroup);
-            }
+            if (t.messagesLayout)
+                t.messagesLayout->insertWidget(insertPosForTab(t), t.currentToolGroup);
         }
         t.currentToolGroup->addToolCall(info);
         scrollTabToBottom(t);
@@ -800,10 +794,8 @@ void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)
         sendMessage(text);
     });
 
-    if (tab.messagesLayout) {
-        int count = tab.messagesLayout->count();
-        tab.messagesLayout->insertWidget(count - 1, chips);
-    }
+    if (tab.messagesLayout)
+        tab.messagesLayout->insertWidget(insertPosForTab(tab), chips);
     tab.suggestionChips = chips;
     scrollTabToBottom(tab);
 }
@@ -847,6 +839,16 @@ QWidget *ChatPanel::createChatContent()
     return container;
 }
 
+int ChatPanel::insertPosForTab(const ChatTab &tab) const
+{
+    if (!tab.messagesLayout) return 0;
+    if (tab.thinkingIndicator) {
+        int idx = tab.messagesLayout->indexOf(tab.thinkingIndicator);
+        if (idx >= 0) return idx;
+    }
+    return tab.messagesLayout->count() - 1;
+}
+
 void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
 {
     if (!tab.messagesLayout) return;
@@ -854,12 +856,7 @@ void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
     if (tab.welcomeWidget && tab.welcomeWidget->isVisible())
         tab.welcomeWidget->hide();
 
-    int insertPos = tab.messagesLayout->count() - 1;
-    if (tab.thinkingIndicator) {
-        int indicatorIdx = tab.messagesLayout->indexOf(tab.thinkingIndicator);
-        if (indicatorIdx >= 0) insertPos = indicatorIdx;
-    }
-    tab.messagesLayout->insertWidget(insertPos, msg);
+    tab.messagesLayout->insertWidget(insertPosForTab(tab), msg);
 
     connect(msg, &ChatMessageWidget::revertRequested,
             this, &ChatPanel::onRevertRequested);

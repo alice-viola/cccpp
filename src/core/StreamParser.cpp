@@ -198,12 +198,16 @@ StreamEvent StreamParser::parseEvent(const json &j)
     }
 
     // ---- "user" message with checkpoint UUID (from --replay-user-messages) ----
+    // Only the replayed user prompt (isReplay=true) carries the checkpoint UUID.
+    // Tool result events also arrive as type "user" but have no file checkpoint.
     if (type == "user") {
-        QString uuid = jstr(j, "uuid");
-        if (uuid.isEmpty() && j.contains("message"))
-            uuid = jstr(j["message"], "uuid");
-        if (!uuid.isEmpty())
-            emit checkpointReceived(uuid);
+        bool isReplay = j.contains("isReplay") && j["isReplay"].is_boolean()
+                        && j["isReplay"].get<bool>();
+        if (isReplay) {
+            QString uuid = jstr(j, "uuid");
+            if (!uuid.isEmpty())
+                emit checkpointReceived(uuid);
+        }
         event.type = StreamEvent::Unknown;
         return event;
     }

@@ -98,6 +98,7 @@ private:
     QString buildContextPreamble(const QString &userText);
     void updateInputBarContext();
     void showSuggestionChips(ChatTab &tab, const QString &responseText);
+    int insertPosForTab(const ChatTab &tab) const;
 
     QTabWidget *m_tabWidget;
     QPushButton *m_newChatBtn;
