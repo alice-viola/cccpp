@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QStringList>
+#include <QDateTime>
 
 class ChatMessageWidget : public QFrame {
     Q_OBJECT
@@ -27,6 +28,7 @@ public:
     void showAcceptRejectButtons(bool show);
     void setReverted(bool reverted);
     void setHeaderVisible(bool visible) { if (m_headerWidget) m_headerWidget->setVisible(visible); }
+    void setTimestamp(const QDateTime &dt);
     QString rawContent() const { return m_rawContent; }
 
 signals:
@@ -59,6 +61,7 @@ private:
     QPushButton *m_expandBtn = nullptr;
     QVBoxLayout *m_layout;
     QWidget *m_imageContainer = nullptr;
+    QLabel *m_timestampLabel = nullptr;
     QString m_rawContent;
     QStringList m_pendingHtmlBlocks;
     bool m_isCollapsed = true;

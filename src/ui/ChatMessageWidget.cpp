@@ -52,6 +52,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
 
         m_layout->addLayout(contentRow);
 
+        m_timestampLabel = new QLabel(this);
+        m_timestampLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 10px; }").arg(tm.hex("text_faint")));
+        m_layout->addWidget(m_timestampLabel);
+
         m_acceptBtn = nullptr;
         m_rejectBtn = nullptr;
         m_roleLabel = nullptr;
@@ -75,6 +80,12 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
         m_roleLabel->setStyleSheet(
             QStringLiteral("QLabel { font-weight: bold; font-size: 12px; color: %1; }").arg(roleColor));
         headerLayout->addWidget(m_roleLabel);
+
+        m_timestampLabel = new QLabel(m_headerWidget);
+        m_timestampLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 10px; margin-left: 6px; }").arg(tm.hex("text_faint")));
+        headerLayout->addWidget(m_timestampLabel);
+
         headerLayout->addStretch();
 
         m_acceptBtn = new QPushButton("Accept", m_headerWidget);
@@ -353,6 +364,12 @@ void ChatMessageWidget::setupToolWidget(const QString &, const QString &summary)
         m_toolDetailWidget->setVisible(!m_isCollapsed);
         m_expandBtn->setText(m_isCollapsed ? QStringLiteral("\u25B6") : QStringLiteral("\u25BC"));
     });
+}
+
+void ChatMessageWidget::setTimestamp(const QDateTime &dt)
+{
+    if (m_timestampLabel)
+        m_timestampLabel->setText(dt.toString("hh:mm"));
 }
 
 void ChatMessageWidget::showRevertButton(bool show)

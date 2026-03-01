@@ -161,6 +161,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (!t->currentAssistantMsg) {
             t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
             t->currentAssistantMsg->setTurnId(t->turnId);
+            t->currentAssistantMsg->setTimestamp(QDateTime::currentDateTime());
             if (!t->hasFirstAssistantMsg)
                 t->hasFirstAssistantMsg = true;
             else
@@ -407,6 +408,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             if (!t->currentAssistantMsg) {
                 t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
                 t->currentAssistantMsg->setTurnId(t->turnId);
+                t->currentAssistantMsg->setTimestamp(QDateTime::currentDateTime());
                 if (!t->hasFirstAssistantMsg)
                     t->hasFirstAssistantMsg = true;
                 else
@@ -419,6 +421,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             if (!t->currentAssistantMsg) {
                 t->currentAssistantMsg = new ChatMessageWidget(ChatMessageWidget::Assistant, "");
                 t->currentAssistantMsg->setTurnId(t->turnId);
+                t->currentAssistantMsg->setTimestamp(QDateTime::currentDateTime());
                 if (!t->hasFirstAssistantMsg)
                     t->hasFirstAssistantMsg = true;
                 else
@@ -580,6 +583,8 @@ void ChatPanel::restoreSession(const QString &sessionId)
             flushGroup();
             auto *w = new ChatMessageWidget(ChatMessageWidget::User, msg.content);
             w->setTurnId(turnId);
+            if (msg.timestamp > 0)
+                w->setTimestamp(QDateTime::fromSecsSinceEpoch(msg.timestamp));
             bool hasCheckpoint =
                 !m_database->checkpointUuid(sessionId, turnId).isEmpty();
             w->showRevertButton(hasCheckpoint);
@@ -597,6 +602,8 @@ void ChatPanel::restoreSession(const QString &sessionId)
             flushGroup();
             auto *w = new ChatMessageWidget(ChatMessageWidget::Assistant, msg.content);
             w->setTurnId(turnId);
+            if (msg.timestamp > 0)
+                w->setTimestamp(QDateTime::fromSecsSinceEpoch(msg.timestamp));
             if (!firstAssistantInTurn)
                 w->setHeaderVisible(false);
             firstAssistantInTurn = false;
@@ -710,6 +717,7 @@ void ChatPanel::onSendRequested(const QString &text)
 
     auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
     userMsg->setTurnId(tab.turnId);
+    userMsg->setTimestamp(QDateTime::currentDateTime());
 
     auto attachedImgs = m_inputBar->attachedImages();
     if (!attachedImgs.isEmpty()) {
@@ -720,6 +728,15 @@ void ChatPanel::onSendRequested(const QString &text)
     }
 
     addMessageToTab(tab, userMsg);
+
+    if (tab.turnId == 1) {
+        QStringList words = text.simplified().split(' ');
+        QString title = words.mid(0, 4).join(' ');
+        if (words.size() > 4) title += "...";
+        m_tabWidget->setTabText(tab.tabIndex, title);
+        if (m_sessionMgr)
+            m_sessionMgr->setSessionTitle(tab.sessionId, title);
+    }
 
     if (m_database) {
         MessageRecord rec;
