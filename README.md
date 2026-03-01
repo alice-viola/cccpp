@@ -90,7 +90,7 @@ Here you can see CCCPP building itself:
 
 ## Requirements
 
-- **Claude Code CLI** (`claude`) installed and authenticated
+- **Claude Code CLI** (`claude`) >= **v2.1.0** (Jan 9, 2026) — installed and authenticated. See [Claude Code Compatibility](#claude-code-compatibility) for details.
 - **Qt6** (Core, Widgets, Sql)
 - **QScintilla** (optional — falls back to QPlainTextEdit without it)
 - **CMake** >= 3.20
@@ -186,3 +186,69 @@ The app wraps Claude Code CLI (`claude -p`) rather than calling the Anthropic AP
 - `StreamParser` reads stdout line-by-line, parsing newline-delimited JSON events
 - Text deltas stream into the chat panel; tool events feed the diff engine and snapshot manager
 - `SnapshotManager` runs `git stash create` before each turn for atomic rollback
+
+## Claude Code Compatibility
+
+CCCPP spawns the **Claude Code CLI binary** (`claude`) as a child process — it does **not** use the [Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-overview) libraries (Python/TypeScript). There is no version check at startup; CCCPP assumes the installed binary supports the `stream-json` protocol.
+
+### Minimum version
+
+**v2.1.0** (Jan 9, 2026) for full functionality. Earlier versions lack support for flags CCCPP relies on:
+
+| Minimum version | What it unlocks |
+|-----------------|-----------------|
+| **v1.0.86** (Aug 21, 2025) | Basic chat — `--replay-user-messages` is passed unconditionally |
+| **v2.0.0** (Sep 29, 2025) | Chat + rewind — `--rewind-files` and `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING` |
+| **v2.1.0** (Jan 9, 2026) | All features including plan mode — `--permission-mode plan` |
+
+### CLI flags used
+
+Every chat session is started with:
+
+```
+claude -p \
+  --input-format stream-json \
+  --output-format stream-json \
+  --verbose \
+  --include-partial-messages \
+  --replay-user-messages \
+  --session-id <uuid>          # new session
+  --resume <session-id>        # or resumed session
+  --permission-mode <mode>     # bypassPermissions | plan
+  --tools <list>               # or --allowedTools <list>
+  --model <model>              # if set by user
+```
+
+The rewind feature runs a separate process:
+
+```
+claude --resume <session-id> --rewind-files <checkpoint-uuid>
+```
+
+### Environment variables
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING` | `1` | Enables file checkpoint tracking so rewind works |
+| `PATH` | Prepended with `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, and latest NVM node bin | Ensures the `claude` binary is discoverable from a GUI app |
+| `HOME` | Set if empty | Required on macOS where GUI apps may not inherit it |
+
+### Stream-JSON protocol
+
+`StreamParser` expects newline-delimited JSON on stdout. The message types it handles:
+
+| Type | Key fields | Purpose |
+|------|-----------|---------|
+| `system` | `session_id` | Session initialization |
+| `result` | `session_id` | Session completion |
+| `assistant` | `message.content[]`, `session_id` | Full assistant snapshots, tool-use blocks |
+| `user` | `uuid`, `isReplay` | Checkpoint UUIDs for rewind (via `--replay-user-messages`) |
+| `tool_result` | `content` | Tool execution results |
+| `error` | `error.message` | Error reporting |
+| `stream_event` | `event` | Wraps Anthropic streaming events (`content_block_delta`, `content_block_start`, `content_block_stop`) |
+
+Input is sent as a single newline-terminated JSON envelope on stdin, then the write channel is closed:
+
+```json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}
+```
