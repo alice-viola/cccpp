@@ -15,10 +15,14 @@
 #include <QFileInfo>
 #include <QTextCursor>
 #include <QTimer>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 
 InputBar::InputBar(QWidget *parent)
     : QWidget(parent)
 {
+    setAcceptDrops(true);
+
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(16, 4, 16, 10);
     outerLayout->setSpacing(2);
@@ -58,6 +62,7 @@ InputBar::InputBar(QWidget *parent)
     m_input->setMaximumHeight(80);
     m_input->setMinimumHeight(32);
     m_input->setAcceptRichText(false);
+    m_input->setAcceptDrops(false);
     m_input->installEventFilter(this);
 
     m_sendBtn = new QPushButton("\xe2\x86\x91", this); // up arrow
@@ -536,4 +541,77 @@ bool InputBar::eventFilter(QObject *obj, QEvent *event)
         }
     }
     return QWidget::eventFilter(obj, event);
+}
+
+static bool isSupportedImageFile(const QString &path)
+{
+    static const QStringList exts = {"png", "jpg", "jpeg", "gif", "webp"};
+    return exts.contains(QFileInfo(path).suffix().toLower());
+}
+
+void InputBar::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (!event->mimeData()) return;
+
+    if (event->mimeData()->hasUrls()) {
+        for (const QUrl &url : event->mimeData()->urls()) {
+            if (url.isLocalFile() && isSupportedImageFile(url.toLocalFile())) {
+                event->acceptProposedAction();
+                auto &p = ThemeManager::instance().palette();
+                applyBorderColor(p.blue);
+                return;
+            }
+        }
+    }
+
+    if (event->mimeData()->hasImage()) {
+        event->acceptProposedAction();
+        auto &p = ThemeManager::instance().palette();
+        applyBorderColor(p.blue);
+        return;
+    }
+}
+
+void InputBar::dragLeaveEvent(QDragLeaveEvent *)
+{
+    auto &p = ThemeManager::instance().palette();
+    applyBorderColor(m_input->hasFocus() ? p.mauve : p.border_standard);
+}
+
+void InputBar::dropEvent(QDropEvent *event)
+{
+    auto &p = ThemeManager::instance().palette();
+    applyBorderColor(m_input->hasFocus() ? p.mauve : p.border_standard);
+
+    if (!event->mimeData()) return;
+
+    if (event->mimeData()->hasUrls()) {
+        for (const QUrl &url : event->mimeData()->urls()) {
+            if (!url.isLocalFile()) continue;
+            QString path = url.toLocalFile();
+            if (!isSupportedImageFile(path)) continue;
+
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) continue;
+
+            QByteArray data = file.readAll();
+            QString format = QFileInfo(path).suffix().toLower();
+            if (format == "jpg") format = "jpeg";
+            addImageThumbnail(data, format, QFileInfo(path).fileName());
+        }
+        event->acceptProposedAction();
+        return;
+    }
+
+    if (event->mimeData()->hasImage()) {
+        QImage image = qvariant_cast<QImage>(event->mimeData()->imageData());
+        if (!image.isNull()) {
+            QByteArray data;
+            QBuffer buffer(&data);
+            buffer.open(QIODevice::WriteOnly);
+            image.save(&buffer, "PNG");
+            addImageThumbnail(data, "png", "dropped-image.png");
+            event->acceptProposedAction();
+        }
+    }
 }

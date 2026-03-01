@@ -4,6 +4,8 @@
 #include <QProcess>
 #include <QString>
 #include <QStringList>
+#include <QList>
+#include <QPair>
 
 class StreamParser;
 
@@ -18,7 +20,8 @@ public:
     void setMode(const QString &mode); // "agent", "ask", "plan"
     void setModel(const QString &model); // e.g. "claude-sonnet-4-6"
 
-    void sendMessage(const QString &message);
+    void sendMessage(const QString &message,
+                     const QList<QPair<QByteArray, QString>> &images = {});
     void rewindFiles(const QString &checkpointUuid);
     void cancel();
     bool isRunning() const;

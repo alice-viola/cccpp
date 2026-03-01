@@ -22,6 +22,7 @@ public:
     void setToolInfo(const QString &toolName, const QString &summary);
     void setTurnId(int turnId) { m_turnId = turnId; }
     int turnId() const { return m_turnId; }
+    void setImages(const QList<QByteArray> &imageDataList);
     void showRevertButton(bool show);
     void showAcceptRejectButtons(bool show);
     void setReverted(bool reverted);
@@ -56,6 +57,7 @@ private:
     QPushButton *m_rejectBtn = nullptr;
     QPushButton *m_expandBtn = nullptr;
     QVBoxLayout *m_layout;
+    QWidget *m_imageContainer = nullptr;
     QString m_rawContent;
     QStringList m_pendingHtmlBlocks;
     bool m_isCollapsed = true;

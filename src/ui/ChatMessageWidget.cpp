@@ -9,6 +9,7 @@
 #include <QRegularExpression>
 #include <QResizeEvent>
 #include <QTimer>
+#include <QPixmap>
 #include <QtMath>
 
 ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget *parent)
@@ -123,6 +124,38 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     applyThemeColors();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
             this, &ChatMessageWidget::applyThemeColors);
+}
+
+void ChatMessageWidget::setImages(const QList<QByteArray> &imageDataList)
+{
+    if (imageDataList.isEmpty()) return;
+
+    m_imageContainer = new QWidget(this);
+    auto *imgLayout = new QHBoxLayout(m_imageContainer);
+    imgLayout->setContentsMargins(0, 0, 0, 4);
+    imgLayout->setSpacing(6);
+
+    auto &p = ThemeManager::instance().palette();
+    for (const auto &data : imageDataList) {
+        QPixmap px;
+        px.loadFromData(data);
+        if (px.isNull()) continue;
+
+        auto *frame = new QFrame(m_imageContainer);
+        frame->setStyleSheet(QStringLiteral(
+            "QFrame { background: %1; border: 1px solid %2; border-radius: 6px; padding: 2px; }")
+            .arg(p.bg_raised.name(), p.border_standard.name()));
+        auto *frameLayout = new QVBoxLayout(frame);
+        frameLayout->setContentsMargins(2, 2, 2, 2);
+
+        auto *label = new QLabel(frame);
+        label->setPixmap(px.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        frameLayout->addWidget(label);
+        imgLayout->addWidget(frame);
+    }
+    imgLayout->addStretch();
+
+    m_layout->insertWidget(0, m_imageContainer);
 }
 
 void ChatMessageWidget::setupAssistantContent(const QString &content)

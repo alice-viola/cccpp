@@ -24,11 +24,11 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
             final += part;
         } else {
             QString p = part;
-            p.replace("\n\n", "</p><p style='margin:8px 0;'>");
+            p.replace("\n\n", "<br><br>");
             p.replace("\n", "<br>");
             // Block-level <div> elements (list items, headings) don't need <br> or
             // paragraph breaks between them — collapse any such spacing.
-            p.replace(QRegularExpression("</div>((?:<br>|</p>\\s*<p[^>]*>|\\s)+)<div"), "</div><div");
+            p.replace(QRegularExpression("</div>((?:<br>|\\s)+)<div"), "</div><div");
             final += p;
         }
     }
@@ -36,7 +36,7 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     return QStringLiteral(
         "<div style='font-family:\"Inter\";"
         "font-size:13.5px;line-height:1.6;color:%2;'>"
-        "<p style='margin:0;'>%1</p></div>")
+        "%1</div>")
         .arg(final, ThemeManager::instance().hex("text_primary"));
 }
 
@@ -134,6 +134,7 @@ QString MarkdownRenderer::processCodeBlocks(const QString &text) const
             + ";padding:1px 6px;'>Apply</a>";
 
         QString codeAsHtml = escapedCode;
+        codeAsHtml.replace("`", "&#96;");
         codeAsHtml.replace("\n", "<br>");
 
         QString border = tm.hex("border_standard");

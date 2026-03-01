@@ -570,6 +570,15 @@ void ChatPanel::onSendRequested(const QString &text)
 
     auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
     userMsg->setTurnId(tab.turnId);
+
+    auto attachedImgs = m_inputBar->attachedImages();
+    if (!attachedImgs.isEmpty()) {
+        QList<QByteArray> imageDataForDisplay;
+        for (const auto &img : attachedImgs)
+            imageDataForDisplay.append(img.data);
+        userMsg->setImages(imageDataForDisplay);
+    }
+
     addMessageToTab(tab, userMsg);
 
     if (m_database) {
@@ -595,7 +604,13 @@ void ChatPanel::onSendRequested(const QString &text)
         tab.process->setSessionId(tab.sessionId);
 
     setTabProcessingState(tab.tabIndex, true);
-    tab.process->sendMessage(enrichedMessage);
+
+    QList<QPair<QByteArray, QString>> imagePayload;
+    for (const auto &img : attachedImgs) {
+        QString mediaType = "image/" + img.format.toLower();
+        imagePayload.append({img.data, mediaType});
+    }
+    tab.process->sendMessage(enrichedMessage, imagePayload);
 
     // Clear attachments after sending
     m_inputBar->clearAttachments();
@@ -793,12 +808,6 @@ QString ChatPanel::buildContextPreamble(const QString &userText)
                 .arg(token, content);
             resolvedPaths.insert(fullPath);
         }
-    }
-
-    // Image contexts
-    auto images = m_inputBar->attachedImages();
-    if (!images.isEmpty()) {
-        contextParts << QStringLiteral("[%1 image(s) attached]").arg(images.size());
     }
 
     if (contextParts.isEmpty())

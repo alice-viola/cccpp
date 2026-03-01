@@ -1,6 +1,7 @@
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
 #include "util/Config.h"
+#include <nlohmann/json.hpp>
 #include <QProcessEnvironment>
 #include <QDir>
 #include <QFile>
@@ -43,7 +44,8 @@ void ClaudeProcess::setModel(const QString &model)
     m_model = model;
 }
 
-void ClaudeProcess::sendMessage(const QString &message)
+void ClaudeProcess::sendMessage(const QString &message,
+                                const QList<QPair<QByteArray, QString>> &images)
 {
     if (m_process && m_process->state() != QProcess::NotRunning) {
         emit errorOccurred("Process already running");
@@ -152,16 +154,30 @@ void ClaudeProcess::sendMessage(const QString &message)
         emit errorOccurred(QStringLiteral("Process failed to start: %1").arg(claudeBin));
     }
 
-    // Send the user message as stream-json on stdin, then close.
-    // Format matches the Anthropic API message structure that the CLI expects.
-    QByteArray escaped = message.toUtf8();
-    escaped.replace('\\', "\\\\");
-    escaped.replace('"', "\\\"");
-    escaped.replace('\n', "\\n");
-    escaped.replace('\r', "\\r");
-    escaped.replace('\t', "\\t");
-    QByteArray jsonMsg = "{\"type\":\"user\",\"message\":{\"role\":\"user\","
-        "\"content\":[{\"type\":\"text\",\"text\":\"" + escaped + "\"}]}}\n";
+    nlohmann::json contentArray = nlohmann::json::array();
+    for (const auto &img : images) {
+        contentArray.push_back({
+            {"type", "image"},
+            {"source", {
+                {"type", "base64"},
+                {"media_type", img.second.toStdString()},
+                {"data", img.first.toBase64().toStdString()}
+            }}
+        });
+    }
+    contentArray.push_back({
+        {"type", "text"},
+        {"text", message.toUtf8().toStdString()}
+    });
+
+    nlohmann::json envelope = {
+        {"type", "user"},
+        {"message", {
+            {"role", "user"},
+            {"content", contentArray}
+        }}
+    };
+    QByteArray jsonMsg = QByteArray::fromStdString(envelope.dump()) + "\n";
     m_process->write(jsonMsg);
     m_process->closeWriteChannel();
 
