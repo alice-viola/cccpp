@@ -20,6 +20,7 @@ Here you can see CCCPP building itself:
 
 - **Real-time streaming**: parses Claude Code's `stream-json` output for live, token-by-token response display
 - **Multiple chat tabs**: run parallel conversations in separate tabs, each with its own session
+- **Multimodal**: accept images in the prompt
 - **Agent / Ask / Plan modes**: maps directly to Claude Code CLI flags — full tool access, read-only, or permission-controlled
 - **Model selection**: switch between Claude models on the fly from the toolbar
 - **Chat persistence**: SQLite database at `~/.cccpp/history.db` stores sessions and messages
@@ -29,7 +30,7 @@ Here you can see CCCPP building itself:
 - **Markdown rendering**: code blocks, bold, italic, headers, lists, links, blockquotes, and tables
 - **Tool call display**: collapsible tool-call groups per turn with inline diffs for Edit/Write operations
 - **Interactive questions**: answer Claude's follow-up questions directly in the UI with radio/checkbox options
-- **Snapshot & revert**: takes git stash snapshots before each agent turn; revert button restores files
+- **Revert**: use Claude revert mechanism
 
 ### Code Viewer
 
