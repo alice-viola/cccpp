@@ -93,8 +93,8 @@ void MainWindow::setupUI()
     m_leftTabs->setDocumentMode(true);
     m_leftTabs->setTabPosition(QTabWidget::South);
     m_leftTabs->addTab(m_workspaceTree, "Files");
-    m_leftTabs->addTab(m_searchPanel, "Search");
     m_leftTabs->addTab(m_gitPanel, "Git");
+    m_leftTabs->addTab(m_searchPanel, "Search");
 
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
     m_centerSplitter->setHandleWidth(1);

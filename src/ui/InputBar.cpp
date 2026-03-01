@@ -67,7 +67,7 @@ InputBar::InputBar(QWidget *parent)
 
     auto *bottomBar = new QWidget(m_inputContainer);
     m_bottomBarLayout = new QHBoxLayout(bottomBar);
-    m_bottomBarLayout->setContentsMargins(6, 0, 4, 4);
+    m_bottomBarLayout->setContentsMargins(10, 4, 8, 8);
     m_bottomBarLayout->setSpacing(4);
     m_bottomBarLayout->addStretch();
 
