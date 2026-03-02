@@ -149,14 +149,14 @@ void SettingsDialog::onDetect()
 
 void SettingsDialog::onAccept()
 {
-    // Save Claude binary
+    auto &cfg = Config::instance();
+    cfg.setSuppressAutoSave(true);
+
     QString path = m_claudePath->text().trimmed();
     if (path.isEmpty())
         path = "claude";
-    Config::instance().setClaudeBinary(path);
+    cfg.setClaudeBinary(path);
 
-    // Save Telegram settings
-    auto &cfg = Config::instance();
     cfg.setTelegramEnabled(m_telegramEnabled->isChecked());
     cfg.setTelegramBotToken(m_telegramToken->text().trimmed());
 
@@ -170,6 +170,9 @@ void SettingsDialog::onAccept()
         }
     }
     cfg.setTelegramAllowedUsers(userIds);
+
+    cfg.setSuppressAutoSave(false);
+    cfg.save();
 
     accept();
 }

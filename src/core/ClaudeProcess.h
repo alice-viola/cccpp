@@ -42,6 +42,8 @@ private slots:
 
 private:
     QStringList buildArguments(const QString &message) const;
+    QProcessEnvironment buildProcessEnvironment() const;
+    QString resolveClaudeBinary() const;
 
     QProcess *m_process = nullptr;
     StreamParser *m_parser = nullptr;

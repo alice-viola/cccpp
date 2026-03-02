@@ -44,6 +44,7 @@ set(CORE_SOURCES
     src/core/UnixPty.cpp
     src/core/WinPty.cpp
     src/core/TelegramApi.cpp
+    src/core/ChatHandler.cpp
     src/core/TelegramBridge.cpp
     src/core/TelegramDaemon.cpp
     src/core/DaemonClient.cpp

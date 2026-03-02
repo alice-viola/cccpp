@@ -320,28 +320,14 @@ void GitManager::doRequestFileDiff(const QString &filePath, bool staged)
             return;
         }
 
-        // Get old content (HEAD or staged version)
-        QString blobSpec = staged ? QStringLiteral(":0:%1").arg(filePath)
-                                  : QStringLiteral("HEAD:%1").arg(filePath);
-        QStringList showArgs = {"show", blobSpec};
+        // old content is always from HEAD
+        QStringList showArgs = {"show", QStringLiteral("HEAD:%1").arg(filePath)};
 
         runAsync(showArgs, [this, filePath, staged](int exitCode, const QString &oldContent, const QString &) {
             QString old = (exitCode == 0) ? oldContent : QString();
 
-            // Get new content
             if (staged) {
-                // staged diff: new = index version
-                QStringList indexArgs = {"show", QStringLiteral(":0:%1").arg(filePath)};
-                // Actually for staged diff, old=HEAD new=index
-                // old is HEAD:<file>, new is :0:<file>
-                // We already got old from HEAD, now get index
-                QStringList showIndexArgs = {"show", QStringLiteral(":0:%1").arg(filePath)};
-                // Wait — for staged: old=HEAD new=index
-                // We ran `git show HEAD:<file>` to get old, now get index version
-                // Actually `git show :0:<file>` IS the index version. For staged diff,
-                // old = HEAD version, new = index version.
-                // We already fetched old = HEAD (exitCode == 0 means it exists)
-                // Now fetch new = index
+                // staged diff: old = HEAD, new = index version
                 runAsync({"show", QStringLiteral(":0:%1").arg(filePath)},
                          [this, filePath, staged, old](int ec2, const QString &newContent, const QString &) {
                     GitUnifiedDiff diff;
@@ -351,7 +337,7 @@ void GitManager::doRequestFileDiff(const QString &filePath, bool staged)
                     emit fileDiffReady(filePath, staged, diff);
                 });
             } else {
-                // unstaged diff: old = HEAD (or index), new = working tree
+                // unstaged diff: old = HEAD, new = working tree
                 QString fullPath = m_workingDir + "/" + filePath;
                 QFile f(fullPath);
                 QString newContent;
@@ -471,16 +457,35 @@ void GitManager::discardAll()
 
 void GitManager::doDiscardAll()
 {
-    runAsync({"checkout", "--", "."}, [this](int exitCode, const QString &, const QString &err) {
+    // Manage both processes explicitly so drainQueue() fires only once,
+    // after both checkout and clean complete (prevents parallel git ops).
+    auto *proc1 = new QProcess(this);
+    proc1->setWorkingDirectory(m_workingDir);
+
+    connect(proc1, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, proc1](int exitCode, QProcess::ExitStatus) {
         if (exitCode != 0)
-            emit errorOccurred("discard all", err);
-        // Also clean untracked files
-        runAsync({"clean", "-fd"}, [this](int exitCode2, const QString &, const QString &err2) {
+            emit errorOccurred("discard all",
+                               QString::fromUtf8(proc1->readAllStandardError()));
+        proc1->deleteLater();
+
+        auto *proc2 = new QProcess(this);
+        proc2->setWorkingDirectory(m_workingDir);
+
+        connect(proc2, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                this, [this, proc2](int exitCode2, QProcess::ExitStatus) {
             if (exitCode2 != 0)
-                emit errorOccurred("clean", err2);
+                emit errorOccurred("clean",
+                                   QString::fromUtf8(proc2->readAllStandardError()));
+            proc2->deleteLater();
             scheduleRefresh();
+            drainQueue();
         });
+
+        proc2->start(m_gitBinary, {"clean", "-fd"});
     });
+
+    proc1->start(m_gitBinary, {"checkout", "--", "."});
 }
 
 // ---------------------------------------------------------------------------

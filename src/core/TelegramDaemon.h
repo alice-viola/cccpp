@@ -44,9 +44,6 @@ private:
     void onTelegramMessage(const TelegramMessage &msg);
     void onTelegramCallback(const TelegramCallback &cb);
 
-    void routeToInstance(qint64 chatId, const QString &type,
-                         const QString &text, const QString &command = {},
-                         const QString &args = {});
     void sendToSocket(QLocalSocket *socket, const QByteArray &data);
     ConnectedInstance *findInstance(const QString &workspace);
 

@@ -12,12 +12,10 @@ public:
 
     bool load(const QString &path = {});
     void save();
+    void setSuppressAutoSave(bool suppress);
 
     QString claudeBinary() const;
     void setClaudeBinary(const QString &path);
-    QStringList agentModeFlags() const;
-    QStringList askModeFlags() const;
-    QStringList planModeFlags() const;
     QString theme() const;
     void setTheme(const QString &theme);
     QString lastWorkspace() const;
@@ -32,6 +30,8 @@ public:
 
 private:
     Config();
+    void autoSave();
     QString m_configPath;
     nlohmann::json m_data;
+    bool m_suppressSave = false;
 };

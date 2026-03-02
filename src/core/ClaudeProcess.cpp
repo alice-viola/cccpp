@@ -44,22 +44,8 @@ void ClaudeProcess::setModel(const QString &model)
     m_model = model;
 }
 
-void ClaudeProcess::sendMessage(const QString &message,
-                                const QList<QPair<QByteArray, QString>> &images)
+QProcessEnvironment ClaudeProcess::buildProcessEnvironment() const
 {
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        emit errorOccurred("Process already running");
-        return;
-    }
-
-    m_parser->reset();
-    m_stdoutBuffer.clear();
-
-    m_process = new QProcess(this);
-    if (!m_workingDir.isEmpty())
-        m_process->setWorkingDirectory(m_workingDir);
-
-    // macOS GUI apps don't inherit shell PATH
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     QString path = env.value("PATH");
     QStringList extraPaths = {
@@ -82,7 +68,43 @@ void ClaudeProcess::sendMessage(const QString &message,
     if (env.value("HOME").isEmpty())
         env.insert("HOME", QDir::homePath());
     env.insert("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
-    m_process->setProcessEnvironment(env);
+    return env;
+}
+
+QString ClaudeProcess::resolveClaudeBinary() const
+{
+    QString claudeBin = Config::instance().claudeBinary();
+    if (claudeBin == "claude" || claudeBin.isEmpty()) {
+        QStringList searchDirs = {
+            QDir::homePath() + "/.local/bin",
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+        };
+        for (const QString &dir : searchDirs) {
+            QString candidate = dir + "/claude";
+            if (QFile::exists(candidate))
+                return candidate;
+        }
+    }
+    return claudeBin;
+}
+
+void ClaudeProcess::sendMessage(const QString &message,
+                                const QList<QPair<QByteArray, QString>> &images)
+{
+    if (m_process && m_process->state() != QProcess::NotRunning) {
+        emit errorOccurred("Process already running");
+        return;
+    }
+
+    m_parser->reset();
+    m_stdoutBuffer.clear();
+
+    m_process = new QProcess(this);
+    if (!m_workingDir.isEmpty())
+        m_process->setWorkingDirectory(m_workingDir);
+
+    m_process->setProcessEnvironment(buildProcessEnvironment());
 
     connect(m_process, &QProcess::readyReadStandardOutput,
             this, &ClaudeProcess::onReadyReadStdout);
@@ -113,24 +135,7 @@ void ClaudeProcess::sendMessage(const QString &message,
         qDebug() << "[cccpp] Claude process started";
     });
 
-    // Resolve the full path to the claude binary.
-    // If the user configured a path in settings, use it directly.
-    QString claudeBin = Config::instance().claudeBinary();
-    if (claudeBin == "claude" || claudeBin.isEmpty()) {
-        QStringList searchDirs = {
-            QDir::homePath() + "/.local/bin",
-            "/usr/local/bin",
-            "/opt/homebrew/bin",
-        };
-        for (const QString &dir : searchDirs) {
-            QString candidate = dir + "/claude";
-            if (QFile::exists(candidate)) {
-                claudeBin = candidate;
-                break;
-            }
-        }
-    }
-
+    QString claudeBin = resolveClaudeBinary();
     QStringList args = buildArguments(message);
     qDebug() << "[cccpp] Starting:" << claudeBin;
     qDebug() << "[cccpp] Working dir:" << m_workingDir;
@@ -152,6 +157,7 @@ void ClaudeProcess::sendMessage(const QString &message,
     if (!m_process->waitForStarted(5000)) {
         qWarning() << "[cccpp] Process failed to start within 5 seconds";
         emit errorOccurred(QStringLiteral("Process failed to start: %1").arg(claudeBin));
+        return;
     }
 
     nlohmann::json contentArray = nlohmann::json::array();
@@ -223,45 +229,9 @@ void ClaudeProcess::rewindFiles(const QString &checkpointUuid)
     if (!m_workingDir.isEmpty())
         proc->setWorkingDirectory(m_workingDir);
 
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    QString pathVal = env.value("PATH");
-    QStringList extraPaths = {
-        QDir::homePath() + "/.local/bin",
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-    };
-    QDir nvmDir(QDir::homePath() + "/.nvm/versions/node");
-    if (nvmDir.exists()) {
-        QStringList versions = nvmDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-        if (!versions.isEmpty())
-            extraPaths.prepend(nvmDir.absoluteFilePath(versions.last()) + "/bin");
-    }
-    for (const QString &p : extraPaths) {
-        if (!pathVal.contains(p) && QDir(p).exists())
-            pathVal = p + ":" + pathVal;
-    }
-    env.insert("PATH", pathVal);
-    if (env.value("HOME").isEmpty())
-        env.insert("HOME", QDir::homePath());
-    env.insert("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
-    proc->setProcessEnvironment(env);
+    proc->setProcessEnvironment(buildProcessEnvironment());
 
-    QString claudeBin = Config::instance().claudeBinary();
-    if (claudeBin == "claude" || claudeBin.isEmpty()) {
-        QStringList searchDirs = {
-            QDir::homePath() + "/.local/bin",
-            "/usr/local/bin",
-            "/opt/homebrew/bin",
-        };
-        for (const QString &dir : searchDirs) {
-            QString candidate = dir + "/claude";
-            if (QFile::exists(candidate)) {
-                claudeBin = candidate;
-                break;
-            }
-        }
-    }
-
+    QString claudeBin = resolveClaudeBinary();
     QStringList args;
     args << "--resume" << m_sessionId
          << "--rewind-files" << checkpointUuid;

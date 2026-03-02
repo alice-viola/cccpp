@@ -105,7 +105,6 @@ bool TelegramDaemon::start()
 
     m_api->setToken(cfg.telegramBotToken());
     m_api->setAllowedUsers(cfg.telegramAllowedUsers());
-    m_api->startPolling();
 
     writeLockFile();
 
@@ -147,6 +146,9 @@ void TelegramDaemon::onNewConnection()
 {
     while (auto *socket = m_server->nextPendingConnection()) {
         m_graceTimer->stop(); // An instance connected, cancel grace timer
+
+        if (!m_api->isPolling())
+            m_api->startPolling();
 
         ConnectedInstance inst;
         inst.socket = socket;
@@ -384,7 +386,10 @@ void TelegramDaemon::handleSwitchCommand(qint64 chatId, const QString &target)
         for (auto it = m_userStates.begin(); it != m_userStates.end(); ++it) {
             if (it->chatId == chatId) { userId = it.key(); break; }
         }
-        if (userId == 0) userId = chatId; // fallback
+        if (userId == 0) {
+            m_api->sendMessage(chatId, "Could not identify your user. Please send any message first.", {});
+            return;
+        }
         m_userStates[userId] = {chatId, inst.workspace};
         QString label = inst.name.isEmpty() ? QFileInfo(inst.workspace).fileName() : inst.name;
         m_api->sendMessage(chatId, "Switched to: " + label, {});
@@ -428,9 +433,3 @@ void TelegramDaemon::sendToSocket(QLocalSocket *socket, const QByteArray &data)
     socket->flush();
 }
 
-void TelegramDaemon::routeToInstance(qint64 chatId, const QString &type,
-                                     const QString &text, const QString &command,
-                                     const QString &args)
-{
-    Q_UNUSED(chatId); Q_UNUSED(type); Q_UNUSED(text); Q_UNUSED(command); Q_UNUSED(args);
-}

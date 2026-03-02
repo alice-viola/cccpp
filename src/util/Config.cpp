@@ -42,6 +42,17 @@ void Config::save()
     }
 }
 
+void Config::setSuppressAutoSave(bool suppress)
+{
+    m_suppressSave = suppress;
+}
+
+void Config::autoSave()
+{
+    if (!m_suppressSave)
+        save();
+}
+
 QString Config::claudeBinary() const
 {
     if (m_data.contains("claude_binary") && m_data["claude_binary"].is_string())
@@ -52,22 +63,7 @@ QString Config::claudeBinary() const
 void Config::setClaudeBinary(const QString &path)
 {
     m_data["claude_binary"] = path.toStdString();
-    save();
-}
-
-QStringList Config::agentModeFlags() const
-{
-    return {"--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,Task"};
-}
-
-QStringList Config::askModeFlags() const
-{
-    return {"--tools", "Read,Glob,Grep"};
-}
-
-QStringList Config::planModeFlags() const
-{
-    return {"--permission-mode", "plan"};
+    autoSave();
 }
 
 QString Config::theme() const
@@ -80,7 +76,7 @@ QString Config::theme() const
 void Config::setTheme(const QString &theme)
 {
     m_data["theme"] = theme.toStdString();
-    save();
+    autoSave();
 }
 
 QString Config::lastWorkspace() const
@@ -93,7 +89,7 @@ QString Config::lastWorkspace() const
 void Config::setLastWorkspace(const QString &path)
 {
     m_data["last_workspace"] = path.toStdString();
-    save();
+    autoSave();
 }
 
 bool Config::telegramEnabled() const
@@ -106,7 +102,7 @@ bool Config::telegramEnabled() const
 void Config::setTelegramEnabled(bool enabled)
 {
     m_data["telegram_enabled"] = enabled;
-    save();
+    autoSave();
 }
 
 QString Config::telegramBotToken() const
@@ -119,7 +115,7 @@ QString Config::telegramBotToken() const
 void Config::setTelegramBotToken(const QString &token)
 {
     m_data["telegram_bot_token"] = token.toStdString();
-    save();
+    autoSave();
 }
 
 QList<qint64> Config::telegramAllowedUsers() const
@@ -140,5 +136,5 @@ void Config::setTelegramAllowedUsers(const QList<qint64> &users)
     for (qint64 id : users)
         arr.push_back(id);
     m_data["telegram_allowed_users"] = arr;
-    save();
+    autoSave();
 }

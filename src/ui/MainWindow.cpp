@@ -32,6 +32,11 @@
 #include <QMessageBox>
 #include <QShortcut>
 
+static constexpr int    kTreePanelWidth     = 150;
+static constexpr double kEditorFraction     = 0.40;
+static constexpr double kChatFraction       = 0.35;
+static constexpr double kEditorFractionGit  = 0.50;
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -56,7 +61,7 @@ MainWindow::MainWindow(QWidget *parent)
     showMaximized();
 
     QTimer::singleShot(0, this, [this] {
-        m_splitter->setSizes({150, 0, m_splitter->width() - 150});
+        m_splitter->setSizes({kTreePanelWidth, 0, m_splitter->width() - kTreePanelWidth});
         updateToggleButtons();
     });
 
@@ -180,10 +185,9 @@ void MainWindow::setupUI()
         if (!m_codeViewer->isVisible()) {
             m_codeViewer->show();
             int total = m_splitter->width();
-            int treeW = 150;
-            int editorW = static_cast<int>(total * 0.4);
-            int chatW = total - treeW - editorW;
-            m_splitter->setSizes({treeW, editorW, chatW});
+            int editorW = static_cast<int>(total * kEditorFraction);
+            int chatW = total - kTreePanelWidth - editorW;
+            m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
             updateToggleButtons();
         }
         m_codeViewer->openMarkdown(filePath);
@@ -315,7 +319,7 @@ void MainWindow::setupStatusBar()
             m_leftTabs->setVisible(true);
             QList<int> sizes = m_splitter->sizes();
             if (sizes.size() >= 3 && sizes[0] < 50) {
-                sizes[0] = 180;
+                sizes[0] = kTreePanelWidth + 30;
                 m_splitter->setSizes(sizes);
             }
         }
@@ -330,7 +334,7 @@ void MainWindow::setupStatusBar()
             QList<int> sizes = m_splitter->sizes();
             if (sizes.size() >= 3 && sizes[1] < 50) {
                 int total = m_splitter->width();
-                sizes[1] = static_cast<int>(total * 0.4);
+                sizes[1] = static_cast<int>(total * kEditorFraction);
                 sizes[2] = total - sizes[0] - sizes[1];
                 m_splitter->setSizes(sizes);
             }
@@ -346,7 +350,7 @@ void MainWindow::setupStatusBar()
             QList<int> sizes = m_splitter->sizes();
             if (sizes.size() >= 3 && sizes[2] < 50) {
                 int total = m_splitter->width();
-                sizes[2] = static_cast<int>(total * 0.35);
+                sizes[2] = static_cast<int>(total * kChatFraction);
                 sizes[1] = total - sizes[0] - sizes[2];
                 m_splitter->setSizes(sizes);
             }
@@ -539,7 +543,6 @@ void MainWindow::updateToggleButtons()
 void MainWindow::loadStylesheet()
 {
     auto &tm = ThemeManager::instance();
-    tm.initialize();
 
     QString savedTheme = Config::instance().theme();
     tm.setTheme(savedTheme);
@@ -645,10 +648,9 @@ void MainWindow::onFileSelected(const QString &filePath)
     if (!m_codeViewer->isVisible()) {
         m_codeViewer->show();
         int total = m_splitter->width();
-        int treeW = 150;
-        int editorW = static_cast<int>(total * 0.4);
-        int chatW = total - treeW - editorW;
-        m_splitter->setSizes({treeW, editorW, chatW});
+        int editorW = static_cast<int>(total * kEditorFraction);
+        int chatW = total - kTreePanelWidth - editorW;
+        m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
         updateToggleButtons();
     }
 
@@ -735,10 +737,9 @@ void MainWindow::connectGitSignals()
         if (!m_codeViewer->isVisible()) {
             m_codeViewer->show();
             int total = m_splitter->width();
-            int treeW = 150;
-            int editorW = static_cast<int>(total * 0.5);
-            int chatW = total - treeW - editorW;
-            m_splitter->setSizes({treeW, editorW, chatW});
+            int editorW = static_cast<int>(total * kEditorFractionGit);
+            int chatW = total - kTreePanelWidth - editorW;
+            m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
             updateToggleButtons();
         }
 
@@ -750,6 +751,9 @@ void MainWindow::connectGitSignals()
     connect(m_gitManager, &GitManager::errorOccurred, this,
             [](const QString &op, const QString &msg) {
         qDebug() << "[cccpp] Git error in" << op << ":" << msg;
+        ToastManager::instance().show(
+            QStringLiteral("Git %1 failed: %2").arg(op, msg.trimmed().left(80)),
+            ToastType::Error, 4000);
     });
 
     connect(m_gitManager, &GitManager::commitSucceeded, this,
