@@ -6,12 +6,24 @@
 
 A native C++ desktop application that provides a Cursor-like three-column UI for [Claude Code](https://docs.claude.com/en/docs/claude-code/cli-reference). Built with Qt6 and QScintilla, it wraps the `claude` CLI to give you a visual interface for agentic coding sessions.
 
-## Layout
+## Build
+
+```bash
+# macOS with Homebrew
+brew install qt@6 qscintilla2
+
+mkdir build && cd build
+cmake .. -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix qscintilla2)"
+cmake --build .
+
+# Run
+./c3p2 /path/to/your/project
+```
 
 Here you can see C3P2 building itself:
 
 <p align="center">
-  <img src="assets/cccpp1.png" alt="c3p2 building itself" width="700">
+  <img src="assets/cccpp3.png" alt="c3p2 building itself" width="700">
 </p>
 
 <p align="center">
@@ -109,16 +121,6 @@ cmake --build .
 # Run
 ./c3p2 /path/to/your/project
 ```
-
-## Usage
-
-1. **Open a workspace**: `File > Open Workspace` or pass a path as CLI argument
-2. **Chat with Claude**: type in the input bar, press Enter to send
-3. **Switch modes**: click Agent / Ask / Plan in the mode selector
-4. **Browse files**: click files in the workspace tree to view them
-5. **See diffs**: changed files show green dots in the tree; diff markers appear in the code viewer
-6. **Revert changes**: click "Revert" on any agent turn to undo its file modifications
-7. **Multiple sessions**: `File > New Chat` (Ctrl+N) for parallel conversations
 
 ## Configuration
 
