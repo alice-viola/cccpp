@@ -46,6 +46,7 @@ private:
 
     QTimer *m_reconnectTimer = nullptr;
     int m_reconnectAttempts = 0;
+    bool m_wasConnected = false; // true after first successful connection
     static constexpr int kMaxReconnectAttempts = 15;
     static constexpr int kReconnectIntervalMs = 2000;
 };

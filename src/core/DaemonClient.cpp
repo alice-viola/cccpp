@@ -106,8 +106,12 @@ void DaemonClient::onConnected()
     qDebug() << "[DaemonClient] Connected to daemon";
     m_reconnectAttempts = 0;
     m_reconnectTimer->stop();
-    if (!m_workingDir.isEmpty())
+    // Only auto-register on reconnection — the initial registration is handled
+    // explicitly by the caller (setupTelegram / openWorkspace) so we don't
+    // double-register with a stale workspace path from a previous session.
+    if (m_wasConnected && !m_workingDir.isEmpty())
         registerWorkspace(m_workingDir, m_workspaceName);
+    m_wasConnected = true;
     emit connected();
 }
 
