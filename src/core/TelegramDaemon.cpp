@@ -12,7 +12,9 @@
 #include <QDebug>
 
 #ifdef Q_OS_UNIX
-#include <signal.h>
+#include <sys/file.h>
+#include <unistd.h>
+#include <fcntl.h>
 #endif
 
 static const int kGracePeriodMs = 30000;
@@ -62,30 +64,40 @@ bool TelegramDaemon::isDaemonRunning()
     return false;
 }
 
-bool TelegramDaemon::removeStale()
+bool TelegramDaemon::tryCleanupStale()
 {
     QString path = lockFilePath();
     if (!QFile::exists(path)) return false;
 
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return false;
-    qint64 pid = f.readAll().trimmed().toLongLong();
-    f.close();
-
-    // Check if process is alive
-    if (pid > 0) {
 #ifdef Q_OS_UNIX
-        if (kill(static_cast<pid_t>(pid), 0) == 0)
-            return false; // still running
-#else
-        // On Windows, could use OpenProcess — for now assume stale
-#endif
+    int fd = ::open(path.toUtf8().constData(), O_RDWR);
+    if (fd < 0) return false;
+
+    // Try a non-blocking exclusive lock — if we get it, no daemon holds it
+    if (::flock(fd, LOCK_EX | LOCK_NB) == 0) {
+        ::flock(fd, LOCK_UN);
+        ::close(fd);
+        QFile::remove(path);
+        QLocalServer::removeServer(serverName());
+        qDebug() << "[TelegramDaemon] Cleaned up stale lock file";
+        return true;
     }
 
-    // Stale lock — clean up
+    // Lock is held by a live daemon
+    ::close(fd);
+    return false;
+#else
+    // On Windows, just remove if socket isn't connectable
+    QLocalSocket probe;
+    probe.connectToServer(serverName());
+    if (probe.waitForConnected(500)) {
+        probe.disconnectFromServer();
+        return false; // daemon alive
+    }
     QFile::remove(path);
     QLocalServer::removeServer(serverName());
     return true;
+#endif
 }
 
 bool TelegramDaemon::start()
@@ -96,17 +108,23 @@ bool TelegramDaemon::start()
         return false;
     }
 
-    removeStale();
+    // Acquire the flock FIRST — this is the atomic single-instance gate
+    if (!acquireLock()) {
+        qWarning() << "[TelegramDaemon] Could not acquire lock (another daemon running?)";
+        return false;
+    }
+
+    // Clean up any leftover socket from a previous crash
+    QLocalServer::removeServer(serverName());
 
     if (!m_server->listen(serverName())) {
         qWarning() << "[TelegramDaemon] Cannot listen:" << m_server->errorString();
+        releaseLock();
         return false;
     }
 
     m_api->setToken(cfg.telegramBotToken());
     m_api->setAllowedUsers(cfg.telegramAllowedUsers());
-
-    writeLockFile();
 
     qDebug() << "[TelegramDaemon] Started, listening on" << serverName();
 
@@ -120,23 +138,52 @@ void TelegramDaemon::stop()
 {
     m_api->stopPolling();
     m_server->close();
-    removeLockFile();
+    releaseLock();
     qDebug() << "[TelegramDaemon] Stopped";
 }
 
-void TelegramDaemon::writeLockFile()
+bool TelegramDaemon::acquireLock()
 {
+#ifdef Q_OS_UNIX
     QString path = lockFilePath();
     QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile f(path);
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(QByteArray::number(QCoreApplication::applicationPid()));
-        f.close();
+
+    m_lockFd = ::open(path.toUtf8().constData(), O_CREAT | O_RDWR, 0644);
+    if (m_lockFd < 0) {
+        qWarning() << "[TelegramDaemon] Cannot open lock file:" << path;
+        return false;
     }
+
+    // Non-blocking exclusive lock — fails instantly if another daemon holds it
+    if (::flock(m_lockFd, LOCK_EX | LOCK_NB) != 0) {
+        qWarning() << "[TelegramDaemon] Another daemon holds the lock";
+        ::close(m_lockFd);
+        m_lockFd = -1;
+        return false;
+    }
+
+    // Write PID for human-readable inspection (lock is held by fd, not by file content)
+    ::ftruncate(m_lockFd, 0);
+    QByteArray pidStr = QByteArray::number(QCoreApplication::applicationPid());
+    ::write(m_lockFd, pidStr.constData(), pidStr.size());
+    // DO NOT close fd — the lock is held as long as the fd is open
+
+    return true;
+#else
+    // Windows: fall back to socket-based single-instance check
+    return true;
+#endif
 }
 
-void TelegramDaemon::removeLockFile()
+void TelegramDaemon::releaseLock()
 {
+#ifdef Q_OS_UNIX
+    if (m_lockFd >= 0) {
+        ::flock(m_lockFd, LOCK_UN);
+        ::close(m_lockFd);
+        m_lockFd = -1;
+    }
+#endif
     QFile::remove(lockFilePath());
 }
 
@@ -265,6 +312,11 @@ void TelegramDaemon::onInstanceData(QLocalSocket *socket)
                 reply["message_id"] = msgId;
                 sendToSocket(sock, QJsonDocument(reply).toJson(QJsonDocument::Compact));
             });
+        } else if (type == "shutdown") {
+            qDebug() << "[TelegramDaemon] Shutdown requested via IPC";
+            stop();
+            QCoreApplication::quit();
+            return;
         }
     }
 }
@@ -281,7 +333,7 @@ void TelegramDaemon::onTelegramMessage(const TelegramMessage &msg)
         return;
     }
     if (text.toLower().startsWith("/switch ")) {
-        handleSwitchCommand(msg.chatId, text.mid(8).trimmed());
+        handleSwitchCommand(msg.userId, msg.chatId, text.mid(8).trimmed());
         return;
     }
 
@@ -374,22 +426,13 @@ void TelegramDaemon::handleWsCommand(qint64 chatId)
     m_api->sendMessage(chatId, text, {});
 }
 
-void TelegramDaemon::handleSwitchCommand(qint64 chatId, const QString &target)
+void TelegramDaemon::handleSwitchCommand(qint64 userId, qint64 chatId, const QString &target)
 {
     // Try number first
     bool ok;
     int idx = target.toInt(&ok) - 1;
     if (ok && idx >= 0 && idx < m_instances.size()) {
         auto &inst = m_instances[idx];
-        // Find userId for this chatId (best-effort: iterate states)
-        qint64 userId = 0;
-        for (auto it = m_userStates.begin(); it != m_userStates.end(); ++it) {
-            if (it->chatId == chatId) { userId = it.key(); break; }
-        }
-        if (userId == 0) {
-            m_api->sendMessage(chatId, "Could not identify your user. Please send any message first.", {});
-            return;
-        }
         m_userStates[userId] = {chatId, inst.workspace};
         QString label = inst.name.isEmpty() ? QFileInfo(inst.workspace).fileName() : inst.name;
         m_api->sendMessage(chatId, "Switched to: " + label, {});
@@ -401,11 +444,6 @@ void TelegramDaemon::handleSwitchCommand(qint64 chatId, const QString &target)
         QString label = inst.name.isEmpty() ? QFileInfo(inst.workspace).fileName() : inst.name;
         if (label.compare(target, Qt::CaseInsensitive) == 0 ||
             inst.workspace.endsWith("/" + target, Qt::CaseInsensitive)) {
-            qint64 userId = 0;
-            for (auto it = m_userStates.begin(); it != m_userStates.end(); ++it) {
-                if (it->chatId == chatId) { userId = it.key(); break; }
-            }
-            if (userId == 0) userId = chatId;
             m_userStates[userId] = {chatId, inst.workspace};
             m_api->sendMessage(chatId, "Switched to: " + label, {});
             return;

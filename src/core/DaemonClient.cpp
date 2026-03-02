@@ -14,7 +14,13 @@
 DaemonClient::DaemonClient(QObject *parent)
     : ChatHandler(parent)
     , m_socket(new QLocalSocket(this))
+    , m_reconnectTimer(new QTimer(this))
 {
+    m_reconnectTimer->setSingleShot(true);
+    m_reconnectTimer->setInterval(kReconnectIntervalMs);
+    connect(m_reconnectTimer, &QTimer::timeout,
+            this, &DaemonClient::attemptReconnect);
+
     connect(m_socket, &QLocalSocket::connected, this, &DaemonClient::onConnected);
     connect(m_socket, &QLocalSocket::disconnected, this, &DaemonClient::onDisconnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &DaemonClient::onReadyRead);
@@ -32,6 +38,7 @@ bool DaemonClient::isConnected() const
 
 bool DaemonClient::connectToDaemon()
 {
+    // First attempt: connect to existing daemon
     m_socket->connectToServer(TelegramDaemon::serverName());
     if (m_socket->waitForConnected(500))
         return true;
@@ -39,11 +46,15 @@ bool DaemonClient::connectToDaemon()
     if (m_socket->state() != QLocalSocket::UnconnectedState)
         m_socket->abort();
 
-    if (!spawnDaemon()) return false;
+    // Clean up stale lock if daemon is dead, then spawn a new one
+    TelegramDaemon::tryCleanupStale();
 
-    // Retry loop — connectToServer fails immediately if the server isn't listening yet,
-    // so waitForConnected(3000) on a single attempt is useless. Poll until the daemon
-    // socket appears (up to ~4s).
+    if (!spawnDaemon()) {
+        emit connectionFailed();
+        return false;
+    }
+
+    // Retry loop — poll until the daemon socket appears (up to ~4s)
     for (int i = 0; i < 20; ++i) {
         QThread::msleep(200);
         m_socket->connectToServer(TelegramDaemon::serverName());
@@ -93,6 +104,8 @@ void DaemonClient::unregisterWorkspace()
 void DaemonClient::onConnected()
 {
     qDebug() << "[DaemonClient] Connected to daemon";
+    m_reconnectAttempts = 0;
+    m_reconnectTimer->stop();
     if (!m_workingDir.isEmpty())
         registerWorkspace(m_workingDir, m_workspaceName);
     emit connected();
@@ -100,7 +113,9 @@ void DaemonClient::onConnected()
 
 void DaemonClient::onDisconnected()
 {
-    qDebug() << "[DaemonClient] Disconnected from daemon";
+    qDebug() << "[DaemonClient] Disconnected from daemon, will attempt reconnection";
+    m_reconnectAttempts = 0;
+    m_reconnectTimer->start();
     emit disconnected();
 }
 
@@ -201,6 +216,41 @@ void DaemonClient::doRequestSendMessage(qint64 chatId, const QString &text,
     msg["text"] = text;
     msg["request_id"] = requestId;
     sendToDaemon(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+}
+
+void DaemonClient::attemptReconnect()
+{
+    if (m_reconnectAttempts >= kMaxReconnectAttempts) {
+        qWarning() << "[DaemonClient] Reconnect failed after"
+                   << kMaxReconnectAttempts << "attempts";
+        emit connectionFailed();
+        return;
+    }
+
+    m_reconnectAttempts++;
+    qDebug() << "[DaemonClient] Reconnect attempt"
+             << m_reconnectAttempts << "/" << kMaxReconnectAttempts;
+
+    // On first attempt, try spawning a new daemon (the old one may have crashed)
+    if (m_reconnectAttempts == 1) {
+        TelegramDaemon::tryCleanupStale();
+        spawnDaemon();
+    }
+
+    if (m_socket->state() != QLocalSocket::UnconnectedState)
+        m_socket->abort();
+
+    m_socket->connectToServer(TelegramDaemon::serverName());
+    if (m_socket->waitForConnected(500)) {
+        qDebug() << "[DaemonClient] Reconnected to daemon";
+        return; // onConnected() signal will fire and re-register workspace
+    }
+
+    if (m_socket->state() != QLocalSocket::UnconnectedState)
+        m_socket->abort();
+
+    // Schedule next attempt
+    m_reconnectTimer->start();
 }
 
 void DaemonClient::sendToDaemon(const QByteArray &data)

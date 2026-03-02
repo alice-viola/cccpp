@@ -79,7 +79,13 @@ MainWindow::MainWindow(QWidget *parent)
     setupTelegram();
 }
 
-MainWindow::~MainWindow() {}
+MainWindow::~MainWindow()
+{
+    if (m_daemonClient)
+        m_daemonClient->unregisterWorkspace();
+    if (m_telegramApi)
+        m_telegramApi->stopPolling();
+}
 
 void MainWindow::setupUI()
 {
@@ -793,11 +799,6 @@ void MainWindow::setupTelegram()
     if (!cfg.telegramEnabled() || cfg.telegramBotToken().isEmpty())
         return;
 
-    // Try daemon mode first: connect to existing daemon, or spawn one
-    if (TelegramDaemon::isDaemonRunning() || TelegramDaemon::removeStale()) {
-        // Daemon exists or stale was cleaned — try connecting
-    }
-
     m_daemonClient = new DaemonClient(this);
     m_daemonClient->setSessionManager(m_sessionMgr);
     m_daemonClient->setDatabase(m_database);
@@ -807,6 +808,10 @@ void MainWindow::setupTelegram()
     connect(m_daemonClient, &DaemonClient::filesChanged,
             this, &MainWindow::onGitRefresh);
 
+    // Fall back to direct polling only after reconnection is fully exhausted
+    connect(m_daemonClient, &DaemonClient::connectionFailed,
+            this, &MainWindow::onDaemonConnectionFailed);
+
     if (m_daemonClient->connectToDaemon()) {
         if (!m_workspacePath.isEmpty())
             m_daemonClient->registerWorkspace(m_workspacePath);
@@ -814,11 +819,21 @@ void MainWindow::setupTelegram()
         return;
     }
 
-    // Daemon connection failed — fall back to direct single-instance mode
-    qDebug() << "[cccpp] Daemon unavailable, using direct Telegram polling";
+    // Initial connection failed — connectionFailed signal was already emitted,
+    // onDaemonConnectionFailed() will handle the fallback.
+}
+
+void MainWindow::onDaemonConnectionFailed()
+{
+    // Guard against multiple calls
+    if (m_telegramApi) return;
+
+    qDebug() << "[cccpp] Daemon unavailable, falling back to direct polling";
+
     delete m_daemonClient;
     m_daemonClient = nullptr;
 
+    auto &cfg = Config::instance();
     m_telegramApi = new TelegramApi(this);
     m_telegramApi->setToken(cfg.telegramBotToken());
     m_telegramApi->setAllowedUsers(cfg.telegramAllowedUsers());
@@ -832,5 +847,5 @@ void MainWindow::setupTelegram()
             this, &MainWindow::onGitRefresh);
 
     m_telegramApi->startPolling();
-    qDebug() << "[cccpp] Telegram bot polling started (single-instance mode)";
+    qDebug() << "[cccpp] Telegram bot polling started (single-instance fallback)";
 }

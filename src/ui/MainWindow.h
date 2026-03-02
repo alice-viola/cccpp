@@ -43,6 +43,7 @@ private slots:
     void onGitRefresh();
     void onThemeChanged(const QString &name);
     void onInlineEdit();
+    void onDaemonConnectionFailed();
 
 private:
     void setupMenuBar();

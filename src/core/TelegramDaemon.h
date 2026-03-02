@@ -35,7 +35,7 @@ public:
     static QString serverName();
     static QString lockFilePath();
     static bool isDaemonRunning();
-    static bool removeStale();
+    static bool tryCleanupStale();
 
 private:
     void onNewConnection();
@@ -49,15 +49,16 @@ private:
 
     // Daemon-level commands
     void handleWsCommand(qint64 chatId);
-    void handleSwitchCommand(qint64 chatId, const QString &target);
+    void handleSwitchCommand(qint64 userId, qint64 chatId, const QString &target);
 
-    void writeLockFile();
-    void removeLockFile();
+    bool acquireLock();
+    void releaseLock();
     void checkGracePeriod();
 
     TelegramApi *m_api = nullptr;
     QLocalServer *m_server = nullptr;
     QTimer *m_graceTimer = nullptr;
+    int m_lockFd = -1;
 
     QList<ConnectedInstance> m_instances;
     QMap<qint64, DaemonUserState> m_userStates; // userId -> state
