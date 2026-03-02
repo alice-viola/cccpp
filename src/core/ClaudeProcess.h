@@ -22,6 +22,7 @@ public:
 
     void sendMessage(const QString &message,
                      const QList<QPair<QByteArray, QString>> &images = {});
+    void sendToolResult(const QString &toolUseId, const QString &content);
     void rewindFiles(const QString &checkpointUuid);
     void cancel();
     bool isRunning() const;
@@ -52,4 +53,5 @@ private:
     QString m_mode = "agent";
     QString m_model;
     QByteArray m_stdoutBuffer;
+    QByteArray m_stderrBuffer;
 };

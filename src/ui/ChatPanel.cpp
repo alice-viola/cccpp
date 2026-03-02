@@ -19,6 +19,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMenu>
@@ -56,14 +57,28 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_historyBtn->setToolTip("Browse previous chats");
     connect(m_historyBtn, &QPushButton::clicked, this, &ChatPanel::showHistoryMenu);
 
+    m_plansBtn = new QPushButton("Plans", this);
+    m_plansBtn->setFixedHeight(26);
+    m_plansBtn->setToolTip("Browse Claude plans");
+    connect(m_plansBtn, &QPushButton::clicked, this, &ChatPanel::showPlansMenu);
+
     cornerLayout->addWidget(m_newChatBtn);
     cornerLayout->addWidget(m_historyBtn);
+    cornerLayout->addWidget(m_plansBtn);
     m_tabWidget->setCornerWidget(cornerWidget, Qt::TopRightCorner);
 
     mainLayout->addWidget(m_tabWidget, 1);
 
     m_modeSelector = new ModeSelector(this);
     m_modelSelector = new ModelSelector(this);
+
+    m_statsLabel = new QLabel(this);
+    m_statsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_statsLabel->setFixedHeight(18);
+    m_statsLabel->setContentsMargins(0, 0, 8, 0);
+    m_statsLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 10px; }");
+    m_statsLabel->hide();
+    mainLayout->addWidget(m_statsLabel);
 
     m_inputBar = new InputBar(this);
     m_inputBar->addFooterWidget(m_modeSelector);
@@ -80,6 +95,7 @@ ChatPanel::ChatPanel(QWidget *parent)
     connect(m_inputBar, &InputBar::slashCommand, this, &ChatPanel::onSlashCommand);
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         refreshInputBarForCurrentTab();
+        updateStatsLabel();
         if (m_tabs.contains(idx))
             emit activeSessionChanged(m_tabs[idx].sessionId);
     });
@@ -168,15 +184,16 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 t->currentAssistantMsg->setHeaderVisible(false);
             addMessageToTab(*t, t->currentAssistantMsg);
         }
-        t->currentAssistantMsg->appendContent(text);
+        t->pendingText += text;
         t->accumulatedRawContent += text;
-        scrollTabToBottom(*t);
+        // appendContent is batched by textFlushTimer; no direct call here
     });
 
     connect(proc->streamParser(), &StreamParser::thinkingStarted, this,
             [this, proc] {
         auto *t = tabForProcess(proc);
         if (!t) return;
+        flushPendingText(*t);
         saveCurrentTextSegment(*t);
         t->currentAssistantMsg = nullptr;
         if (t->currentToolGroup) {
@@ -222,12 +239,11 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         Q_UNUSED(toolName);
         auto *t = tabForProcess(proc);
         if (!t) return;
-        if (m_codeViewer && !filePath.isEmpty()) {
+        if (!filePath.isEmpty()) {
             QString fullPath = filePath;
             if (!QFileInfo(fullPath).isAbsolute())
                 fullPath = m_workingDir + "/" + filePath;
             t->pendingEditFile = fullPath;
-            m_codeViewer->loadFile(fullPath);
         }
     });
 
@@ -246,10 +262,11 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
     });
 
     connect(proc->streamParser(), &StreamParser::toolUseStarted, this,
-            [this, proc](const QString &name, const nlohmann::json &input) {
+            [this, proc](const QString &name, const QString &toolId, const nlohmann::json &input) {
         auto *t = tabForProcess(proc);
         if (!t) return;
 
+        flushPendingText(*t);
         saveCurrentTextSegment(*t);
         t->currentAssistantMsg = nullptr;
 
@@ -317,14 +334,41 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             auto *questionWidget = new QuestionWidget(input);
             if (t->messagesLayout)
                 t->messagesLayout->insertWidget(insertPosForTab(*t), questionWidget);
+            t->hasPendingQuestion = true;
+            refreshInputBarForCurrentTab();
             connect(questionWidget, &QuestionWidget::answered, this,
                     [this, proc](const QString &response) {
                 auto *tab = tabForProcess(proc);
                 if (!tab) return;
-                tab->process->setMode(m_modeSelector->currentMode());
-                tab->currentAssistantMsg = nullptr;
-                setTabProcessingState(*tab, true);
-                tab->process->sendMessage(response);
+                tab->hasPendingQuestion = false;
+
+                // Send the user's answer as a regular follow-up message.
+                // The CLI auto-resolves AskUserQuestion in --print mode,
+                // so we resume the session with the actual user choice.
+                auto doSend = [this, proc, response]() {
+                    auto *t2 = tabForProcess(proc);
+                    if (!t2) return;
+                    t2->turnId++;
+                    t2->accumulatedRawContent.clear();
+                    t2->hasFirstAssistantMsg = false;
+                    t2->currentAssistantMsg = nullptr;
+                    t2->currentToolGroup = nullptr;
+                    t2->process->setMode(m_modeSelector->currentMode());
+                    t2->process->setModel(m_modelSelector->currentModelId());
+                    if (t2->sessionConfirmed)
+                        t2->process->setSessionId(t2->sessionId);
+                    setTabProcessingState(*t2, true);
+                    t2->process->sendMessage(response);
+                };
+
+                if (proc->isRunning()) {
+                    // Process still streaming — queue send after it finishes
+                    connect(proc, &ClaudeProcess::finished, this,
+                            [doSend](int) { doSend(); },
+                            Qt::SingleShotConnection);
+                } else {
+                    doSend();
+                }
             });
             scrollTabToBottom(*t);
         } else if (isEditTool) {
@@ -372,7 +416,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
     });
 
     connect(proc->streamParser(), &StreamParser::resultReady, this,
-            [this, proc](const QString &sessionId, const nlohmann::json &) {
+            [this, proc](const QString &sessionId, const nlohmann::json &raw) {
         auto *t = tabForProcess(proc);
         if (!t) return;
         if (!sessionId.isEmpty() && t->sessionId != sessionId) {
@@ -387,6 +431,16 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 m_database->deleteSession(oldId);
             }
         }
+        // Extract context usage from result event
+        if (raw.contains("usage") && raw["usage"].is_object()) {
+            auto &u = raw["usage"];
+            t->totalInputTokens += u.value("input_tokens", 0);
+            t->totalOutputTokens += u.value("output_tokens", 0);
+            t->totalCacheReadTokens += u.value("cache_read_input_tokens", 0);
+        }
+        if (raw.contains("total_cost_usd") && raw["total_cost_usd"].is_number())
+            t->totalCostUsd += raw["total_cost_usd"].get<double>();
+        updateStatsLabel();
     });
 
     connect(proc, &ClaudeProcess::finished, this, [this, proc](int exitCode) {
@@ -395,6 +449,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         bool wasCancelled = (exitCode == 15 || exitCode == 9
                              || exitCode == 143 || exitCode == 137);
+
+        flushPendingText(*t);
 
         if (t->currentThinkingBlock) {
             t->currentThinkingBlock->finalize();
@@ -438,6 +494,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         saveCurrentTextSegment(*t);
 
         showSuggestionChips(*t, t->accumulatedRawContent);
+        showAcceptAllButton(*t);
         t->currentAssistantMsg = nullptr;
 
         bool hasCheckpoint = m_database &&
@@ -474,6 +531,17 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             t->currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Stream error:** %1").arg(err));
     });
+
+    // Throttled text flusher: batches appendContent calls to ~30fps so
+    // the main thread stays responsive for splitter drag events.
+    auto *flushTimer = new QTimer(this);
+    flushTimer->setInterval(33);
+    flushTimer->setSingleShot(false);
+    connect(flushTimer, &QTimer::timeout, this, [this, proc] {
+        auto *t = tabForProcess(proc);
+        if (t) flushPendingText(*t);
+    });
+    tab.textFlushTimer = flushTimer;
 }
 
 QString ChatPanel::newChat()
@@ -688,6 +756,9 @@ void ChatPanel::restoreSession(const QString &sessionId)
     }
     if (!lastPlanFile.isEmpty() && QFile::exists(lastPlanFile))
         emit planFileDetected(lastPlanFile);
+
+    // Scroll to the end so user sees most recent messages
+    scrollTabToBottom(m_tabs[idx]);
 
     emit activeSessionChanged(sessionId);
 }
@@ -1029,6 +1100,37 @@ void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)
     scrollTabToBottom(tab);
 }
 
+void ChatPanel::showAcceptAllButton(ChatTab &tab)
+{
+    if (!m_diffEngine || m_diffEngine->changedFiles().isEmpty())
+        return;
+    if (!tab.messagesLayout)
+        return;
+
+    auto &thm = ThemeManager::instance();
+    auto *btn = new QPushButton("Accept all edits");
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 6px 16px; font-size: 12px; }"
+            "QPushButton:hover { background: %4; color: %5; }")
+            .arg(thm.hex("bg_raised"), thm.hex("text_secondary"),
+                 thm.hex("border_standard"),
+                 thm.hex("hover_raised"), thm.hex("text_primary")));
+
+    connect(btn, &QPushButton::clicked, this, [this, btn]() {
+        if (m_codeViewer)
+            m_codeViewer->clearAllDiffMarkers();
+        if (m_diffEngine)
+            m_diffEngine->clearPendingDiffs();
+        btn->deleteLater();
+    });
+
+    tab.messagesLayout->insertWidget(insertPosForTab(tab), btn);
+    scrollTabToBottom(tab);
+}
+
 ChatTab &ChatPanel::currentTab()
 {
     int idx = m_tabWidget->currentIndex();
@@ -1113,6 +1215,18 @@ void ChatPanel::addMessageToTab(ChatTab &tab, ChatMessageWidget *msg)
     });
 }
 
+void ChatPanel::flushPendingText(ChatTab &tab)
+{
+    if (tab.pendingText.isEmpty()) return;
+    if (!tab.currentAssistantMsg) {
+        tab.pendingText.clear();
+        return;
+    }
+    tab.currentAssistantMsg->appendContent(tab.pendingText);
+    tab.pendingText.clear();
+    scrollTabToBottom(tab);
+}
+
 void ChatPanel::scrollTabToBottom(ChatTab &tab)
 {
     if (!tab.scrollArea) return;
@@ -1133,6 +1247,15 @@ void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
             tab.thinkingIndicator->stopAnimation();
     }
 
+    if (tab.textFlushTimer) {
+        if (processing) {
+            tab.textFlushTimer->start();
+        } else {
+            tab.textFlushTimer->stop();
+            flushPendingText(tab);
+        }
+    }
+
     if (tab.tabIndex == m_tabWidget->currentIndex())
         refreshInputBarForCurrentTab();
 
@@ -1147,9 +1270,22 @@ void ChatPanel::refreshInputBarForCurrentTab()
 {
     int idx = m_tabWidget->currentIndex();
     bool busy = m_tabs.contains(idx) && m_tabs[idx].processing;
-    m_inputBar->setProcessing(busy);
-    m_inputBar->setPlaceholder(busy ? "Claude is thinking..."
-                                    : "Ask Claude anything... (@ to mention files, / for commands)");
+    bool pendingQ = m_tabs.contains(idx) && m_tabs[idx].hasPendingQuestion;
+
+    if (busy) {
+        m_inputBar->setProcessing(true);
+        m_inputBar->setPlaceholder("Claude is thinking...");
+    } else if (pendingQ) {
+        // Pending question with no active process: disable input without
+        // showing the stop button so the user answers via the QuestionWidget.
+        m_inputBar->setProcessing(false);
+        m_inputBar->setEnabled(false);
+        m_inputBar->setPlaceholder("Answer the question above to continue...");
+    } else {
+        m_inputBar->setProcessing(false);
+        m_inputBar->setEnabled(true);
+        m_inputBar->setPlaceholder("Ask Claude anything... (@ to mention files, / for commands)");
+    }
     updateInputBarContext();
 }
 
@@ -1431,4 +1567,62 @@ void ChatPanel::showHistoryMenu()
     }
 
     menu.exec(m_historyBtn->mapToGlobal(QPoint(0, m_historyBtn->height())));
+}
+
+void ChatPanel::showPlansMenu()
+{
+    QString plansDir = QDir::homePath() + "/.claude/plans";
+    QDir dir(plansDir);
+    QFileInfoList entries = dir.entryInfoList({"*.md"}, QDir::Files, QDir::Time);
+
+    QMenu menu(this);
+    if (entries.isEmpty()) {
+        menu.addAction("No plans yet")->setEnabled(false);
+    } else {
+        for (const auto &fi : entries) {
+            QString label = fi.baseName();
+            QDateTime mod = fi.lastModified();
+            label += "  " + mod.toString("MMM d, hh:mm");
+
+            auto *action = menu.addAction(label);
+            QString path = fi.absoluteFilePath();
+            connect(action, &QAction::triggered, this, [this, path] {
+                emit planFileDetected(path);
+            });
+        }
+    }
+    menu.exec(m_plansBtn->mapToGlobal(QPoint(0, m_plansBtn->height())));
+}
+
+static QString formatTokenCount(int tokens)
+{
+    if (tokens >= 1000000)
+        return QString::number(tokens / 1000000.0, 'f', 1) + "M";
+    if (tokens >= 1000)
+        return QString::number(tokens / 1000.0, 'f', 1) + "k";
+    return QString::number(tokens);
+}
+
+void ChatPanel::updateStatsLabel()
+{
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) {
+        m_statsLabel->hide();
+        return;
+    }
+    const auto &tab = m_tabs[idx];
+    int totalIn = tab.totalInputTokens + tab.totalCacheReadTokens;
+    if (totalIn == 0 && tab.totalOutputTokens == 0) {
+        m_statsLabel->hide();
+        return;
+    }
+
+    QString text = QString::fromUtf8("\xe2\x86\x91 %1  \xe2\x86\x93 %2")
+        .arg(formatTokenCount(totalIn), formatTokenCount(tab.totalOutputTokens));
+    if (tab.totalCacheReadTokens > 0)
+        text += QString("  cache %1").arg(formatTokenCount(tab.totalCacheReadTokens));
+    if (tab.totalCostUsd > 0.0)
+        text += QString("  $%1").arg(QString::number(tab.totalCostUsd, 'f', 4));
+    m_statsLabel->setText(text);
+    m_statsLabel->show();
 }

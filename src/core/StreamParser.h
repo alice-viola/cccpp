@@ -52,7 +52,7 @@ public:
 
 signals:
     void textDelta(const QString &text);
-    void toolUseStarted(const QString &toolName, const json &input);
+    void toolUseStarted(const QString &toolName, const QString &toolId, const json &input);
     void toolResultReceived(const QString &content);
     void resultReady(const QString &sessionId, const json &result);
     void errorOccurred(const QString &message);

@@ -128,8 +128,8 @@ void MainWindow::setupUI()
 
     m_codeViewer->hide();
     m_splitter->setStretchFactor(0, 0);
-    m_splitter->setStretchFactor(1, 2);
-    m_splitter->setStretchFactor(2, 3);
+    m_splitter->setStretchFactor(1, 1);
+    m_splitter->setStretchFactor(2, 0);
 
     setCentralWidget(m_splitter);
 

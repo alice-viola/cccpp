@@ -5,6 +5,8 @@
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <QPushButton>
+#include <QLabel>
+#include <QTimer>
 #include <QMap>
 #include <nlohmann/json.hpp>
 
@@ -36,11 +38,20 @@ struct ChatTab {
     QString sessionId;
     QString pendingEditFile;
     QString accumulatedRawContent;
+    QString pendingText;
+    QTimer *textFlushTimer = nullptr;
     int turnId = 0;
     int tabIndex = -1;
     bool processing = false;
     bool hasFirstAssistantMsg = false;
     bool sessionConfirmed = false;
+    bool hasPendingQuestion = false;
+
+    // Context usage tracking
+    int totalInputTokens = 0;
+    int totalOutputTokens = 0;
+    int totalCacheReadTokens = 0;
+    double totalCostUsd = 0.0;
 };
 
 class ChatPanel : public QWidget {
@@ -95,6 +106,7 @@ private:
     QWidget *createChatContent();
     void addMessageToTab(ChatTab &tab, ChatMessageWidget *msg);
     void scrollTabToBottom(ChatTab &tab);
+    void flushPendingText(ChatTab &tab);
     void setTabProcessingState(ChatTab &tab, bool processing);
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
@@ -105,16 +117,21 @@ private:
     QString buildContextPreamble(const QString &userText);
     void updateInputBarContext();
     void showSuggestionChips(ChatTab &tab, const QString &responseText);
+    void showAcceptAllButton(ChatTab &tab);
     void saveCurrentTextSegment(ChatTab &tab);
     int insertPosForTab(const ChatTab &tab) const;
     void removeMessagesAfterTurn(int turnId);
+    void showPlansMenu();
+    void updateStatsLabel();
 
     QTabWidget *m_tabWidget;
     QPushButton *m_newChatBtn;
     QPushButton *m_historyBtn;
+    QPushButton *m_plansBtn;
     InputBar *m_inputBar;
     ModeSelector *m_modeSelector;
     ModelSelector *m_modelSelector;
+    QLabel *m_statsLabel;
     QMap<int, ChatTab> m_tabs;
 
     SessionManager *m_sessionMgr = nullptr;

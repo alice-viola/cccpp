@@ -168,7 +168,7 @@ void ChatHandler::wireProcessSignals(ChatSession &session)
     });
 
     connect(parser, &StreamParser::toolUseStarted, this,
-            [this, chatId](const QString &toolName, const json &input) {
+            [this, chatId](const QString &toolName, const QString &, const json &input) {
         if (!m_sessions.contains(chatId)) return;
         auto &s = m_sessions[chatId];
 

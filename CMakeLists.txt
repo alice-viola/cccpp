@@ -78,6 +78,7 @@ set(UI_SOURCES
     src/ui/InlineDiffOverlay.cpp
     src/ui/InlineEditBar.cpp
     src/ui/ThinkingBlockWidget.cpp
+    src/ui/FindBar.cpp
 )
 
 set(UTIL_SOURCES

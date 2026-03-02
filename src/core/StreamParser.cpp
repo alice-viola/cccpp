@@ -37,7 +37,7 @@ void StreamParser::feed(const QByteArray &line)
         break;
     case StreamEvent::ToolUse:
         // Dedup is handled in parseEvent/handleInnerEvent — just emit here
-        emit toolUseStarted(event.toolName, event.toolInput);
+        emit toolUseStarted(event.toolName, event.toolId, event.toolInput);
         break;
     case StreamEvent::ToolResult:
         emit toolResultReceived(event.toolResultContent);
@@ -164,7 +164,7 @@ void StreamParser::handleInnerEvent(const json &ev)
                 event.toolName = pending.name;
                 event.toolId = pending.id;
                 event.toolInput = toolInput;
-                emit toolUseStarted(pending.name, toolInput);
+                emit toolUseStarted(pending.name, pending.id, toolInput);
                 emit eventParsed(event);
             }
 

@@ -1,4 +1,5 @@
 #include "ui/CodeViewer.h"
+#include "ui/FindBar.h"
 #include "ui/FileIconProvider.h"
 #include "ui/BreadcrumbBar.h"
 #include "ui/DiffSplitView.h"
@@ -14,6 +15,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QResizeEvent>
+#include <QShortcut>
 #include <QTimer>
 #include <QTabBar>
 
@@ -144,7 +146,23 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_tabWidget->setCornerWidget(m_diffToggleBtn, Qt::TopRightCorner);
     connect(m_diffToggleBtn, &QPushButton::clicked, this, &CodeViewer::toggleDiffMode);
 
+    m_closeAllBtn = new QPushButton(QString::fromUtf8("\xc3\x97 All"), this); // × All
+    m_closeAllBtn->setFixedSize(48, 20);
+    m_closeAllBtn->setToolTip("Close all open files");
+    m_tabWidget->setCornerWidget(m_closeAllBtn, Qt::TopLeftCorner);
+    connect(m_closeAllBtn, &QPushButton::clicked, this, &CodeViewer::closeAllFiles);
+
     layout->addWidget(m_tabWidget);
+
+    // Find bar (hidden by default, shown on Cmd+F / Ctrl+F)
+    m_findBar = new FindBar(this);
+    m_findBar->setCloseCallback([this] { hideFindBar(); });
+    m_findBar->hide();
+    layout->addWidget(m_findBar);
+
+    auto *findShortcut = new QShortcut(QKeySequence::Find, this);
+    findShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(findShortcut, &QShortcut::activated, this, &CodeViewer::showFindBar);
 
     // Initial state: no tabs → show empty state
     m_tabWidget->hide();
@@ -692,6 +710,55 @@ void CodeViewer::updateEmptyState()
     m_emptyState->setVisible(empty);
     m_tabWidget->setVisible(!empty);
     if (m_breadcrumb) m_breadcrumb->setVisible(!empty);
+    if (m_findBar) m_findBar->setVisible(m_findBar->isVisible() && !empty);
+}
+
+void CodeViewer::closeAllFiles()
+{
+    for (int i = m_tabWidget->count() - 1; i >= 0; --i) {
+        if (!confirmCloseTab(i))
+            continue;
+        if (m_tabs.contains(i))
+            unwatchFile(m_tabs[i].filePath);
+        m_tabs.remove(i);
+        m_tabWidget->removeTab(i);
+    }
+    // Rebuild index map
+    QMap<int, FileTab> reindexed;
+    int n = 0;
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it, ++n)
+        reindexed[n] = it.value();
+    m_tabs = reindexed;
+    updateEmptyState();
+    hideFindBar();
+}
+
+void CodeViewer::showFindBar()
+{
+    auto *tab = currentTab();
+    if (!tab || tab->isMarkdown) return;
+
+#ifndef NO_QSCINTILLA
+    if (tab->editor) {
+        m_findBar->setEditor(tab->editor);
+        QString sel = tab->editor->selectedText();
+        if (!sel.isEmpty() && !sel.contains('\n'))
+            m_findBar->prefill(sel);
+    }
+#else
+    if (tab->editor)
+        m_findBar->setPlainEditor(tab->editor);
+#endif
+    m_findBar->show();
+    m_findBar->focusInput();
+}
+
+void CodeViewer::hideFindBar()
+{
+    m_findBar->hide();
+    auto *tab = currentTab();
+    if (tab && tab->editor)
+        tab->editor->setFocus();
 }
 
 void CodeViewer::resizeEvent(QResizeEvent *event)
@@ -717,6 +784,12 @@ void CodeViewer::loadFile(const QString &filePath)
             m_tabWidget->setCurrentIndex(it.key());
             return;
         }
+    }
+
+    // Route markdown files to the dedicated markdown preview
+    if (QFileInfo(filePath).suffix().compare("md", Qt::CaseInsensitive) == 0) {
+        openMarkdown(filePath);
+        return;
     }
 
     QFile file(filePath);
@@ -1399,6 +1472,18 @@ void CodeViewer::clearDiffMarkers()
 #endif
 }
 
+void CodeViewer::clearAllDiffMarkers()
+{
+#ifndef NO_QSCINTILLA
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->editor) {
+            it->editor->markerDeleteAll(1);
+            it->editor->markerDeleteAll(2);
+        }
+    }
+#endif
+}
+
 void CodeViewer::applyDiffMarkers(const FileDiff &diff)
 {
 #ifndef NO_QSCINTILLA
@@ -1658,10 +1743,6 @@ void CodeViewer::showInlineDiff(const QString &filePath, const QString &oldText,
                                  const QString &newText, int startLine)
 {
     FileTab *tab = tabForFile(filePath);
-    if (!tab) {
-        loadFile(filePath);
-        tab = tabForFile(filePath);
-    }
     if (!tab || !tab->editor) return;
 
     auto *ed = tab->editor;
@@ -1669,10 +1750,10 @@ void CodeViewer::showInlineDiff(const QString &filePath, const QString &oldText,
     // Determine the edit location. The editor may still have the old content
     // (the CLI tool hasn't finished yet), so search for oldText first.
     int editLine = startLine;
-    if (editLine <= 0) {
+    if (editLine < 0) {
         if (!oldText.isEmpty())
             editLine = findLineOfText(ed, oldText);
-        if (editLine <= 0 && !newText.isEmpty())
+        if (editLine < 0 && !newText.isEmpty())
             editLine = findLineOfText(ed, newText);
     }
     if (editLine < 0)
@@ -1681,7 +1762,10 @@ void CodeViewer::showInlineDiff(const QString &filePath, const QString &oldText,
     // Force-reload the file so the editor picks up the on-disk changes
     // (the edit tool may have modified the file by now). Use a short delay
     // to give the CLI a moment to write, then apply the markers.
-    int newLineCount = newText.isEmpty() ? 0 : newText.count('\n') + 1;
+    // A trailing newline is a line terminator, not an extra line of content.
+    int nlCount = newText.count('\n');
+    int newLineCount = newText.isEmpty() ? 0
+                     : (newText.endsWith('\n') ? qMax(1, nlCount) : nlCount + 1);
     QString fp = filePath;
     QString old = oldText;
     QString nw = newText;
@@ -1911,15 +1995,11 @@ void CodeViewer::beginStreamingEdit(const QString &filePath, const QString &oldT
 {
 #ifndef NO_QSCINTILLA
     FileTab *tab = tabForFile(filePath);
-    if (!tab) {
-        loadFile(filePath);
-        tab = tabForFile(filePath);
-    }
     if (!tab || !tab->editor) return;
 
     auto *ed = tab->editor;
     int editLine = startLine;
-    if (editLine <= 0 && !oldText.isEmpty())
+    if (editLine < 0 && !oldText.isEmpty())
         editLine = findLineOfText(ed, oldText);
     if (editLine < 0)
         editLine = 0;

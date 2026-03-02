@@ -17,6 +17,7 @@ class DiffSplitView;
 class InlineDiffOverlay;
 class InlineEditBar;
 class BreadcrumbBar;
+class FindBar;
 
 #ifndef NO_QSCINTILLA
 #include <Qsci/qsciscintilla.h>
@@ -68,6 +69,7 @@ public:
     void forceReloadFile(const QString &filePath);
     void showDiff(const FileDiff &diff);
     void clearDiffMarkers();
+    void clearAllDiffMarkers();
     void scrollToLine(int line);
 
     bool saveCurrentFile();
@@ -114,6 +116,13 @@ public:
     void appendStreamingContent(const QString &filePath, const QString &delta);
     void finalizeStreamingEdit(const QString &filePath);
 
+    // Close all open file tabs
+    void closeAllFiles();
+
+    // Find bar
+    void showFindBar();
+    void hideFindBar();
+
     // Inline edit (Cmd+K)
     void showInlineEditBar();
     void hideInlineEditBar();
@@ -126,7 +135,6 @@ signals:
     void inlineDiffAccepted(const QString &filePath);
     void inlineDiffRejected(const QString &filePath, const QString &oldText,
                             const QString &newText);
-
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
@@ -160,7 +168,9 @@ private:
 
     QTabWidget *m_tabWidget;
     QPushButton *m_diffToggleBtn;
+    QPushButton *m_closeAllBtn;
     QWidget *m_emptyState = nullptr;
+    FindBar *m_findBar = nullptr;
     BreadcrumbBar *m_breadcrumb = nullptr;
     QMap<int, FileTab> m_tabs;
     QFileSystemWatcher *m_fileWatcher;

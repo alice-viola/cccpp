@@ -99,6 +99,7 @@ void ClaudeProcess::sendMessage(const QString &message,
 
     m_parser->reset();
     m_stdoutBuffer.clear();
+    m_stderrBuffer.clear();
 
     m_process = new QProcess(this);
     if (!m_workingDir.isEmpty())
@@ -181,6 +182,79 @@ void ClaudeProcess::sendMessage(const QString &message,
         {"message", {
             {"role", "user"},
             {"content", contentArray}
+        }}
+    };
+    QByteArray jsonMsg = QByteArray::fromStdString(envelope.dump()) + "\n";
+    m_process->write(jsonMsg);
+    m_process->closeWriteChannel();
+
+    emit started();
+}
+
+void ClaudeProcess::sendToolResult(const QString &toolUseId, const QString &content)
+{
+    if (m_process && m_process->state() != QProcess::NotRunning) {
+        emit errorOccurred("Process already running");
+        return;
+    }
+
+    m_parser->reset();
+    m_stdoutBuffer.clear();
+    m_stderrBuffer.clear();
+
+    m_process = new QProcess(this);
+    if (!m_workingDir.isEmpty())
+        m_process->setWorkingDirectory(m_workingDir);
+
+    m_process->setProcessEnvironment(buildProcessEnvironment());
+
+    connect(m_process, &QProcess::readyReadStandardOutput,
+            this, &ClaudeProcess::onReadyReadStdout);
+    connect(m_process, &QProcess::readyReadStandardError,
+            this, &ClaudeProcess::onReadyReadStderr);
+    connect(m_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this, &ClaudeProcess::onProcessFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError err) {
+        QString msg;
+        switch (err) {
+        case QProcess::FailedToStart: msg = "Failed to start 'claude'. Is it installed and in your PATH?"; break;
+        case QProcess::Crashed:       msg = "Claude process crashed."; break;
+        default:                      msg = "Process error."; break;
+        }
+        emit errorOccurred(msg);
+    });
+
+    QString claudeBin = resolveClaudeBinary();
+    // Use an empty placeholder message for buildArguments (only session/model flags matter)
+    QStringList args = buildArguments(QString());
+    qDebug() << "[cccpp] sendToolResult: starting" << claudeBin;
+
+    QString stdbuf = "/usr/bin/stdbuf";
+    if (!QFile::exists(stdbuf))
+        stdbuf = "/opt/homebrew/bin/stdbuf";
+
+    if (QFile::exists(stdbuf)) {
+        m_process->start(stdbuf, QStringList() << "-oL" << claudeBin << args);
+    } else {
+        m_process->start(claudeBin, args);
+    }
+
+    if (!m_process->waitForStarted(5000)) {
+        emit errorOccurred(QStringLiteral("Process failed to start: %1").arg(claudeBin));
+        return;
+    }
+
+    nlohmann::json envelope = {
+        {"type", "user"},
+        {"message", {
+            {"role", "user"},
+            {"content", nlohmann::json::array({
+                {
+                    {"type", "tool_result"},
+                    {"tool_use_id", toolUseId.toStdString()},
+                    {"content", content.toUtf8().toStdString()}
+                }
+            })}
         }}
     };
     QByteArray jsonMsg = QByteArray::fromStdString(envelope.dump()) + "\n";
@@ -304,16 +378,21 @@ void ClaudeProcess::onReadyReadStdout()
 
 void ClaudeProcess::onReadyReadStderr()
 {
-    QByteArray err = m_process->readAllStandardError();
-    if (!err.trimmed().isEmpty())
-        emit errorOccurred(QString::fromUtf8(err));
+    m_stderrBuffer.append(m_process->readAllStandardError());
 }
 
 void ClaudeProcess::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
+    Q_UNUSED(status);
     if (!m_stdoutBuffer.trimmed().isEmpty())
         m_parser->feed(m_stdoutBuffer);
     m_stdoutBuffer.clear();
+
+    if (exitCode != 0 && !m_stderrBuffer.trimmed().isEmpty()) {
+        qWarning() << "[cccpp] stderr:" << m_stderrBuffer.trimmed();
+        emit errorOccurred(QString::fromUtf8(m_stderrBuffer.trimmed()));
+    }
+    m_stderrBuffer.clear();
 
     m_process->deleteLater();
     m_process = nullptr;

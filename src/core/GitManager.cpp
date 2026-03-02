@@ -104,9 +104,13 @@ void GitManager::startWatching()
         m_watcher->addPath(gitHead);
 
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this](const QString &path) {
-        // Re-add the path (some platforms drop watches after change)
-        if (QFile::exists(path))
-            m_watcher->addPath(path);
+        // Re-add the path (some platforms drop watches after change).
+        // Use a short delay because git uses atomic writes (tmp+rename)
+        // and the file may not exist yet at the moment of notification.
+        QTimer::singleShot(100, this, [this, path] {
+            if (m_watcher && QFile::exists(path))
+                m_watcher->addPath(path);
+        });
         scheduleRefresh();
     });
 }
@@ -123,10 +127,8 @@ void GitManager::stopWatching()
 
 void GitManager::scheduleRefresh()
 {
-    if (!m_refreshScheduled) {
-        m_refreshScheduled = true;
-        m_debounce->start();
-    }
+    m_refreshScheduled = true;
+    m_debounce->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +440,7 @@ void GitManager::doDiscardFile(const QString &filePath)
     if (isUntracked) {
         QFile::remove(m_workingDir + "/" + filePath);
         scheduleRefresh();
+        drainQueue();
         return;
     }
 
