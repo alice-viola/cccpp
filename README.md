@@ -8,6 +8,16 @@ A native C++ desktop application that provides a Cursor-like three-column UI for
 
 ## Build
 
+Only tested on macOS (Apple Silicon).
+
+If you do not have **CMake**:
+
+```bash
+brew install cmake
+```
+
+**Then:**
+
 ```bash
 # macOS with Homebrew
 brew install qt@6 qscintilla2
