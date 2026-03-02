@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(cccpp VERSION 0.1.0 LANGUAGES C CXX OBJCXX)
+project(c3p2 VERSION 0.1.0 LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -95,7 +95,7 @@ endif()
 
 qt_add_resources(FONT_RESOURCES resources/fonts.qrc)
 
-add_executable(cccpp
+add_executable(c3p2
     src/main.cpp
     ${CORE_SOURCES}
     ${UI_SOURCES}
@@ -103,12 +103,12 @@ add_executable(cccpp
     ${FONT_RESOURCES}
 )
 
-target_include_directories(cccpp PRIVATE
+target_include_directories(c3p2 PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-target_link_libraries(cccpp PRIVATE
+target_link_libraries(c3p2 PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Sql
@@ -118,15 +118,15 @@ target_link_libraries(cccpp PRIVATE
 
 # Platform-specific linking for PTY support
 if(UNIX AND NOT APPLE)
-    target_link_libraries(cccpp PRIVATE util)
+    target_link_libraries(c3p2 PRIVATE util)
 endif()
 
 if(APPLE)
     find_library(APPKIT_FRAMEWORK AppKit)
-    target_link_libraries(cccpp PRIVATE ${APPKIT_FRAMEWORK})
+    target_link_libraries(c3p2 PRIVATE ${APPKIT_FRAMEWORK})
 endif()
 
 if(QSCINTILLA_FOUND)
-    target_include_directories(cccpp PRIVATE ${QSCINTILLA_INCLUDE_DIRS})
-    target_link_libraries(cccpp PRIVATE ${QSCINTILLA_LIBRARIES})
+    target_include_directories(c3p2 PRIVATE ${QSCINTILLA_INCLUDE_DIRS})
+    target_link_libraries(c3p2 PRIVATE ${QSCINTILLA_LIBRARIES})
 endif()
