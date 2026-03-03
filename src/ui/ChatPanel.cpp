@@ -27,6 +27,7 @@
 #include <QFileDialog>
 #include <QWidgetAction>
 #include <QTabBar>
+#include <QPainter>
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
@@ -96,8 +97,11 @@ ChatPanel::ChatPanel(QWidget *parent)
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         refreshInputBarForCurrentTab();
         updateStatsLabel();
-        if (m_tabs.contains(idx))
+        if (m_tabs.contains(idx)) {
+            m_tabs[idx].unread = false;
+            updateTabIcon(idx);
             emit activeSessionChanged(m_tabs[idx].sessionId);
+        }
     });
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_tabs.size() <= 1) return;
@@ -146,6 +150,9 @@ void ChatPanel::applyThemeColors()
         .arg(thm.hex("text_muted"), thm.hex("text_secondary"));
     m_newChatBtn->setStyleSheet(cornerBtnStyle);
     m_historyBtn->setStyleSheet(cornerBtnStyle);
+
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it)
+        updateTabIcon(it.key());
 }
 
 void ChatPanel::setSessionManager(SessionManager *mgr) { m_sessionMgr = mgr; }
@@ -1252,6 +1259,13 @@ void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
 
     tab.processing = processing;
 
+    if (processing) {
+        tab.unread = false;
+    } else if (tab.tabIndex != m_tabWidget->currentIndex()) {
+        tab.unread = true;
+    }
+    updateTabIcon(tab.tabIndex);
+
     if (tab.thinkingIndicator) {
         if (processing)
             tab.thinkingIndicator->startAnimation();
@@ -1276,6 +1290,36 @@ void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
         if (it->processing) { anyProcessing = true; break; }
     }
     emit processingChanged(anyProcessing);
+}
+
+QIcon ChatPanel::dotIcon(const QColor &color)
+{
+    const int sz = 8;
+    QPixmap pm(sz, sz);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawEllipse(0, 0, sz, sz);
+    return QIcon(pm);
+}
+
+void ChatPanel::updateTabIcon(int tabIndex)
+{
+    if (!m_tabs.contains(tabIndex)) return;
+    const auto &tab = m_tabs[tabIndex];
+    auto &thm = ThemeManager::instance();
+
+    if (tabIndex == m_tabWidget->currentIndex()) {
+        m_tabWidget->setTabIcon(tabIndex, QIcon());
+    } else if (tab.processing) {
+        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("mauve"))));
+    } else if (tab.unread) {
+        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("blue"))));
+    } else {
+        m_tabWidget->setTabIcon(tabIndex, QIcon());
+    }
 }
 
 void ChatPanel::refreshInputBarForCurrentTab()

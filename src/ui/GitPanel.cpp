@@ -67,13 +67,13 @@ void GitPanel::setupUI()
     headerLayout->addWidget(m_branchLabel);
     headerLayout->addStretch();
 
-    m_fetchBtn = new QPushButton("\xe2\xac\x87", m_headerWidget);
+    m_fetchBtn = new QPushButton("\u2193", m_headerWidget);
     m_fetchBtn->setFixedSize(20, 18);
     m_fetchBtn->setToolTip("Fetch from origin");
     headerLayout->addWidget(m_fetchBtn);
     connect(m_fetchBtn, &QPushButton::clicked, this, &GitPanel::onFetch);
 
-    m_pushBtn = new QPushButton("\xe2\xac\x86", m_headerWidget);
+    m_pushBtn = new QPushButton("\u2191", m_headerWidget);
     m_pushBtn->setFixedSize(20, 18);
     m_pushBtn->setToolTip("Push to origin");
     headerLayout->addWidget(m_pushBtn);

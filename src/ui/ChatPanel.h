@@ -7,6 +7,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QTimer>
+#include <QIcon>
 #include <QMap>
 #include <nlohmann/json.hpp>
 
@@ -46,6 +47,7 @@ struct ChatTab {
     bool hasFirstAssistantMsg = false;
     bool sessionConfirmed = false;
     bool hasPendingQuestion = false;
+    bool unread = false;
 
     // Context usage tracking
     int totalInputTokens = 0;
@@ -123,6 +125,8 @@ private:
     void removeMessagesAfterTurn(int turnId);
     void showPlansMenu();
     void updateStatsLabel();
+    void updateTabIcon(int tabIndex);
+    QIcon dotIcon(const QColor &color);
 
     QTabWidget *m_tabWidget;
     QPushButton *m_newChatBtn;
