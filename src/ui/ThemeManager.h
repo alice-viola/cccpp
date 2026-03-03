@@ -90,9 +90,9 @@ public:
         ThemePalette cursor;
         cursor.name = "cursor";
         cursor.isLight = false;
-        cursor.base      = QColor("#1e1e1e"); cursor.mantle    = QColor("#181818"); cursor.crust     = QColor("#111111");
-        cursor.surface0  = QColor("#2d2d2d"); cursor.surface1  = QColor("#3c3c3c"); cursor.surface2  = QColor("#4e4e4e");
-        cursor.overlay0  = QColor("#646464"); cursor.overlay1  = QColor("#7a7a7a"); cursor.overlay2  = QColor("#909090");
+        cursor.base      = QColor("#131313"); cursor.mantle    = QColor("#0e0e0e"); cursor.crust     = QColor("#080808");
+        cursor.surface0  = QColor("#1f1f1f"); cursor.surface1  = QColor("#2a2a2a"); cursor.surface2  = QColor("#383838");
+        cursor.overlay0  = QColor("#525252"); cursor.overlay1  = QColor("#686868"); cursor.overlay2  = QColor("#7e7e7e");
         cursor.text      = QColor("#d4d4d4"); cursor.subtext0  = QColor("#a0a0a0"); cursor.subtext1  = QColor("#b0b0b0");
         cursor.mauve     = QColor("#c586c0"); cursor.blue      = QColor("#007acc"); cursor.green     = QColor("#4ec9b0");
         cursor.red       = QColor("#f44747"); cursor.yellow    = QColor("#dcdcaa"); cursor.peach     = QColor("#ce9178");

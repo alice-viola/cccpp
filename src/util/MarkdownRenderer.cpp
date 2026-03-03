@@ -61,7 +61,8 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
     result = processInlineFormatting(result);
 
     // Phase 5 — newline conversion (placeholders are opaque tokens).
-    result.replace("\n\n", "<br><br>");
+    // A single <br> per paragraph break; block-level divs already have margins.
+    result.replace("\n\n", "<br>");
     result.replace("\n", "<br>");
 
     // Collapse <br> between adjacent block-level <div> elements.

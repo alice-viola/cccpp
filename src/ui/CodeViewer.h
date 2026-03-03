@@ -39,6 +39,7 @@ struct FileTab {
     bool dirty = false;
     bool inDiffMode = false;
     bool isMarkdown = false;
+    bool markdownShowRaw = false;
 #ifndef NO_QSCINTILLA
     QsciScintilla *editor = nullptr;
 #else
@@ -95,6 +96,7 @@ public:
                        const QString &newContent, const QString &leftLabel,
                        const QString &rightLabel);
     void toggleDiffMode();
+    void toggleMarkdownRaw();
     bool isInDiffMode() const;
 
     // Inline diff overlay for AI edits (legacy)

@@ -23,6 +23,9 @@
 #include <QMenuBar>
 #include <QFileDialog>
 #include <QApplication>
+#include <QClipboard>
+#include <QTextEdit>
+#include <QLabel>
 #include <QScreen>
 #include <QStatusBar>
 #include <QDir>
@@ -435,7 +438,16 @@ void MainWindow::setupMenuBar()
 
     auto *copyAction = editMenu->addAction("&Copy");
     copyAction->setShortcut(QKeySequence::Copy);
-    connect(copyAction, &QAction::triggered, m_codeViewer, &CodeViewer::copy);
+    connect(copyAction, &QAction::triggered, this, [this] {
+        auto *w = QApplication::focusWidget();
+        if (auto *te = qobject_cast<QTextEdit *>(w))
+            te->copy();
+        else if (auto *lb = qobject_cast<QLabel *>(w)) {
+            if (lb->hasSelectedText())
+                QApplication::clipboard()->setText(lb->selectedText());
+        } else
+            m_codeViewer->copy();
+    });
 
     auto *pasteAction = editMenu->addAction("&Paste");
     pasteAction->setShortcut(QKeySequence::Paste);
@@ -556,10 +568,13 @@ void MainWindow::loadStylesheet()
     connect(&tm, &ThemeManager::themeChanged, this, &MainWindow::onThemeChanged);
     applyThemeColors();
 
-    QTimer::singleShot(0, this, [this] {
-        const auto &pal = ThemeManager::instance().palette();
-        MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_base);
-    });
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    const auto &pal = ThemeManager::instance().palette();
+    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
 }
 
 void MainWindow::applyThemeColors()
@@ -597,7 +612,7 @@ void MainWindow::onThemeChanged(const QString &name)
     Config::instance().setTheme(name);
 
     const auto &pal = ThemeManager::instance().palette();
-    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_base);
+    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
 
     if (m_themeGroup) {
         for (auto *action : m_themeGroup->actions()) {

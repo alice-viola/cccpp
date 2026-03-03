@@ -31,6 +31,7 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
 
         m_userLabel = new QLabel(content, this);
         m_userLabel->setWordWrap(true);
+        m_userLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
         m_userLabel->setStyleSheet(
             QStringLiteral("QLabel { color: %1; font-size: 13px; }")
             .arg(tm.hex("text_primary")));
@@ -179,6 +180,8 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
     m_contentBrowser->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_contentBrowser->document()->setDocumentMargin(0);
     m_contentBrowser->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    m_contentBrowser->setTextInteractionFlags(
+        Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard | Qt::LinksAccessibleByMouse);
 
     connect(m_contentBrowser->document(), &QTextDocument::contentsChanged,
             this, &ChatMessageWidget::resizeBrowser);

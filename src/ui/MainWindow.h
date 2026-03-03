@@ -6,6 +6,7 @@
 #include <QTabWidget>
 #include <QLabel>
 #include <QActionGroup>
+#include <QShowEvent>
 
 class WorkspaceTree;
 class CodeViewer;
@@ -28,6 +29,9 @@ public:
     ~MainWindow();
 
     void openWorkspace(const QString &path);
+
+protected:
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onFileSelected(const QString &filePath);

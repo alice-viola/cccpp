@@ -130,10 +130,7 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_emptyState = new CodeViewerEmptyState(this);
     layout->addWidget(m_emptyState);
 
-    m_breadcrumb = new BreadcrumbBar(this);
-    layout->addWidget(m_breadcrumb);
-
-    // Tab widget with diff toggle button in corner
+    // Tab widget with corner toggle button (Diff for code tabs, Raw for markdown)
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(true);
@@ -144,7 +141,13 @@ CodeViewer::CodeViewer(QWidget *parent)
     m_diffToggleBtn->setFixedSize(40, 20);
     m_diffToggleBtn->setToolTip("Toggle side-by-side diff view");
     m_tabWidget->setCornerWidget(m_diffToggleBtn, Qt::TopRightCorner);
-    connect(m_diffToggleBtn, &QPushButton::clicked, this, &CodeViewer::toggleDiffMode);
+    connect(m_diffToggleBtn, &QPushButton::clicked, this, [this] {
+        auto *tab = currentTab();
+        if (tab && tab->isMarkdown)
+            toggleMarkdownRaw();
+        else
+            toggleDiffMode();
+    });
 
     m_closeAllBtn = new QPushButton(QString::fromUtf8("\xc3\x97 All"), this); // × All
     m_closeAllBtn->setFixedSize(48, 20);
@@ -190,10 +193,18 @@ CodeViewer::CodeViewer(QWidget *parent)
     });
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
-        if (m_tabs.contains(idx))
-            m_diffToggleBtn->setChecked(m_tabs[idx].inDiffMode);
-        if (m_tabs.contains(idx) && m_breadcrumb)
-            m_breadcrumb->setFilePath(m_tabs[idx].filePath, m_rootPath);
+        if (m_tabs.contains(idx)) {
+            auto &tab = m_tabs[idx];
+            if (tab.isMarkdown) {
+                m_diffToggleBtn->setText("Raw");
+                m_diffToggleBtn->setToolTip("Toggle raw markdown source");
+                m_diffToggleBtn->setChecked(tab.markdownShowRaw);
+            } else {
+                m_diffToggleBtn->setText("Diff");
+                m_diffToggleBtn->setToolTip("Toggle side-by-side diff view");
+                m_diffToggleBtn->setChecked(tab.inDiffMode);
+            }
+        }
     });
 
     // Apply theme colors and listen for changes
@@ -667,16 +678,18 @@ void CodeViewer::applyThemeColors()
 {
     const auto &pal = ThemeManager::instance().palette();
 
-    // Diff toggle button
-    m_diffToggleBtn->setStyleSheet(
-        QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
-            "font-size: 11px; margin: 2px 4px; }"
-            "QPushButton:hover { color: %3; background: %4; }"
-            "QPushButton:checked { background: %5; color: %6; }")
-            .arg(pal.bg_raised.name(), pal.text_muted.name(),
-                 pal.text_primary.name(), pal.hover_raised.name(),
-                 pal.success_btn_bg.name(), pal.green.name()));
+    const QString cornerBtnSS = QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
+        "font-size: 11px; padding: 0 4px; margin: 3px 5px 0 2px; }"
+        "QPushButton:hover { color: %3; background: %4; }"
+        "QPushButton:checked { background: %5; color: %6; }")
+        .arg(pal.bg_raised.name(), pal.text_muted.name(),
+             pal.text_primary.name(), pal.hover_raised.name(),
+             pal.success_btn_bg.name(), pal.green.name());
+
+    // Corner toggle button (Diff / Raw)
+    m_diffToggleBtn->setStyleSheet(cornerBtnSS);
+    m_closeAllBtn->setStyleSheet(cornerBtnSS);
 
     // Re-apply editor colors for all open tabs
 #ifndef NO_QSCINTILLA
@@ -933,8 +946,24 @@ void CodeViewer::openMarkdown(const QString &filePath)
     MarkdownRenderer renderer;
     browser->setHtml(renderer.toHtml(content));
 
+    // Raw view: read-only editor with markdown syntax highlighting
+#ifndef NO_QSCINTILLA
+    auto *rawEditor = createEditor();
+    rawEditor->setReadOnly(true);
+    setLexerForFile(filePath, rawEditor);
+    rawEditor->setText(content);
+    rawEditor->setModified(false);
+#else
+    auto *rawEditor = createEditor();
+    rawEditor->setReadOnly(true);
+    rawEditor->setPlainText(content);
+    rawEditor->document()->setModified(false);
+#endif
+
     auto *stack = new QStackedWidget(this);
-    stack->addWidget(browser);
+    stack->addWidget(browser);    // index 0: rendered (default)
+    stack->addWidget(rawEditor);  // index 1: raw source
+    stack->setCurrentIndex(0);
 
     QFileInfo fi(filePath);
     int idx = m_tabWidget->addTab(stack, fi.fileName());
@@ -945,8 +974,16 @@ void CodeViewer::openMarkdown(const QString &filePath)
     tab.filePath = filePath;
     tab.isMarkdown = true;
     tab.markdownView = browser;
+    tab.editor = rawEditor;
+    tab.markdownShowRaw = false;
     tab.stack = stack;
     m_tabs[idx] = tab;
+
+    // addTab() may have auto-selected this tab and fired currentChanged before
+    // m_tabs[idx] was populated, so sync the button label explicitly now.
+    m_diffToggleBtn->setText("Raw");
+    m_diffToggleBtn->setToolTip("Toggle raw markdown source");
+    m_diffToggleBtn->setChecked(false);
 
     m_tabWidget->setCurrentIndex(idx);
     updateEmptyState();
@@ -959,14 +996,26 @@ void CodeViewer::refreshFile(const QString &filePath)
     FileTab *tab = tabForFile(filePath);
     if (!tab) return;
 
-    // Markdown tabs have no editor — refresh the rendered view instead.
+    // Markdown tabs — refresh both the rendered view and the raw editor.
     if (tab->isMarkdown) {
-        if (tab->markdownView) {
-            QFile file(filePath);
-            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QFile file(filePath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QString content = QString::fromUtf8(file.readAll());
+            if (tab->markdownView) {
                 MarkdownRenderer renderer;
-                tab->markdownView->setHtml(renderer.toHtml(QString::fromUtf8(file.readAll())));
+                tab->markdownView->setHtml(renderer.toHtml(content));
             }
+#ifndef NO_QSCINTILLA
+            if (tab->editor) {
+                tab->editor->setText(content);
+                tab->editor->setModified(false);
+            }
+#else
+            if (tab->editor) {
+                tab->editor->setPlainText(content);
+                tab->editor->document()->setModified(false);
+            }
+#endif
         }
         return;
     }
@@ -1541,6 +1590,16 @@ void CodeViewer::toggleDiffMode()
     } else {
         tab->stack->setCurrentIndex(0);
     }
+}
+
+void CodeViewer::toggleMarkdownRaw()
+{
+    auto *tab = currentTab();
+    if (!tab || !tab->isMarkdown || !tab->stack) return;
+
+    tab->markdownShowRaw = !tab->markdownShowRaw;
+    tab->stack->setCurrentIndex(tab->markdownShowRaw ? 1 : 0);
+    m_diffToggleBtn->setChecked(tab->markdownShowRaw);
 }
 
 bool CodeViewer::isInDiffMode() const
