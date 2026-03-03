@@ -24,7 +24,7 @@ InputBar::InputBar(QWidget *parent)
     setAcceptDrops(true);
 
     auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(16, 4, 16, 10);
+    outerLayout->setContentsMargins(16, 4, 16, 6);
     outerLayout->setSpacing(2);
 
     m_contextIndicator = new QLabel(this);
@@ -52,23 +52,28 @@ InputBar::InputBar(QWidget *parent)
     m_inputContainer = new QWidget(this);
     m_inputContainer->setObjectName("inputContainer");
     auto *containerLayout = new QVBoxLayout(m_inputContainer);
-    containerLayout->setContentsMargins(2, 2, 2, 2);
+    containerLayout->setContentsMargins(2, 0, 2, 0);
     containerLayout->setSpacing(0);
 
     m_input = new QTextEdit(m_inputContainer);
     m_input->setObjectName("chatInput");
     m_input->setPlaceholderText("Ask Claude anything... (@ to mention files, / for commands)");
-    m_input->setMaximumHeight(80);
-    m_input->setMinimumHeight(32);
+    m_input->setFixedHeight(40);
+    m_input->document()->setDocumentMargin(4);
     m_input->setAcceptRichText(false);
     m_input->setAcceptDrops(false);
     m_input->installEventFilter(this);
     containerLayout->addWidget(m_input);
 
+    connect(m_input, &QTextEdit::textChanged, this, [this] {
+        int docHeight = static_cast<int>(m_input->document()->size().height()) + 8;
+        m_input->setFixedHeight(qBound(40, docHeight, 150));
+    });
+
     auto *bottomBar = new QWidget(m_inputContainer);
     bottomBar->setStyleSheet("QWidget { background: transparent; }");
     m_bottomBarLayout = new QHBoxLayout(bottomBar);
-    m_bottomBarLayout->setContentsMargins(10, 4, 8, 8);
+    m_bottomBarLayout->setContentsMargins(10, 2, 8, 4);
     m_bottomBarLayout->setSpacing(4);
     m_bottomBarLayout->addStretch();
 
@@ -116,7 +121,7 @@ void InputBar::applyThemeColors()
 
     m_input->setStyleSheet(QStringLiteral(
         "QTextEdit#chatInput { background: transparent; color: %1; "
-        "border: none; padding: 6px 10px; font-size: 13px; }")
+        "border: none; padding: 4px 10px; font-size: 13px; }")
         .arg(p.text_primary.name()));
 
     applyBorderColor(p.border_standard);
