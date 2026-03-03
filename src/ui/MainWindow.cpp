@@ -40,7 +40,7 @@
 #include <QMessageBox>
 #include <QShortcut>
 
-static constexpr int    kTreePanelWidth     = 300;
+static constexpr int    kTreePanelWidth     = 250;
 static constexpr double kEditorFraction     = 0.40;
 static constexpr double kChatFraction       = 0.35;
 static constexpr double kEditorFractionGit  = 0.50;
