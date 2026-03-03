@@ -1671,6 +1671,31 @@ int CodeViewer::currentLine() const
     return 0;
 }
 
+QPair<int,int> CodeViewer::selectionLineRange() const
+{
+#ifndef NO_QSCINTILLA
+    auto *tab = const_cast<CodeViewer *>(this)->currentTab();
+    if (tab && tab->editor) {
+        int lineFrom, indexFrom, lineTo, indexTo;
+        tab->editor->getSelection(&lineFrom, &indexFrom, &lineTo, &indexTo);
+        if (lineFrom >= 0)
+            return {lineFrom + 1, lineTo + 1};
+    }
+#endif
+    int line = currentLine();
+    return {line, line};
+}
+
+QString CodeViewer::fileContent() const
+{
+#ifndef NO_QSCINTILLA
+    auto *tab = const_cast<CodeViewer *>(this)->currentTab();
+    if (tab && tab->editor)
+        return tab->editor->text();
+#endif
+    return {};
+}
+
 // ---------------------------------------------------------------------------
 // Inline diff overlay (for reviewing AI edits)
 // ---------------------------------------------------------------------------
@@ -1754,14 +1779,33 @@ void CodeViewer::showInlineEditBar()
 
     if (!m_inlineEditBar) {
         m_inlineEditBar = new InlineEditBar(this);
-        connect(m_inlineEditBar, &InlineEditBar::submitted, this,
-                &CodeViewer::inlineEditSubmitted);
-        connect(m_inlineEditBar, &InlineEditBar::cancelled, this, [this] {
+
+        connect(m_inlineEditBar, &InlineEditBar::submitted,
+                this, &CodeViewer::inlineEditSubmitted);
+
+        connect(m_inlineEditBar, &InlineEditBar::cancelled,
+                this, [this] { hideInlineEditBar(); });
+
+        connect(m_inlineEditBar, &InlineEditBar::cancelRequested,
+                this, [this] { hideInlineEditBar(); emit inlineCmdKCancelled(); });
+
+        connect(m_inlineEditBar, &InlineEditBar::acceptAllRequested,
+                this, [this](const QString &fp) {
+            acceptAllInlineHunks(fp);
             hideInlineEditBar();
+            emit inlineCmdKAccepted(fp);
+        });
+
+        connect(m_inlineEditBar, &InlineEditBar::rejectAllRequested,
+                this, [this](const QString &fp) {
+            clearInlineDiffs(fp);   // wipe markers without modifying editor text
+            hideInlineEditBar();
+            emit inlineCmdKRejected(fp);
         });
     }
 
-    m_inlineEditBar->setContext(tab->filePath, selected, currentLine());
+    auto [startLine, endLine] = selectionLineRange();
+    m_inlineEditBar->setContext(tab->filePath, selected, startLine, endLine);
 
     // Position below the editor toolbar
     if (tab->stack) {
@@ -1781,6 +1825,18 @@ void CodeViewer::hideInlineEditBar()
         m_inlineEditBar->clear();
         m_inlineEditBar->hide();
     }
+}
+
+void CodeViewer::setInlineEditProcessing()
+{
+    if (m_inlineEditBar && m_inlineEditBar->isVisible())
+        m_inlineEditBar->setProcessing();
+}
+
+void CodeViewer::setInlineEditReviewMode()
+{
+    if (m_inlineEditBar && m_inlineEditBar->isVisible())
+        m_inlineEditBar->setReviewMode();
 }
 
 // ---------------------------------------------------------------------------

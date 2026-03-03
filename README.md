@@ -58,11 +58,13 @@ Here you can see C3P2 building itself:
 - **Tool call display**: collapsible tool-call groups per turn with inline diffs for Edit/Write operations
 - **Interactive questions**: answer Claude's follow-up questions directly in the UI with radio/checkbox options
 - **Revert**: use Claude revert mechanism
+- **Cmd+K inline edit**: select any code in the chat, press `Cmd+K` to open an inline prompt bar — describe the change, pick a model, and Claude rewrites only that region via a dedicated process that never touches the chat history
 
 ### Code Viewer
 
 - **Syntax highlighting**: QScintilla-powered highlighting for 40+ languages — C/C++, Python, JavaScript/TypeScript, Rust, Go, Java, Ruby, Swift, Kotlin, HTML, CSS/SCSS, SQL, Bash, YAML, JSON, Markdown, and more
 - **Multi-tab editor**: open multiple files with dirty-state tracking, close buttons, and tab reordering
+- **Cmd+K inline edit**: select any code, press `Cmd+K` to open an inline prompt bar — describe the change, pick a model, and Claude rewrites only that region via a dedicated process that never touches the chat history; the result is shown as a split diff directly in the editor
 - **Split diff view**: side-by-side old/new comparison with synchronized scrolling and hunk navigation
 - **Diff markers**: parses Edit/Write tool events to show green/red line markers in the gutter
 - **Markdown preview**: rendered HTML preview for `.md` files with theme-aware styling

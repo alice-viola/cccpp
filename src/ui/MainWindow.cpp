@@ -18,10 +18,15 @@
 #include "core/TelegramBridge.h"
 #include "core/TelegramDaemon.h"
 #include "core/DaemonClient.h"
+#include "core/ClaudeProcess.h"
+#include "core/StreamParser.h"
 #include "util/Config.h"
 #include "util/MacUtils.h"
+#include "util/JsonUtils.h"
 #include <QMenuBar>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QMap>
 #include <QApplication>
 #include <QClipboard>
 #include <QTextEdit>
@@ -224,25 +229,66 @@ void MainWindow::setupUI()
             m_codeViewer->showInlineDiff(currentFile, "", code, 0);
     });
 
-    // Inline edit from CodeViewer -> ChatPanel
+    // Cmd+K inline edit — dedicated process, never touches chat history
     connect(m_codeViewer, &CodeViewer::inlineEditSubmitted, this,
-            [this](const QString &filePath, const QString &selectedCode, const QString &instruction) {
-        QString prompt = QStringLiteral(
-            "Edit the following code in %1:\n```\n%2\n```\n\nInstruction: %3")
-            .arg(filePath, selectedCode, instruction);
-        m_chatPanel->sendMessage(prompt);
-        m_codeViewer->hideInlineEditBar();
+            [this](const QString &filePath, const QString &selectedCode,
+                   const QString &instruction, int startLine, int endLine,
+                   const QString &modelId) {
+        // bar stays visible and transitions to "processing" state inside executeInlineEdit
+        executeInlineEdit(filePath, selectedCode, instruction, startLine, endLine, modelId);
     });
 
-    // Inline diff accept/reject
-    connect(m_codeViewer, &CodeViewer::inlineDiffAccepted, this,
+    // Cmd+K Accept All — diff is already on disk, just clear state
+    connect(m_codeViewer, &CodeViewer::inlineCmdKAccepted, this,
+            [this](const QString &) {
+        m_statusProcessing->setText("");
+        m_inlineEditFile.clear();
+        m_inlineEditOriginalContent.clear();
+        m_gitManager->refreshStatus();
+        ToastManager::instance().show("Edit accepted", ToastType::Success, 2000);
+    });
+
+    // Cmd+K Reject All — restore original content from snapshot
+    connect(m_codeViewer, &CodeViewer::inlineCmdKRejected, this,
             [this](const QString &filePath) {
-        Q_UNUSED(filePath);
+        m_statusProcessing->setText("");
+        if (!m_inlineEditOriginalContent.isEmpty()) {
+            QFile f(filePath);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                f.write(m_inlineEditOriginalContent.toUtf8());
+                f.close();
+            }
+            m_codeViewer->forceReloadFile(filePath);
+        }
+        m_inlineEditFile.clear();
+        m_inlineEditOriginalContent.clear();
+        m_gitManager->refreshStatus();
+    });
+
+    // Cmd+K Cancel — user cancelled during processing
+    connect(m_codeViewer, &CodeViewer::inlineCmdKCancelled, this, [this] {
+        if (m_inlineEditProcess) {
+            m_inlineEditProcess->cancel();
+            m_inlineEditProcess->deleteLater();
+            m_inlineEditProcess = nullptr;
+        }
+        m_statusProcessing->setText("");
+        m_inlineEditFile.clear();
+        m_inlineEditOriginalContent.clear();
+    });
+
+    // Inline diff accept/reject (from chat edits, not Cmd+K)
+    connect(m_codeViewer, &CodeViewer::inlineDiffAccepted, this,
+            [this](const QString &) {
+        // chat edits: no extra action needed (file already correct on disk)
     });
     connect(m_codeViewer, &CodeViewer::inlineDiffRejected, this,
             [this](const QString &filePath, const QString &, const QString &) {
-        m_chatPanel->rewindCurrentTurn();
-        m_codeViewer->refreshFile(filePath);
+        // Only handle per-hunk reject from chat edits (not Cmd+K, which uses inlineCmdKRejected)
+        if (filePath != m_inlineEditFile) {
+            m_chatPanel->rewindCurrentTurn();
+            m_codeViewer->refreshFile(filePath);
+        }
     });
 
     // Handle rewind completion from ChatPanel revert button
@@ -285,6 +331,121 @@ void MainWindow::onInlineEdit()
         if (!m_codeViewer->selectedText().isEmpty())
             m_codeViewer->showInlineEditBar();
     }
+}
+
+void MainWindow::executeInlineEdit(const QString &filePath, const QString &selectedCode,
+                                   const QString &instruction, int startLine, int endLine,
+                                   const QString &modelId)
+{
+    // Cancel any in-flight inline edit
+    if (m_inlineEditProcess) {
+        m_inlineEditProcess->cancel();
+        m_inlineEditProcess->deleteLater();
+        m_inlineEditProcess = nullptr;
+    }
+
+    m_inlineEditFile = filePath;
+    // Snapshot original content so we can hard-revert on reject
+    m_inlineEditOriginalContent = m_codeViewer->fileContent();
+
+    // Determine language hint from file extension
+    QFileInfo fi(filePath);
+    QString ext = fi.suffix().toLower();
+    static const QMap<QString,QString> extLang = {
+        {"cpp","cpp"}, {"cxx","cpp"}, {"cc","cpp"}, {"c","c"},
+        {"h","cpp"}, {"hpp","cpp"},
+        {"py","python"}, {"js","javascript"}, {"ts","typescript"},
+        {"rs","rust"}, {"go","go"}, {"java","java"},
+        {"swift","swift"}, {"kt","kotlin"}, {"rb","ruby"},
+        {"sh","bash"}, {"json","json"}, {"md","markdown"},
+        {"html","html"}, {"css","css"}, {"sql","sql"},
+    };
+    QString lang = extLang.value(ext, ext);
+
+    // Build a focused prompt with full file context and exact line range
+    QString relPath = fi.fileName();
+    if (!m_workspacePath.isEmpty() && filePath.startsWith(m_workspacePath))
+        relPath = filePath.mid(m_workspacePath.length() + 1);
+
+    QString prompt = QStringLiteral(
+        "Edit the file `%1`. Here is the full current content:\n\n"
+        "```%2\n%3\n```\n\n"
+        "The user selected lines %4\u2013%5:\n\n"
+        "```%2\n%6\n```\n\n"
+        "Instruction: %7\n\n"
+        "Use the Edit tool to apply this change. "
+        "Modify only the selected region. Do not add comments or explanations.")
+        .arg(relPath, lang, m_inlineEditOriginalContent)
+        .arg(startLine).arg(endLine)
+        .arg(selectedCode, instruction);
+
+    // Create a dedicated process — keeps chat history clean
+    m_inlineEditProcess = new ClaudeProcess(this);
+    m_inlineEditProcess->setWorkingDirectory(m_workspacePath);
+    m_inlineEditProcess->setModel(modelId);
+    m_inlineEditProcess->setMode("agent");
+
+    // --- Wire StreamParser: detect Edit/Write tool calls → show inline diff ---
+    auto *parser = m_inlineEditProcess->streamParser();
+
+    connect(parser, &StreamParser::toolUseStarted, this,
+            [this](const QString &toolName, const QString &, const nlohmann::json &input) {
+        QString fp = JsonUtils::getString(input, "file_path");
+        if (fp.isEmpty()) return;
+        if (!QFileInfo(fp).isAbsolute() && !m_workspacePath.isEmpty())
+            fp = m_workspacePath + "/" + fp;
+
+        if ((toolName == "Edit" || toolName == "StrReplace") && input.contains("old_string")) {
+            QString oldStr = JsonUtils::getString(input, "old_string");
+            QString newStr = JsonUtils::getString(input, "new_string");
+
+            // Find the line where oldStr starts — compute from old content before reload
+            int editLine = 0;
+            if (!oldStr.isEmpty()) {
+                int pos = m_inlineEditOriginalContent.indexOf(oldStr);
+                if (pos >= 0)
+                    editLine = m_inlineEditOriginalContent.left(pos).count('\n');
+            }
+
+            // showInlineDiff handles reload internally (150ms timer + forceReload)
+            m_codeViewer->showInlineDiff(fp, oldStr, newStr, editLine);
+        }
+        // Write tool: showInlineDiff handles forceReload internally, just ignore here
+    });
+
+    connect(m_inlineEditProcess, &ClaudeProcess::finished, this,
+            [this](int exitCode) {
+        m_statusProcessing->setText("");
+        if (m_inlineEditProcess) {
+            m_inlineEditProcess->deleteLater();
+            m_inlineEditProcess = nullptr;
+        }
+        if (exitCode == 0)
+            m_codeViewer->setInlineEditReviewMode();
+        else {
+            m_codeViewer->hideInlineEditBar();
+            m_inlineEditFile.clear();
+            m_inlineEditOriginalContent.clear();
+        }
+    });
+
+    connect(m_inlineEditProcess, &ClaudeProcess::errorOccurred, this,
+            [this](const QString &err) {
+        m_statusProcessing->setText("");
+        ToastManager::instance().show("Inline edit failed: " + err, ToastType::Error, 4000);
+        if (m_inlineEditProcess) {
+            m_inlineEditProcess->deleteLater();
+            m_inlineEditProcess = nullptr;
+        }
+        m_codeViewer->hideInlineEditBar();
+        m_inlineEditFile.clear();
+        m_inlineEditOriginalContent.clear();
+    });
+
+    // Switch bar to processing spinner (keep bar visible for feedback)
+    m_codeViewer->setInlineEditProcessing();
+    m_statusProcessing->setText("\u25cf Editing...");
+    m_inlineEditProcess->sendMessage(prompt);
 }
 
 void MainWindow::setupStatusBar()
@@ -575,6 +736,15 @@ void MainWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
     const auto &pal = ThemeManager::instance().palette();
     MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        const auto &pal = ThemeManager::instance().palette();
+        MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
+    }
 }
 
 void MainWindow::applyThemeColors()

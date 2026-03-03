@@ -84,6 +84,8 @@ public:
     QStringList openFiles() const;
     QString selectedText() const;
     int currentLine() const;
+    QPair<int,int> selectionLineRange() const;
+    QString fileContent() const;
 
     void undo();
     void redo();
@@ -128,15 +130,22 @@ public:
     // Inline edit (Cmd+K)
     void showInlineEditBar();
     void hideInlineEditBar();
+    void setInlineEditProcessing();
+    void setInlineEditReviewMode();
 
 signals:
     void fileSaved(const QString &filePath);
     void dirtyStateChanged(const QString &filePath, bool dirty);
     void inlineEditSubmitted(const QString &filePath, const QString &selectedCode,
-                             const QString &instruction);
+                             const QString &instruction,
+                             int startLine, int endLine, const QString &modelId);
     void inlineDiffAccepted(const QString &filePath);
     void inlineDiffRejected(const QString &filePath, const QString &oldText,
                             const QString &newText);
+    // Cmd+K dedicated accept/reject signals (never touch chat)
+    void inlineCmdKAccepted(const QString &filePath);
+    void inlineCmdKRejected(const QString &filePath);
+    void inlineCmdKCancelled();
 protected:
     void resizeEvent(QResizeEvent *event) override;
 

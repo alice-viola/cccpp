@@ -8,6 +8,8 @@
 #include <QActionGroup>
 #include <QShowEvent>
 
+class ClaudeProcess;
+
 class WorkspaceTree;
 class CodeViewer;
 class ChatPanel;
@@ -32,6 +34,7 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onFileSelected(const QString &filePath);
@@ -60,6 +63,9 @@ private:
     void connectGitSignals();
     void syncEditorContextToChat();
     void setupTelegram();
+    void executeInlineEdit(const QString &filePath, const QString &selectedCode,
+                           const QString &instruction, int startLine, int endLine,
+                           const QString &modelId);
 
     QPushButton *m_toggleTree = nullptr;
     QPushButton *m_toggleEditor = nullptr;
@@ -91,4 +97,9 @@ private:
     QLabel *m_statusProcessing = nullptr;
 
     QActionGroup *m_themeGroup = nullptr;
+
+    // Cmd+K inline edit — dedicated process (never touches chat)
+    ClaudeProcess *m_inlineEditProcess = nullptr;
+    QString        m_inlineEditFile;
+    QString        m_inlineEditOriginalContent;
 };
