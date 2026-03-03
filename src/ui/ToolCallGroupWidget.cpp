@@ -163,7 +163,7 @@ void ToolCallGroupWidget::rebuildDetailView()
         auto *row = new QFrame(m_detailContainer);
         row->setStyleSheet(
             QStringLiteral("QFrame { background: %1; border-radius: 4px; }")
-            .arg(tm.hex("bg_base")));
+            .arg(tm.hex("bg_surface")));
         auto *rowLayout = new QVBoxLayout(row);
         rowLayout->setContentsMargins(8, 4, 8, 4);
         rowLayout->setSpacing(2);
@@ -198,7 +198,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         QStringLiteral(
         "QTextBrowser { background: %1; border: none; font-family: 'JetBrains Mono'; "
         "font-size: 12px; }")
-        .arg(tm.hex("bg_base")));
+        .arg(tm.hex("bg_surface")));
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     browser->setMaximumHeight(200);
 

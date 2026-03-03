@@ -22,6 +22,13 @@ struct GitFileEntry {
     GitFileStatus workStatus  = GitFileStatus::Unmodified;
 };
 
+struct GitBranchEntry {
+    QString name;      // e.g. "main" or "origin/feature-x"
+    bool isLocal;      // true = local branch, false = remote-tracking
+    bool isCurrent;    // true = currently checked-out branch
+    QString remote;    // remote name, e.g. "origin" (empty for local)
+};
+
 struct GitUnifiedDiff {
     QString filePath;
     QString oldContent;
@@ -63,6 +70,12 @@ public:
     // Commit
     void commit(const QString &message);
 
+    // Remote operations
+    void push();
+    void fetch();
+    void listBranches();
+    void checkoutBranch(const QString &branchName);
+
     // Low-level git runner (synchronous, used by SnapshotManager)
     QString runGitSync(const QStringList &args, int timeoutMs = 5000);
 
@@ -74,6 +87,13 @@ signals:
     void commitFailed(const QString &error);
     void errorOccurred(const QString &operation, const QString &message);
     void operationCompleted();
+    void pushSucceeded(const QString &branch);
+    void pushFailed(const QString &error);
+    void fetchSucceeded();
+    void fetchFailed(const QString &error);
+    void branchesListed(const QList<GitBranchEntry> &branches);
+    void checkoutSucceeded(const QString &branch);
+    void checkoutFailed(const QString &error);
 
 private:
     void detectRepo();
@@ -94,6 +114,10 @@ private:
     void doDiscardFile(const QString &filePath);
     void doDiscardAll();
     void doCommit(const QString &message);
+    void doPush();
+    void doFetch();
+    void doListBranches();
+    void doCheckoutBranch(const QString &branchName);
 
     void runAsync(const QStringList &args,
                   std::function<void(int exitCode, const QString &out, const QString &err)> callback);

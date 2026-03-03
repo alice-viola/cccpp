@@ -18,6 +18,7 @@ public:
 public slots:
     void updateStatus(const QList<GitFileEntry> &entries);
     void updateBranch(const QString &branch);
+    void updateBranches(const QList<GitBranchEntry> &branches);
     void showNotARepo();
 
 signals:
@@ -29,13 +30,17 @@ private slots:
     void onUnstageAll();
     void onDiscardAll();
     void onCommit();
+    void onPush();
+    void onFetch();
     void onItemClicked(QTreeWidgetItem *item, int column);
     void onItemContextMenu(const QPoint &pos);
+    void onBranchDoubleClicked(QTreeWidgetItem *item, int column);
 
 private:
     void setupUI();
     void applyThemeColors();
     void rebuildTree(const QList<GitFileEntry> &entries);
+    void rebuildBranchTree(const QList<GitBranchEntry> &branches);
     QString statusChar(GitFileStatus status) const;
     QColor statusColor(GitFileStatus status) const;
 
@@ -43,7 +48,12 @@ private:
 
     QWidget *m_headerWidget = nullptr;
     QLabel *m_branchLabel;
+    QPushButton *m_fetchBtn = nullptr;
+    QPushButton *m_pushBtn = nullptr;
     QPushButton *m_refreshBtn;
+    QTreeWidget *m_branchTree = nullptr;
+    QTreeWidgetItem *m_localRoot = nullptr;
+    QTreeWidgetItem *m_remoteRoot = nullptr;
     QTreeWidget *m_tree;
     QTreeWidgetItem *m_stagedRoot = nullptr;
     QTreeWidgetItem *m_changesRoot = nullptr;

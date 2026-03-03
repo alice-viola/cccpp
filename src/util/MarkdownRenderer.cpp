@@ -181,11 +181,7 @@ QString MarkdownRenderer::extractFencedBlocks(const QString &text, QStringList &
         QString copyApply =
             " <a href='cccpp://copy?block=" + QString::number(blockIndex)
             + "' style='color:" + tm.hex("text_muted")
-            + ";text-decoration:none;font-size:11px;'>Copy</a>"
-            " <a href='cccpp://apply?block=" + QString::number(blockIndex) + "&amp;lang=" + lang
-            + "' style='color:" + tm.hex("on_accent")
-            + ";text-decoration:none;font-size:11px;background:" + tm.hex("blue")
-            + ";padding:1px 6px;'>Apply</a>";
+            + ";text-decoration:none;font-size:11px;'>Copy</a>";
 
         QString codeAsHtml = escapedCode;
         codeAsHtml.replace("\n", "<br>");

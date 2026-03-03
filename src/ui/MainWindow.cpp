@@ -40,7 +40,7 @@
 #include <QMessageBox>
 #include <QShortcut>
 
-static constexpr int    kTreePanelWidth     = 150;
+static constexpr int    kTreePanelWidth     = 300;
 static constexpr double kEditorFraction     = 0.40;
 static constexpr double kChatFraction       = 0.35;
 static constexpr double kEditorFractionGit  = 0.50;
@@ -813,6 +813,8 @@ void MainWindow::openWorkspace(const QString &path)
 
     if (!m_gitManager->isGitRepo())
         m_gitPanel->showNotARepo();
+    else
+        m_gitManager->listBranches();
 
     Config::instance().setLastWorkspace(path);
     setWindowTitle(QStringLiteral("CCCPP - %1").arg(path));
@@ -959,6 +961,42 @@ void MainWindow::connectGitSignals()
         qDebug() << "[cccpp] Commit failed:" << err;
         ToastManager::instance().show(
             QStringLiteral("Commit failed: %1").arg(err.left(60)),
+            ToastType::Error, 5000);
+    });
+
+    connect(m_gitManager, &GitManager::pushSucceeded, this,
+            [](const QString &branch) {
+        ToastManager::instance().show(
+            QStringLiteral("Pushed %1 to origin").arg(branch),
+            ToastType::Success, 2500);
+    });
+    connect(m_gitManager, &GitManager::pushFailed, this,
+            [](const QString &err) {
+        ToastManager::instance().show(
+            QStringLiteral("Push failed: %1").arg(err.trimmed().left(80)),
+            ToastType::Error, 5000);
+    });
+
+    connect(m_gitManager, &GitManager::fetchSucceeded, this, [] {
+        ToastManager::instance().show("Fetch completed", ToastType::Success, 2000);
+    });
+    connect(m_gitManager, &GitManager::fetchFailed, this,
+            [](const QString &err) {
+        ToastManager::instance().show(
+            QStringLiteral("Fetch failed: %1").arg(err.trimmed().left(80)),
+            ToastType::Error, 5000);
+    });
+
+    connect(m_gitManager, &GitManager::checkoutSucceeded, this,
+            [](const QString &branch) {
+        ToastManager::instance().show(
+            QStringLiteral("Switched to %1").arg(branch),
+            ToastType::Success, 2000);
+    });
+    connect(m_gitManager, &GitManager::checkoutFailed, this,
+            [](const QString &err) {
+        ToastManager::instance().show(
+            QStringLiteral("Checkout failed: %1").arg(err.trimmed().left(80)),
             ToastType::Error, 5000);
     });
 

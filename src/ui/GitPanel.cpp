@@ -23,6 +23,14 @@ void GitPanel::setGitManager(GitManager *mgr)
 
     connect(m_git, &GitManager::statusChanged, this, &GitPanel::updateStatus);
     connect(m_git, &GitManager::branchChanged, this, &GitPanel::updateBranch);
+    connect(m_git, &GitManager::branchesListed, this, &GitPanel::updateBranches);
+
+    connect(m_git, &GitManager::fetchSucceeded, this, [this] {
+        if (m_git) m_git->listBranches();
+    });
+    connect(m_git, &GitManager::checkoutSucceeded, this, [this] {
+        if (m_git) m_git->listBranches();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +67,18 @@ void GitPanel::setupUI()
     headerLayout->addWidget(m_branchLabel);
     headerLayout->addStretch();
 
+    m_fetchBtn = new QPushButton("\xe2\xac\x87", m_headerWidget);
+    m_fetchBtn->setFixedSize(20, 18);
+    m_fetchBtn->setToolTip("Fetch from origin");
+    headerLayout->addWidget(m_fetchBtn);
+    connect(m_fetchBtn, &QPushButton::clicked, this, &GitPanel::onFetch);
+
+    m_pushBtn = new QPushButton("\xe2\xac\x86", m_headerWidget);
+    m_pushBtn->setFixedSize(20, 18);
+    m_pushBtn->setToolTip("Push to origin");
+    headerLayout->addWidget(m_pushBtn);
+    connect(m_pushBtn, &QPushButton::clicked, this, &GitPanel::onPush);
+
     m_refreshBtn = new QPushButton("\xe2\x86\xbb", m_headerWidget);
     m_refreshBtn->setFixedSize(20, 18);
     m_refreshBtn->setToolTip("Refresh");
@@ -68,6 +88,17 @@ void GitPanel::setupUI()
     });
 
     layout->addWidget(m_headerWidget);
+
+    // Branch tree — shows LOCAL and REMOTE branches
+    m_branchTree = new QTreeWidget(m_mainContent);
+    m_branchTree->setHeaderHidden(true);
+    m_branchTree->setRootIsDecorated(true);
+    m_branchTree->setIndentation(14);
+    m_branchTree->setAnimated(true);
+    m_branchTree->setMaximumHeight(200);
+    connect(m_branchTree, &QTreeWidget::itemDoubleClicked,
+            this, &GitPanel::onBranchDoubleClicked);
+    layout->addWidget(m_branchTree);
 
     m_tree = new QTreeWidget(m_mainContent);
     m_tree->setHeaderHidden(true);
@@ -132,19 +163,31 @@ void GitPanel::applyThemeColors()
 
     m_headerWidget->setStyleSheet(QStringLiteral(
         "QWidget { background: %1; border-bottom: 1px solid %2; }")
-        .arg(pal.bg_base.name(), pal.border_standard.name()));
+        .arg(pal.bg_window.name(), pal.border_standard.name()));
 
     m_branchLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 11px; font-weight: bold; background: transparent; }")
         .arg(pal.green.name()));
 
-    m_refreshBtn->setStyleSheet(QStringLiteral(
+    const QString iconBtnStyle = QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; }"
         "QPushButton:hover { color: %2; }")
-        .arg(pal.text_muted.name(), pal.text_primary.name()));
+        .arg(pal.text_muted.name(), pal.text_primary.name());
+
+    m_refreshBtn->setStyleSheet(iconBtnStyle);
+    m_fetchBtn->setStyleSheet(iconBtnStyle);
+    m_pushBtn->setStyleSheet(iconBtnStyle);
+
+    m_branchTree->setStyleSheet(QStringLiteral(
+        "QTreeWidget { background: %1; border: none; border-bottom: 1px solid %2; }"
+        "QTreeWidget::item { padding: 1px 4px; min-height: 20px; }"
+        "QTreeWidget::item:hover { background: rgba(255,255,255,0.04); }"
+        "QTreeWidget::item:selected { background: %3; color: %4; }")
+        .arg(pal.bg_window.name(), pal.border_subtle.name(),
+             pal.bg_raised.name(), pal.text_primary.name()));
 
     m_commitArea->setStyleSheet(QStringLiteral("QWidget { background: %1; }")
-        .arg(pal.bg_surface.name()));
+        .arg(pal.bg_window.name()));
 
     m_commitMsg->setStyleSheet(QStringLiteral(
         "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
@@ -193,7 +236,111 @@ void GitPanel::updateStatus(const QList<GitFileEntry> &entries)
 
 void GitPanel::updateBranch(const QString &branch)
 {
-    m_branchLabel->setText(QStringLiteral("\xe2\x8e\x87 %1").arg(branch));
+    m_branchLabel->setText(branch);
+}
+
+void GitPanel::updateBranches(const QList<GitBranchEntry> &branches)
+{
+    rebuildBranchTree(branches);
+}
+
+void GitPanel::rebuildBranchTree(const QList<GitBranchEntry> &branches)
+{
+    m_branchTree->clear();
+
+    const auto &pal = ThemeManager::instance().palette();
+    QFont sectionFont;
+    sectionFont.setPointSize(9);
+    sectionFont.setBold(true);
+
+    m_localRoot = new QTreeWidgetItem(m_branchTree);
+    m_localRoot->setText(0, "LOCAL");
+    m_localRoot->setFlags(Qt::ItemIsEnabled);
+    m_localRoot->setFont(0, sectionFont);
+    m_localRoot->setForeground(0, pal.text_muted);
+    m_localRoot->setExpanded(true);
+
+    m_remoteRoot = new QTreeWidgetItem(m_branchTree);
+    m_remoteRoot->setText(0, "REMOTE");
+    m_remoteRoot->setFlags(Qt::ItemIsEnabled);
+    m_remoteRoot->setFont(0, sectionFont);
+    m_remoteRoot->setForeground(0, pal.text_muted);
+    m_remoteRoot->setExpanded(true);
+
+    QMap<QString, QTreeWidgetItem *> remoteGroups;
+
+    for (const auto &b : branches) {
+        if (b.isLocal) {
+            auto *item = new QTreeWidgetItem(m_localRoot);
+            item->setData(0, Qt::UserRole, b.name);
+            item->setData(0, Qt::UserRole + 1, true);
+            if (b.isCurrent) {
+                item->setText(0, QStringLiteral("\u25cf %1").arg(b.name));
+                QFont f = item->font(0);
+                f.setBold(true);
+                item->setFont(0, f);
+                item->setForeground(0, pal.green);
+            } else {
+                item->setText(0, b.name);
+                item->setForeground(0, pal.text_secondary);
+            }
+        } else {
+            const QString &remoteName = b.remote.isEmpty() ? QStringLiteral("origin") : b.remote;
+            if (!remoteGroups.contains(remoteName)) {
+                auto *group = new QTreeWidgetItem(m_remoteRoot);
+                group->setText(0, remoteName);
+                group->setFlags(Qt::ItemIsEnabled);
+                group->setForeground(0, pal.blue);
+                group->setExpanded(true);
+                remoteGroups[remoteName] = group;
+            }
+            auto *item = new QTreeWidgetItem(remoteGroups[remoteName]);
+            // Strip "origin/" prefix for display
+            QString display = b.name;
+            int slash = display.indexOf('/');
+            if (slash >= 0)
+                display = display.mid(slash + 1);
+            item->setText(0, display);
+            item->setData(0, Qt::UserRole, b.name);
+            item->setData(0, Qt::UserRole + 1, false);
+            item->setForeground(0, pal.text_muted);
+        }
+    }
+
+    // Hide the remote section if empty
+    m_remoteRoot->setHidden(m_remoteRoot->childCount() == 0);
+}
+
+void GitPanel::onPush()
+{
+    if (m_git) m_git->push();
+}
+
+void GitPanel::onFetch()
+{
+    if (m_git) m_git->fetch();
+}
+
+void GitPanel::onBranchDoubleClicked(QTreeWidgetItem *item, int)
+{
+    if (!item || item == m_localRoot || item == m_remoteRoot)
+        return;
+    // Skip remote group headers (have children but no UserRole data)
+    if (item->childCount() > 0)
+        return;
+
+    bool isLocal = item->data(0, Qt::UserRole + 1).toBool();
+    QString branchName = item->data(0, Qt::UserRole).toString();
+    if (branchName.isEmpty() || !m_git)
+        return;
+
+    if (isLocal) {
+        m_git->checkoutBranch(branchName);
+    } else {
+        // For remote branches checkout the local name (strip "origin/")
+        int slash = branchName.indexOf('/');
+        m_git->checkoutBranch(slash >= 0 ? branchName.mid(slash + 1) : branchName);
+    }
 }
 
 void GitPanel::showNotARepo()

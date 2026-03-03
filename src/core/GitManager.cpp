@@ -521,3 +521,107 @@ void GitManager::doCommit(const QString &message)
         scheduleRefresh();
     });
 }
+
+// ---------------------------------------------------------------------------
+// Remote operations
+// ---------------------------------------------------------------------------
+
+void GitManager::push()
+{
+    if (!m_isGitRepo) return;
+    enqueueOp([this] { doPush(); });
+}
+
+void GitManager::doPush()
+{
+    runAsync({"push", "origin", m_currentBranch},
+             [this](int exitCode, const QString &out, const QString &err) {
+        if (exitCode != 0) {
+            emit pushFailed(err.isEmpty() ? out : err);
+            return;
+        }
+        emit pushSucceeded(m_currentBranch);
+    });
+}
+
+void GitManager::fetch()
+{
+    if (!m_isGitRepo) return;
+    enqueueOp([this] { doFetch(); });
+}
+
+void GitManager::doFetch()
+{
+    runAsync({"fetch", "--all", "--prune"},
+             [this](int exitCode, const QString &out, const QString &err) {
+        if (exitCode != 0) {
+            emit fetchFailed(err.isEmpty() ? out : err);
+            return;
+        }
+        emit fetchSucceeded();
+        scheduleRefresh();
+    });
+}
+
+void GitManager::listBranches()
+{
+    if (!m_isGitRepo) return;
+    enqueueOp([this] { doListBranches(); });
+}
+
+void GitManager::doListBranches()
+{
+    runAsync({"branch", "-a", "--no-color"},
+             [this](int exitCode, const QString &out, const QString &) {
+        if (exitCode != 0) return;
+
+        QList<GitBranchEntry> branches;
+        const QStringList lines = out.split('\n', Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            GitBranchEntry entry;
+            QString trimmed = line.trimmed();
+
+            entry.isCurrent = trimmed.startsWith("* ");
+            if (entry.isCurrent)
+                trimmed = trimmed.mid(2);
+
+            // Skip detached HEAD / symref lines
+            if (trimmed.contains(" -> ") || trimmed.contains("HEAD detached"))
+                continue;
+
+            if (trimmed.startsWith("remotes/")) {
+                trimmed = trimmed.mid(8); // strip "remotes/"
+                entry.isLocal = false;
+                int slash = trimmed.indexOf('/');
+                entry.remote = (slash >= 0) ? trimmed.left(slash) : QString();
+                entry.name = trimmed;
+            } else {
+                entry.isLocal = true;
+                entry.name = trimmed;
+            }
+
+            branches.append(entry);
+        }
+
+        emit branchesListed(branches);
+    });
+}
+
+void GitManager::checkoutBranch(const QString &branchName)
+{
+    if (!m_isGitRepo) return;
+    enqueueOp([this, branchName] { doCheckoutBranch(branchName); });
+}
+
+void GitManager::doCheckoutBranch(const QString &branchName)
+{
+    runAsync({"checkout", branchName},
+             [this, branchName](int exitCode, const QString &out, const QString &err) {
+        if (exitCode != 0) {
+            emit checkoutFailed(err.isEmpty() ? out : err);
+            return;
+        }
+        emit checkoutSucceeded(branchName);
+        scheduleRefresh();
+    });
+}
