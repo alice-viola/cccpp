@@ -117,6 +117,7 @@ ChatPanel::ChatPanel(QWidget *parent)
             reindexed[i] = it.value();
         }
         m_tabs = reindexed;
+        emit sessionListChanged();
     });
 
     m_tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -308,6 +309,10 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         else if (input.contains("command"))
             info.summary += ": " + JsonUtils::getString(input, "command");
 
+        // Track activity for Agent Fleet
+        t->lastActivity = info.summary;
+        emit agentActivityChanged(t->sessionId, info.summary);
+
         bool isEditTool = false;
 
         if ((name == "Edit" || name == "StrReplace") && input.contains("old_string")) {
@@ -319,6 +324,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             if (m_diffEngine)
                 m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString);
             t->pendingEditFile = info.filePath;
+            t->editCount++;
             emit fileChanged(info.filePath);
 
             int editLine = 0;
@@ -344,6 +350,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
 
             t->pendingEditFile = info.filePath;
+            t->editCount++;
             emit fileChanged(info.filePath);
 
             if (info.filePath.contains("/.claude/plans/") && info.filePath.endsWith(".md"))
@@ -642,7 +649,30 @@ QString ChatPanel::newChat()
 
     wireProcessSignals(m_tabs[idx]);
 
+    // Scroll monitoring: detect which turn is visible
+    auto *scrollBar2 = m_tabs[idx].scrollArea->verticalScrollBar();
+    connect(scrollBar2, &QScrollBar::valueChanged, this, [this, idx]() {
+        if (!m_tabs.contains(idx)) return;
+        auto &t = m_tabs[idx];
+        if (!t.messagesLayout || !t.scrollArea) return;
+        int viewportTop = t.scrollArea->verticalScrollBar()->value();
+        int threshold = t.scrollArea->viewport()->height() / 3;
+        int bestTurnId = -1;
+        for (int i = 0; i < t.messagesLayout->count(); ++i) {
+            auto *item = t.messagesLayout->itemAt(i);
+            if (!item || !item->widget()) continue;
+            auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
+            if (!chatMsg || chatMsg->turnId() <= 0) continue;
+            int widgetTop = chatMsg->mapTo(t.scrollArea->widget(), QPoint(0, 0)).y();
+            if (widgetTop <= viewportTop + threshold)
+                bestTurnId = chatMsg->turnId();
+        }
+        if (bestTurnId > 0)
+            emit visibleTurnChanged(t.sessionId, bestTurnId);
+    });
+
     m_tabWidget->setCurrentIndex(idx);
+    emit sessionListChanged();
     return sessionId;
 }
 
@@ -807,23 +837,44 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     wireProcessSignals(m_tabs[idx]);
 
-    m_tabWidget->setCurrentIndex(idx);
-
-    QString lastPlanFile;
-    for (const auto &msg : messages) {
-        if (msg.role == "tool" && msg.content.startsWith("Write: ")) {
-            QString path = msg.content.mid(7).trimmed();
-            if (path.contains("/.claude/plans/") && path.endsWith(".md"))
-                lastPlanFile = path;
+    // Scroll monitoring: detect which turn is visible
+    auto *scrollBar = m_tabs[idx].scrollArea->verticalScrollBar();
+    connect(scrollBar, &QScrollBar::valueChanged, this, [this, idx]() {
+        if (!m_tabs.contains(idx)) return;
+        auto &t = m_tabs[idx];
+        if (!t.messagesLayout || !t.scrollArea) return;
+        int viewportTop = t.scrollArea->verticalScrollBar()->value();
+        int threshold = t.scrollArea->viewport()->height() / 3;
+        int bestTurnId = -1;
+        for (int i = 0; i < t.messagesLayout->count(); ++i) {
+            auto *item = t.messagesLayout->itemAt(i);
+            if (!item || !item->widget()) continue;
+            auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
+            if (!chatMsg || chatMsg->turnId() <= 0) continue;
+            int widgetTop = chatMsg->mapTo(t.scrollArea->widget(), QPoint(0, 0)).y();
+            if (widgetTop <= viewportTop + threshold)
+                bestTurnId = chatMsg->turnId();
         }
-    }
-    if (!lastPlanFile.isEmpty() && QFile::exists(lastPlanFile))
-        emit planFileDetected(lastPlanFile);
+        if (bestTurnId > 0)
+            emit visibleTurnChanged(t.sessionId, bestTurnId);
+    });
+
+    m_tabWidget->setCurrentIndex(idx);
 
     // Scroll to the end so user sees most recent messages
     scrollTabToBottom(m_tabs[idx]);
 
     emit activeSessionChanged(sessionId);
+    emit sessionListChanged();
+
+    // Populate effects panel with historical file changes and timestamps
+    auto historicalChanges = extractFileChangesFromHistory(sessionId);
+    if (!historicalChanges.isEmpty())
+        emit historicalEffectsReady(sessionId, historicalChanges);
+
+    auto timestamps = turnTimestampsForSession(sessionId);
+    if (!timestamps.isEmpty())
+        emit turnTimestampsReady(sessionId, timestamps);
 }
 
 void ChatPanel::sendMessage(const QString &text)
@@ -845,6 +896,7 @@ void ChatPanel::onSendRequested(const QString &text)
     }
 
     tab.turnId++;
+    emit turnStarted(tab.sessionId, tab.turnId);
     tab.accumulatedRawContent.clear();
     tab.hasFirstAssistantMsg = false;
     tab.currentAssistantMsg = nullptr;
@@ -878,6 +930,7 @@ void ChatPanel::onSendRequested(const QString &text)
         m_tabWidget->setTabText(tab.tabIndex, title);
         if (m_sessionMgr)
             m_sessionMgr->setSessionTitle(tab.sessionId, title);
+        emit sessionListChanged();
     }
 
     if (m_database) {
@@ -1163,6 +1216,170 @@ QString ChatPanel::currentSessionId() const
     if (m_tabs.contains(idx))
         return m_tabs[idx].sessionId;
     return {};
+}
+
+void ChatPanel::hideTabBar()
+{
+    m_tabWidget->tabBar()->hide();
+    // Also hide the corner widget (new chat, history, plans buttons)
+    // since the fleet panel provides these now
+    if (auto *corner = m_tabWidget->cornerWidget(Qt::TopRightCorner))
+        corner->hide();
+}
+
+QList<AgentSummary> ChatPanel::agentSummaries() const
+{
+    QList<AgentSummary> result;
+    QSet<QString> openIds;
+
+    // First: currently open tabs (active agents)
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
+        AgentSummary s;
+        s.sessionId = it->sessionId;
+        int idx = it.key();
+        s.title = (idx >= 0 && idx < m_tabWidget->count())
+                      ? m_tabWidget->tabText(idx)
+                      : it->sessionId.left(8);
+        s.activity = it->lastActivity;
+        s.processing = it->processing;
+        s.hasPendingQuestion = it->hasPendingQuestion;
+        s.unread = it->unread;
+        s.editCount = it->editCount;
+        s.turnCount = it->turnId;
+        s.costUsd = it->totalCostUsd;
+        s.updatedAt = QDateTime::currentSecsSinceEpoch();
+        result.append(s);
+        openIds.insert(it->sessionId);
+    }
+
+    // Second: old sessions from database (not currently open)
+    if (m_database) {
+        auto sessions = m_database->loadSessions();
+        for (const auto &session : sessions) {
+            if (session.workspace != m_workingDir) continue;
+            if (openIds.contains(session.sessionId)) continue;
+            AgentSummary s;
+            s.sessionId = session.sessionId;
+            s.title = session.title.isEmpty()
+                          ? session.sessionId.left(8) + "..."
+                          : session.title;
+            s.updatedAt = session.updatedAt;
+            s.turnCount = m_database->turnCountForSession(session.sessionId);
+            result.append(s);
+        }
+    }
+
+    return result;
+}
+
+void ChatPanel::selectSession(const QString &sessionId)
+{
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
+        if (it->sessionId == sessionId) {
+            m_tabWidget->setCurrentIndex(it.key());
+            return;
+        }
+    }
+
+    // Not an open tab — lazily restore from database
+    restoreSession(sessionId);
+}
+
+QList<FileChange> ChatPanel::extractFileChangesFromHistory(const QString &sessionId)
+{
+    if (!m_database) return {};
+
+    auto messages = m_database->loadMessages(sessionId);
+    // Key by (turnId, filePath) to preserve per-turn grouping
+    QMap<QPair<int, QString>, FileChange> turnFileMap;
+
+    for (const auto &msg : messages) {
+        if (msg.role != "tool") continue;
+        if (msg.toolName != "Edit" && msg.toolName != "StrReplace"
+            && msg.toolName != "Write" && msg.toolName != "MultiEdit") continue;
+
+        auto input = nlohmann::json::parse(msg.toolInput.toStdString(), nullptr, false);
+        if (input.is_discarded()) continue;
+
+        QString filePath;
+        if (input.contains("path"))
+            filePath = QString::fromStdString(input["path"].get<std::string>());
+        else if (input.contains("file_path"))
+            filePath = QString::fromStdString(input["file_path"].get<std::string>());
+
+        if (filePath.isEmpty()) continue;
+
+        if (!QFileInfo(filePath).isAbsolute())
+            filePath = m_workingDir + "/" + filePath;
+
+        int turnId = msg.turnId;
+        auto key = qMakePair(turnId, filePath);
+
+        FileChange change;
+        change.filePath = filePath;
+        change.sessionId = sessionId;
+        change.turnId = turnId;
+        change.type = FileChange::Modified;
+
+        if (msg.toolName == "Write" && !turnFileMap.contains(key))
+            change.type = FileChange::Created;
+
+        if (input.contains("old_string") && input.contains("new_string")) {
+            QString oldStr = QString::fromStdString(input["old_string"].get<std::string>());
+            QString newStr = QString::fromStdString(input["new_string"].get<std::string>());
+            int oldLines = oldStr.count('\n') + (oldStr.isEmpty() ? 0 : 1);
+            int newLines = newStr.count('\n') + (newStr.isEmpty() ? 0 : 1);
+            change.linesAdded = qMax(0, newLines - oldLines);
+            change.linesRemoved = qMax(0, oldLines - newLines);
+        } else if (input.contains("content")) {
+            QString content = QString::fromStdString(input["content"].get<std::string>());
+            change.linesAdded = content.count('\n') + 1;
+        } else if (input.contains("contents")) {
+            QString content = QString::fromStdString(input["contents"].get<std::string>());
+            change.linesAdded = content.count('\n') + 1;
+        }
+
+        if (turnFileMap.contains(key)) {
+            turnFileMap[key].linesAdded += change.linesAdded;
+            turnFileMap[key].linesRemoved += change.linesRemoved;
+        } else {
+            turnFileMap[key] = change;
+        }
+    }
+
+    return turnFileMap.values();
+}
+
+QMap<int, qint64> ChatPanel::turnTimestampsForSession(const QString &sessionId) const
+{
+    if (!m_database) return {};
+
+    auto messages = m_database->loadMessages(sessionId);
+    QMap<int, qint64> timestamps;
+    for (const auto &msg : messages) {
+        if (msg.turnId > 0 && msg.timestamp > 0 && !timestamps.contains(msg.turnId))
+            timestamps[msg.turnId] = msg.timestamp;
+    }
+    return timestamps;
+}
+
+void ChatPanel::scrollToTurn(int turnId)
+{
+    int idx = m_tabWidget->currentIndex();
+    if (!m_tabs.contains(idx)) return;
+    auto &tab = m_tabs[idx];
+    if (!tab.messagesLayout || !tab.scrollArea) return;
+
+    // Find the first widget with matching turnId
+    for (int i = 0; i < tab.messagesLayout->count(); ++i) {
+        auto *item = tab.messagesLayout->itemAt(i);
+        if (!item || !item->widget()) continue;
+        auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
+        if (chatMsg && chatMsg->turnId() == turnId) {
+            tab.scrollArea->ensureWidgetVisible(chatMsg, 0, 20);
+            return;
+        }
+    }
 }
 
 void ChatPanel::showSuggestionChips(ChatTab &tab, const QString &responseText)

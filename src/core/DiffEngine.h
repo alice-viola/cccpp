@@ -28,6 +28,8 @@ public:
     FileDiff computeDiff(const QString &oldContent, const QString &newContent,
                          const QString &filePath = {});
 
+    void setCurrentSessionId(const QString &sessionId);
+
     void recordEditToolChange(const QString &filePath,
                               const QString &oldString, const QString &newString);
 
@@ -36,10 +38,16 @@ public:
     QList<FileDiff> pendingDiffs() const { return m_pendingDiffs; }
     FileDiff diffForFile(const QString &filePath) const;
     QStringList changedFiles() const { return m_fileDiffs.keys(); }
+    QStringList changedFilesForSession(const QString &sessionId) const;
     void clearPendingDiffs();
+
+    // Per-file line counts for effects panel
+    int linesAddedForFile(const QString &filePath) const;
+    int linesRemovedForFile(const QString &filePath) const;
 
 signals:
     void fileChanged(const QString &filePath, const FileDiff &diff);
+    void sessionFileChanged(const QString &sessionId, const QString &filePath);
 
 private:
     struct EditRecord {
@@ -53,4 +61,7 @@ private:
     QList<FileDiff> m_pendingDiffs;
     QMap<QString, FileDiff> m_fileDiffs;
     QMap<QString, QString> m_originalContents;
+    QString m_currentSessionId;
+    // sessionId -> set of file paths changed
+    QMap<QString, QStringList> m_sessionFiles;
 };

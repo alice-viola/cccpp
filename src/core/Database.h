@@ -43,6 +43,7 @@ public:
     // Messages
     void saveMessage(const MessageRecord &msg);
     QList<MessageRecord> loadMessages(const QString &sessionId);
+    int turnCountForSession(const QString &sessionId);
     void updateMessageSessionId(const QString &oldSessionId, const QString &newSessionId);
 
     // Checkpoints (CLI-backed, stores only the UUID per turn)

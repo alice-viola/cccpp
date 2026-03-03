@@ -25,43 +25,56 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     if (role == User) {
         m_layout->setContentsMargins(14, 10, 14, 10);
 
-        auto *contentRow = new QHBoxLayout;
-        contentRow->setSpacing(8);
-        contentRow->setContentsMargins(0, 0, 0, 0);
+        // Directive header row: "DIRECTIVE" label + timestamp + revert
+        m_headerWidget = new QWidget(this);
+        auto *directiveHeader = new QHBoxLayout(m_headerWidget);
+        directiveHeader->setSpacing(6);
+        directiveHeader->setContentsMargins(0, 0, 0, 4);
 
-        m_userLabel = new QLabel(content, this);
-        m_userLabel->setWordWrap(true);
-        m_userLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        m_userLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; font-size: 13px; }")
-            .arg(tm.hex("text_primary")));
-        m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-        contentRow->addWidget(m_userLabel);
+        m_roleLabel = new QLabel("DIRECTIVE", m_headerWidget);
+        QFont directiveFont = m_roleLabel->font();
+        directiveFont.setPixelSize(9);
+        directiveFont.setWeight(QFont::Bold);
+        directiveFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
+        m_roleLabel->setFont(directiveFont);
+        m_roleLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; }").arg(tm.hex("mauve")));
+        directiveHeader->addWidget(m_roleLabel);
 
-        m_revertBtn = new QPushButton("Revert", this);
-        m_revertBtn->setFixedHeight(22);
+        m_timestampLabel = new QLabel(m_headerWidget);
+        m_timestampLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 10px; }").arg(tm.hex("text_faint")));
+        directiveHeader->addWidget(m_timestampLabel);
+
+        directiveHeader->addStretch();
+
+        m_revertBtn = new QPushButton("Revert", m_headerWidget);
+        m_revertBtn->setFixedHeight(20);
         m_revertBtn->setStyleSheet(
             QStringLiteral(
             "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-            "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
+            "border-radius: 4px; font-size: 10px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; color: %4; }")
             .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
                  tm.hex("border_standard"), tm.hex("text_primary")));
         m_revertBtn->setVisible(false);
         connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
-        contentRow->addWidget(m_revertBtn, 0, Qt::AlignTop);
+        directiveHeader->addWidget(m_revertBtn);
 
-        m_layout->addLayout(contentRow);
+        m_layout->addWidget(m_headerWidget);
 
-        m_timestampLabel = new QLabel(this);
-        m_timestampLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; font-size: 10px; }").arg(tm.hex("text_faint")));
-        m_layout->addWidget(m_timestampLabel);
+        // User message content — bold directive text
+        m_userLabel = new QLabel(content, this);
+        m_userLabel->setWordWrap(true);
+        m_userLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_userLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 13px; font-weight: 500; }")
+            .arg(tm.hex("text_primary")));
+        m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        m_layout->addWidget(m_userLabel);
 
         m_acceptBtn = nullptr;
         m_rejectBtn = nullptr;
-        m_roleLabel = nullptr;
-        m_headerWidget = nullptr;
     } else {
         m_layout->setContentsMargins(16, 14, 16, 14);
 
@@ -404,11 +417,12 @@ void ChatMessageWidget::applyStyle()
     auto &tm = ThemeManager::instance();
     switch (m_role) {
     case User:
+        // Directive card: raised background with mauve left accent
         setStyleSheet(
             QStringLiteral(
             "ChatMessageWidget { background: %1; border: 1px solid %2; "
-            "border-radius: 12px; }")
-            .arg(tm.hex("bg_surface"), tm.hex("border_standard")));
+            "border-left: 3px solid %3; border-radius: 8px; }")
+            .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("mauve")));
         break;
     case Assistant:
         setStyleSheet(

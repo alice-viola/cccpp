@@ -13,9 +13,15 @@ ThinkingBlockWidget::ThinkingBlockWidget(QWidget *parent)
     m_layout->setSpacing(2);
 
     auto *header = new QWidget(this);
+    header->setCursor(Qt::PointingHandCursor);
+    header->installEventFilter(this);
     m_headerLayout = new QHBoxLayout(header);
     m_headerLayout->setContentsMargins(0, 0, 0, 0);
     m_headerLayout->setSpacing(6);
+
+    m_chevronLabel = new QLabel("\xe2\x96\xb6", this);  // ▶
+    m_chevronLabel->setFixedWidth(12);
+    m_headerLayout->addWidget(m_chevronLabel);
 
     m_titleLabel = new QLabel("Thinking", this);
     m_headerLayout->addWidget(m_titleLabel);
@@ -85,6 +91,29 @@ void ThinkingBlockWidget::finalize()
         duration = QStringLiteral("%1m %2s").arg(secs / 60).arg(secs % 60);
 
     m_titleLabel->setText(QStringLiteral("Thought for %1").arg(duration));
+    setCollapsed(true);
+}
+
+void ThinkingBlockWidget::setCollapsed(bool collapsed)
+{
+    m_collapsed = collapsed;
+    m_contentBrowser->setVisible(!collapsed);
+    m_chevronLabel->setText(collapsed ? "\xe2\x96\xb6" : "\xe2\x96\xbc");  // ▶ or ▼
+    if (!collapsed)
+        resizeBrowser();
+    else {
+        m_contentBrowser->setMinimumHeight(0);
+        m_contentBrowser->setMaximumHeight(0);
+    }
+}
+
+bool ThinkingBlockWidget::eventFilter(QObject *obj, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonPress && m_finalized) {
+        setCollapsed(!m_collapsed);
+        return true;
+    }
+    return QFrame::eventFilter(obj, event);
 }
 
 void ThinkingBlockWidget::updateDotsText()
@@ -125,6 +154,10 @@ void ThinkingBlockWidget::applyThemeColors()
 
     setStyleSheet(QStringLiteral(
         "ThinkingBlockWidget { background: transparent; }"));
+
+    m_chevronLabel->setStyleSheet(QStringLiteral(
+        "QLabel { color: %1; font-size: 8px; }")
+        .arg(p.text_faint.name()));
 
     m_titleLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 12px; font-style: italic; }")

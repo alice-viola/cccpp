@@ -17,6 +17,8 @@ public:
 
     void appendContent(const QString &text);
     void finalize();
+    void setCollapsed(bool collapsed);
+    bool isCollapsed() const { return m_collapsed; }
     QString rawContent() const { return m_rawContent; }
 
     float dotPhase() const { return m_dotPhase; }
@@ -24,6 +26,7 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     void applyThemeColors();
@@ -32,6 +35,7 @@ private:
 
     QVBoxLayout *m_layout;
     QHBoxLayout *m_headerLayout;
+    QLabel *m_chevronLabel;
     QLabel *m_titleLabel;
     QLabel *m_dotsLabel;
     QTextBrowser *m_contentBrowser;
@@ -41,4 +45,5 @@ private:
     QElapsedTimer m_timer;
     float m_dotPhase = 0.0f;
     bool m_finalized = false;
+    bool m_collapsed = false;
 };

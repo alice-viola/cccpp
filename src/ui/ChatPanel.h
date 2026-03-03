@@ -11,6 +11,9 @@
 #include <QMap>
 #include <nlohmann/json.hpp>
 
+#include "ui/AgentFleetPanel.h"  // for AgentSummary
+#include "ui/EffectsPanel.h"     // for FileChange
+
 class InputBar;
 class ModeSelector;
 class ModelSelector;
@@ -54,6 +57,10 @@ struct ChatTab {
     int totalOutputTokens = 0;
     int totalCacheReadTokens = 0;
     double totalCostUsd = 0.0;
+
+    // Agent fleet tracking
+    int editCount = 0;
+    QString lastActivity;
 };
 
 class ChatPanel : public QWidget {
@@ -81,6 +88,16 @@ public:
     int tabCount() const { return m_tabs.size(); }
     QString currentSessionId() const;
 
+    // Agent Fleet API
+    void hideTabBar();
+    QList<AgentSummary> agentSummaries() const;
+    void selectSession(const QString &sessionId);
+    QList<FileChange> extractFileChangesFromHistory(const QString &sessionId);
+    QMap<int, qint64> turnTimestampsForSession(const QString &sessionId) const;
+    void scrollToTurn(int turnId);
+    void exportChatHistory(const QString &sessionId);
+    void deleteSession(const QString &sessionId);
+
 signals:
     void fileChanged(const QString &filePath);
     void navigateToFile(const QString &filePath, int line);
@@ -94,6 +111,14 @@ signals:
     void rewindCompleted(bool success);
     void inlineEditRequested(const QString &filePath, const QString &selectedCode,
                              const QString &instruction);
+
+    // Agent Fleet signals
+    void sessionListChanged();
+    void agentActivityChanged(const QString &sessionId, const QString &activity);
+    void historicalEffectsReady(const QString &sessionId, const QList<FileChange> &changes);
+    void turnStarted(const QString &sessionId, int turnId);
+    void visibleTurnChanged(const QString &sessionId, int turnId);
+    void turnTimestampsReady(const QString &sessionId, const QMap<int, qint64> &timestamps);
 
 private slots:
     void onSendRequested(const QString &text);
@@ -113,8 +138,6 @@ private:
     void setTabProcessingState(ChatTab &tab, bool processing);
     void refreshInputBarForCurrentTab();
     void showHistoryMenu();
-    void exportChatHistory(const QString &sessionId);
-    void deleteSession(const QString &sessionId);
     QString buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr);
     QString buildDiffMarkdown(const QString &filePath, const QString &oldStr, const QString &newStr);
     QString buildContextPreamble(const QString &userText);

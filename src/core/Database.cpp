@@ -196,6 +196,17 @@ QList<MessageRecord> Database::loadMessages(const QString &sessionId)
     return list;
 }
 
+int Database::turnCountForSession(const QString &sessionId)
+{
+    QSqlQuery q(m_db);
+    q.prepare("SELECT COALESCE(MAX(turn_id), 0) FROM messages WHERE session_id = ?");
+    q.addBindValue(sessionId);
+    q.exec();
+    if (q.next())
+        return q.value(0).toInt();
+    return 0;
+}
+
 void Database::saveCheckpoint(const CheckpointRecord &cp)
 {
     QSqlQuery q(m_db);

@@ -17,6 +17,8 @@ class ChatPanel;
 class TerminalPanel;
 class GitPanel;
 class SearchPanel;
+class AgentFleetPanel;
+class EffectsPanel;
 class SessionManager;
 class DiffEngine;
 class Database;
@@ -24,6 +26,8 @@ class GitManager;
 class TelegramApi;
 class TelegramBridge;
 class DaemonClient;
+
+enum class ViewMode { Manager, Editor };
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -69,10 +73,20 @@ private:
                            const QString &instruction, int startLine, int endLine,
                            const QString &modelId);
 
+    // Mission Control
+    void switchToMode(ViewMode mode);
+    void rebuildFleetPanel();
+    void wireEffectsPanel();
+
+    ViewMode m_viewMode = ViewMode::Manager;
+
     QPushButton *m_toggleTree = nullptr;
     QPushButton *m_toggleEditor = nullptr;
     QPushButton *m_toggleChat = nullptr;
     QPushButton *m_toggleTerminal = nullptr;
+    QPushButton *m_toggleMode = nullptr;
+    QPushButton *m_toggleEffects = nullptr;
+    QPushButton *m_backBtn = nullptr;
     QSplitter *m_splitter;
     QSplitter *m_centerSplitter;
     QTabWidget *m_leftTabs;
@@ -82,6 +96,10 @@ private:
     ChatPanel *m_chatPanel;
     GitPanel *m_gitPanel;
     SearchPanel *m_searchPanel;
+
+    // Mission Control panels
+    AgentFleetPanel *m_agentFleet = nullptr;
+    EffectsPanel *m_effectsPanel = nullptr;
 
     SessionManager *m_sessionMgr;
     DiffEngine *m_diffEngine;

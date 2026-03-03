@@ -7,6 +7,11 @@ DiffEngine::DiffEngine(QObject *parent)
 {
 }
 
+void DiffEngine::setCurrentSessionId(const QString &sessionId)
+{
+    m_currentSessionId = sessionId;
+}
+
 FileDiff DiffEngine::computeDiff(const QString &oldContent, const QString &newContent,
                                   const QString &filePath)
 {
@@ -143,6 +148,12 @@ void DiffEngine::recordEditToolChange(const QString &filePath,
 
     m_pendingDiffs.append(editDiff);
     emit fileChanged(filePath, m_fileDiffs[filePath]);
+
+    if (!m_currentSessionId.isEmpty()) {
+        if (!m_sessionFiles[m_currentSessionId].contains(filePath))
+            m_sessionFiles[m_currentSessionId].append(filePath);
+        emit sessionFileChanged(m_currentSessionId, filePath);
+    }
 }
 
 void DiffEngine::recordWriteToolChange(const QString &filePath, const QString &newContent)
@@ -161,11 +172,44 @@ void DiffEngine::recordWriteToolChange(const QString &filePath, const QString &n
     m_fileDiffs[filePath] = diff;
     m_pendingDiffs.append(diff);
     emit fileChanged(filePath, diff);
+
+    if (!m_currentSessionId.isEmpty()) {
+        if (!m_sessionFiles[m_currentSessionId].contains(filePath))
+            m_sessionFiles[m_currentSessionId].append(filePath);
+        emit sessionFileChanged(m_currentSessionId, filePath);
+    }
 }
 
 FileDiff DiffEngine::diffForFile(const QString &filePath) const
 {
     return m_fileDiffs.value(filePath);
+}
+
+QStringList DiffEngine::changedFilesForSession(const QString &sessionId) const
+{
+    return m_sessionFiles.value(sessionId);
+}
+
+int DiffEngine::linesAddedForFile(const QString &filePath) const
+{
+    const FileDiff &diff = m_fileDiffs.value(filePath);
+    int count = 0;
+    for (const auto &hunk : diff.hunks) {
+        if (hunk.type == DiffHunk::Added)
+            count += hunk.count;
+    }
+    return count;
+}
+
+int DiffEngine::linesRemovedForFile(const QString &filePath) const
+{
+    const FileDiff &diff = m_fileDiffs.value(filePath);
+    int count = 0;
+    for (const auto &hunk : diff.hunks) {
+        if (hunk.type == DiffHunk::Removed)
+            count += hunk.count;
+    }
+    return count;
 }
 
 void DiffEngine::clearPendingDiffs()

@@ -79,6 +79,8 @@ set(UI_SOURCES
     src/ui/InlineEditBar.cpp
     src/ui/ThinkingBlockWidget.cpp
     src/ui/FindBar.cpp
+    src/ui/AgentFleetPanel.cpp
+    src/ui/EffectsPanel.cpp
 )
 
 set(UTIL_SOURCES

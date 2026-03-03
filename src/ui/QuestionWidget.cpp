@@ -12,17 +12,29 @@ QuestionWidget::QuestionWidget(const nlohmann::json &input, QWidget *parent)
 {
     const auto &p = ThemeManager::instance().palette();
 
+    // Action Required card: yellow left accent
     setStyleSheet(
         QStringLiteral(
             "QuestionWidget { background: %1; border: 1px solid %2; "
-            "border-radius: 8px; }")
-        .arg(p.bg_surface.name(), p.hover_raised.name()));
+            "border-left: 3px solid %3; border-radius: 8px; }")
+        .arg(p.bg_surface.name(), p.hover_raised.name(), p.yellow.name()));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(12, 8, 12, 8);
     m_layout->setSpacing(6);
 
-    auto *title = new QLabel("Claude has a question:", this);
+    // "ACTION REQUIRED" header
+    auto *badge = new QLabel("ACTION REQUIRED", this);
+    QFont badgeFont = badge->font();
+    badgeFont.setPixelSize(9);
+    badgeFont.setWeight(QFont::Bold);
+    badgeFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
+    badge->setFont(badgeFont);
+    badge->setStyleSheet(
+        QStringLiteral("QLabel { color: %1; }").arg(p.yellow.name()));
+    m_layout->addWidget(badge);
+
+    auto *title = new QLabel("Claude needs your input:", this);
     title->setStyleSheet(
         QStringLiteral("QLabel { color: %1; font-weight: bold; font-size: 12px; }")
         .arg(p.blue.name()));

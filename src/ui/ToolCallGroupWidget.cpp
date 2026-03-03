@@ -3,6 +3,30 @@
 #include <QScrollArea>
 #include <QTimer>
 
+static QString toolIcon(const QString &toolName)
+{
+    // Use simple ASCII/BMP symbols that work reliably with QStringLiteral
+    if (toolName == "Edit" || toolName == "StrReplace")
+        return QStringLiteral("\u270f");       // pencil
+    if (toolName == "Write" || toolName == "NotebookEdit")
+        return QStringLiteral("\u2710");       // upper right pencil
+    if (toolName == "Read")
+        return QStringLiteral("\u25A3");       // white square with small square (book-like)
+    if (toolName == "Grep" || toolName == "Glob" || toolName == "Search")
+        return QStringLiteral("\u2315");       // telephone recorder (search-like)
+    if (toolName == "Bash")
+        return QStringLiteral("\u2699");       // gear
+    if (toolName == "WebFetch" || toolName == "WebSearch")
+        return QStringLiteral("\u2301");       // electric arrow
+    if (toolName == "Agent")
+        return QStringLiteral("\u2318");       // place of interest (agent)
+    if (toolName == "TodoWrite")
+        return QStringLiteral("\u2611");       // ballot box with check
+    if (toolName == "AskUserQuestion")
+        return QStringLiteral("\u2753");       // question mark
+    return QStringLiteral("\u2726");           // four-pointed star (default)
+}
+
 ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     : QFrame(parent)
 {
@@ -126,10 +150,11 @@ void ToolCallGroupWidget::updateSummaryLabel()
 {
     QStringList parts;
     for (auto it = m_toolCounts.constBegin(); it != m_toolCounts.constEnd(); ++it) {
+        QString icon = toolIcon(it.key());
         if (it.value() > 1)
-            parts << QStringLiteral("<b>%1</b> x%2").arg(it.key()).arg(it.value());
+            parts << QStringLiteral("%3 <b>%1</b> x%2").arg(it.key()).arg(it.value()).arg(icon);
         else
-            parts << QStringLiteral("<b>%1</b>").arg(it.key());
+            parts << QStringLiteral("%2 <b>%1</b>").arg(it.key(), icon);
     }
 
     int editCount = 0;
@@ -168,9 +193,10 @@ void ToolCallGroupWidget::rebuildDetailView()
         rowLayout->setContentsMargins(4, 2, 4, 2);
         rowLayout->setSpacing(0);
 
-        // Tool name + file path (clickable)
-        QString header = QStringLiteral("<span style='color:%2;font-weight:bold;'>%1</span>")
-                             .arg(call.toolName, tm.hex("green"));
+        // Tool icon + name + file path (clickable)
+        QString icon = toolIcon(call.toolName);
+        QString header = QStringLiteral("%3 <span style='color:%2;font-weight:bold;'>%1</span>")
+                             .arg(call.toolName, tm.hex("green"), icon);
         if (!call.filePath.isEmpty())
             header += QStringLiteral(" <a href='%1' style='color:%2;text-decoration:none;'>%1</a>")
                           .arg(call.filePath.toHtmlEscaped(), tm.hex("blue"));
