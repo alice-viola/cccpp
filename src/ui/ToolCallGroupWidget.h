@@ -29,6 +29,9 @@ public:
     void setExpandedByDefault();
     int toolCount() const { return m_calls.size(); }
 
+signals:
+    void fileClicked(const QString &filePath, const QString &searchText);
+
 private:
     void updateSummaryLabel();
     void rebuildDetailView();

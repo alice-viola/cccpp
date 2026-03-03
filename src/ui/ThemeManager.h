@@ -90,8 +90,8 @@ public:
         ThemePalette cursor;
         cursor.name = "cursor";
         cursor.isLight = false;
-        cursor.base      = QColor("#131313"); cursor.mantle    = QColor("#0e0e0e"); cursor.crust     = QColor("#080808");
-        cursor.surface0  = QColor("#1f1f1f"); cursor.surface1  = QColor("#2a2a2a"); cursor.surface2  = QColor("#383838");
+        cursor.base      = QColor("#181818"); cursor.mantle    = QColor("#131313"); cursor.crust     = QColor("#0e0e0e");
+        cursor.surface0  = QColor("#232323"); cursor.surface1  = QColor("#2e2e2e"); cursor.surface2  = QColor("#3a3a3a");
         cursor.overlay0  = QColor("#525252"); cursor.overlay1  = QColor("#686868"); cursor.overlay2  = QColor("#7e7e7e");
         cursor.text      = QColor("#d4d4d4"); cursor.subtext0  = QColor("#a0a0a0"); cursor.subtext1  = QColor("#b0b0b0");
         cursor.mauve     = QColor("#c586c0"); cursor.blue      = QColor("#007acc"); cursor.green     = QColor("#4ec9b0");

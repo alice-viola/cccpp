@@ -99,6 +99,7 @@ private slots:
     void onSendRequested(const QString &text);
     void onSlashCommand(const QString &command, const QString &args);
     void onRevertRequested(int turnId);
+    void onToolFileClicked(const QString &filePath, const QString &searchText);
     void applyThemeColors();
 
 private:

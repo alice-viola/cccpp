@@ -157,6 +157,12 @@ private:
 
     static QIcon paintIcon(const QColor &color, const QString &glyph)
     {
+        // Desaturate for subtle tree icons: keep a hint of hue, stay quiet
+        int h = color.hsvHue();
+        int s = int(color.hsvSaturation() * 0.35);
+        int v = qBound(60, int(color.value() * 0.50), 120);
+        QColor muted = QColor::fromHsv(qMax(h, 0), s, v);
+
         constexpr int sz = 16;
         QPixmap pm(sz * 2, sz * 2);
         pm.fill(Qt::transparent);
@@ -171,18 +177,18 @@ private:
             QFont f;
             f.setPixelSize(13);
             p.setFont(f);
-            p.setPen(color);
+            p.setPen(muted);
             p.drawText(QRect(0, 0, sz, sz), Qt::AlignCenter, glyph);
         } else {
             p.setPen(Qt::NoPen);
-            p.setBrush(color);
+            p.setBrush(muted);
             p.drawRoundedRect(1, 1, sz - 2, sz - 2, 3, 3);
 
             QFont f("JetBrains Mono", 7);
             f.setBold(true);
             f.setPixelSize(glyph.size() > 2 ? 6 : 8);
             p.setFont(f);
-            p.setPen(Qt::white);
+            p.setPen(QColor(255, 255, 255, 180));
             p.drawText(QRect(0, 0, sz, sz), Qt::AlignCenter, glyph);
         }
 

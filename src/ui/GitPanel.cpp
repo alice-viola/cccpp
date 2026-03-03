@@ -146,6 +146,19 @@ void GitPanel::setupUI()
     connect(m_discardAllBtn, &QPushButton::clicked, this, &GitPanel::onDiscardAll);
 
     commitLayout->addLayout(btnRow2);
+
+    auto *btnRow3 = new QHBoxLayout();
+    btnRow3->setSpacing(4);
+
+    m_fetchBtn2 = new QPushButton("\u2193  Fetch", m_commitArea);
+    btnRow3->addWidget(m_fetchBtn2);
+    connect(m_fetchBtn2, &QPushButton::clicked, this, &GitPanel::onFetch);
+
+    m_pushBtn2 = new QPushButton("\u2191  Push", m_commitArea);
+    btnRow3->addWidget(m_pushBtn2);
+    connect(m_pushBtn2, &QPushButton::clicked, this, &GitPanel::onPush);
+
+    commitLayout->addLayout(btnRow3);
     layout->addWidget(m_commitArea);
     rootLayout->addWidget(m_mainContent);
 
@@ -209,6 +222,15 @@ void GitPanel::applyThemeColors()
         "padding: 4px 10px; font-size: 11px; }"
         "QPushButton:hover { background: %3; }")
         .arg(pal.error_btn_bg.name(), pal.text_primary.name(), pal.error_btn_hover.name()));
+
+    const QString actionBtnStyle = QStringLiteral(
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; border-radius: 4px; "
+        "padding: 4px 10px; font-size: 11px; font-weight: bold; }"
+        "QPushButton:hover { background: %4; border-color: %5; }")
+        .arg(pal.bg_raised.name(), pal.text_secondary.name(), pal.border_standard.name(),
+             pal.bg_window.name(), pal.text_muted.name());
+    m_fetchBtn2->setStyleSheet(actionBtnStyle);
+    m_pushBtn2->setStyleSheet(actionBtnStyle);
 }
 
 // ---------------------------------------------------------------------------

@@ -66,6 +66,7 @@ InputBar::InputBar(QWidget *parent)
     containerLayout->addWidget(m_input);
 
     auto *bottomBar = new QWidget(m_inputContainer);
+    bottomBar->setStyleSheet("QWidget { background: transparent; }");
     m_bottomBarLayout = new QHBoxLayout(bottomBar);
     m_bottomBarLayout->setContentsMargins(10, 4, 8, 8);
     m_bottomBarLayout->setSpacing(4);
@@ -139,7 +140,7 @@ void InputBar::applyBorderColor(const QColor &c)
     m_inputContainer->setStyleSheet(
         QStringLiteral("#inputContainer { background: %1; "
                        "border: 1px solid %2; border-radius: 12px; }")
-        .arg(p.bg_surface.name(), c.name()));
+        .arg(p.bg_raised.name(), c.name()));
 }
 
 void InputBar::addFooterWidget(QWidget *w)
@@ -399,7 +400,7 @@ void InputBar::addImageThumbnail(const QByteArray &data, const QString &format, 
 
     container->setStyleSheet(QStringLiteral(
         "QWidget { background: %1; border: 1px solid %2; border-radius: 6px; }")
-        .arg(p.bg_surface.name(), p.border_standard.name()));
+        .arg(p.bg_raised.name(), p.border_standard.name()));
 
     // Insert before the stretch
     layout->insertWidget(layout->count() - 1, container);

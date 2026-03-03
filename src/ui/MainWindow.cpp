@@ -187,6 +187,20 @@ void MainWindow::setupUI()
         QString resolved = filePath;
         if (!resolved.startsWith('/') && !m_workspacePath.isEmpty())
             resolved = m_workspacePath + "/" + resolved;
+
+        // Ensure editor is visible
+        if (!m_codeViewer->isVisible() || m_centerSplitter->width() < 10) {
+            m_codeViewer->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 3 && sizes[1] < 50) {
+                int total = m_splitter->width();
+                sizes[1] = static_cast<int>(total * kEditorFraction);
+                sizes[2] = total - sizes[0] - sizes[1];
+                m_splitter->setSizes(sizes);
+            }
+            updateToggleButtons();
+        }
+
         m_codeViewer->loadFile(resolved);
         FileDiff diff = m_diffEngine->diffForFile(resolved);
         if (!diff.hunks.isEmpty())

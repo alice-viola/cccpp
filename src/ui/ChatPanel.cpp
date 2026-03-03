@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QTextStream>
 #include <QMenu>
 #include <QMessageBox>
 #include <QFileDialog>
@@ -99,9 +100,11 @@ ChatPanel::ChatPanel(QWidget *parent)
         updateStatsLabel();
         if (m_tabs.contains(idx)) {
             m_tabs[idx].unread = false;
-            updateTabIcon(idx);
             emit activeSessionChanged(m_tabs[idx].sessionId);
         }
+        // Update all tab icons — the old tab may now need a processing/unread dot
+        for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it)
+            updateTabIcon(it.key());
     });
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_tabs.size() <= 1) return;
@@ -384,6 +387,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 t->currentToolGroup = nullptr;
             }
             auto *editGroup = new ToolCallGroupWidget;
+            connect(editGroup, &ToolCallGroupWidget::fileClicked, this, &ChatPanel::onToolFileClicked);
             if (t->messagesLayout)
                 t->messagesLayout->insertWidget(insertPosForTab(*t), editGroup);
             editGroup->addToolCall(info);
@@ -392,6 +396,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         } else {
             if (!t->currentToolGroup) {
                 t->currentToolGroup = new ToolCallGroupWidget;
+                connect(t->currentToolGroup, &ToolCallGroupWidget::fileClicked, this, &ChatPanel::onToolFileClicked);
                 if (t->messagesLayout)
                     t->messagesLayout->insertWidget(insertPosForTab(*t), t->currentToolGroup);
             }
@@ -730,6 +735,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             if (info.isEdit) {
                 flushGroup();
                 auto *editGroup = new ToolCallGroupWidget;
+                connect(editGroup, &ToolCallGroupWidget::fileClicked, this, &ChatPanel::onToolFileClicked);
                 editGroup->addToolCall(info);
                 editGroup->finalize();
                 editGroup->setExpandedByDefault();
@@ -737,6 +743,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             } else {
                 if (!pendingGroup) {
                     pendingGroup = new ToolCallGroupWidget;
+                    connect(pendingGroup, &ToolCallGroupWidget::fileClicked, this, &ChatPanel::onToolFileClicked);
                     tab.messagesLayout->insertWidget(insertPos(), pendingGroup);
                 }
                 pendingGroup->addToolCall(info);
@@ -888,6 +895,34 @@ void ChatPanel::onSlashCommand(const QString &command, const QString &args)
     } else if (command == "/model" && !args.isEmpty()) {
         // Model switching handled by ModelSelector
     }
+}
+
+void ChatPanel::onToolFileClicked(const QString &filePath, const QString &searchText)
+{
+    QString resolved = filePath;
+    if (!resolved.startsWith('/') && !m_workingDir.isEmpty())
+        resolved = m_workingDir + "/" + resolved;
+
+    int line = 0;
+    if (!searchText.isEmpty()) {
+        // Find the first line of the new content in the file
+        QString firstLine = searchText.section('\n', 0, 0).trimmed();
+        if (!firstLine.isEmpty()) {
+            QFile f(resolved);
+            if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream stream(&f);
+                int lineNum = 0;
+                while (!stream.atEnd()) {
+                    lineNum++;
+                    if (stream.readLine().contains(firstLine)) {
+                        line = lineNum;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    emit navigateToFile(resolved, line);
 }
 
 void ChatPanel::onRevertRequested(int turnId)
@@ -1311,11 +1346,9 @@ void ChatPanel::updateTabIcon(int tabIndex)
     const auto &tab = m_tabs[tabIndex];
     auto &thm = ThemeManager::instance();
 
-    if (tabIndex == m_tabWidget->currentIndex()) {
-        m_tabWidget->setTabIcon(tabIndex, QIcon());
-    } else if (tab.processing) {
+    if (tab.processing) {
         m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("mauve"))));
-    } else if (tab.unread) {
+    } else if (tab.unread && tabIndex != m_tabWidget->currentIndex()) {
         m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("blue"))));
     } else {
         m_tabWidget->setTabIcon(tabIndex, QIcon());

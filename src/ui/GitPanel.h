@@ -64,6 +64,8 @@ private:
     QPushButton *m_unstageAllBtn;
     QPushButton *m_commitBtn;
     QPushButton *m_discardAllBtn;
+    QPushButton *m_fetchBtn2 = nullptr;
+    QPushButton *m_pushBtn2 = nullptr;
     QWidget *m_noRepoPlaceholder;
     QWidget *m_mainContent;
 

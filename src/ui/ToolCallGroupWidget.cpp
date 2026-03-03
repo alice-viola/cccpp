@@ -1,6 +1,7 @@
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThemeManager.h"
 #include <QScrollArea>
+#include <QTimer>
 
 ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     : QFrame(parent)
@@ -10,7 +11,7 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
         "border-left: 2px solid %3; border-radius: 10px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("text_muted")));
+        .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(10, 8, 10, 8);
@@ -42,8 +43,8 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     m_detailContainer = new QWidget(this);
     m_detailContainer->setMaximumHeight(0);
     m_detailLayout = new QVBoxLayout(m_detailContainer);
-    m_detailLayout->setContentsMargins(24, 6, 0, 4);
-    m_detailLayout->setSpacing(4);
+    m_detailLayout->setContentsMargins(6, 4, 0, 2);
+    m_detailLayout->setSpacing(2);
     m_layout->addWidget(m_detailContainer);
 
     // Height animation for smooth expand / collapse
@@ -106,7 +107,7 @@ void ToolCallGroupWidget::applyThemeColors()
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
         "border-left: 2px solid %3; border-radius: 10px; }")
-        .arg(tm.hex("bg_surface"), tm.hex("border_standard"), tm.hex("text_muted")));
+        .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_expandBtn->setStyleSheet(
         QStringLiteral(
@@ -162,21 +163,27 @@ void ToolCallGroupWidget::rebuildDetailView()
     for (const auto &call : m_calls) {
         auto *row = new QFrame(m_detailContainer);
         row->setStyleSheet(
-            QStringLiteral("QFrame { background: %1; border-radius: 4px; }")
-            .arg(tm.hex("bg_surface")));
+            QStringLiteral("QFrame { background: transparent; border-radius: 4px; }"));
         auto *rowLayout = new QVBoxLayout(row);
-        rowLayout->setContentsMargins(8, 4, 8, 4);
-        rowLayout->setSpacing(2);
+        rowLayout->setContentsMargins(4, 2, 4, 2);
+        rowLayout->setSpacing(0);
 
-        // Tool name + file path
+        // Tool name + file path (clickable)
         QString header = QStringLiteral("<span style='color:%2;font-weight:bold;'>%1</span>")
                              .arg(call.toolName, tm.hex("green"));
         if (!call.filePath.isEmpty())
-            header += QStringLiteral(" <span style='color:%2;'>%1</span>").arg(call.filePath, tm.hex("blue"));
+            header += QStringLiteral(" <a href='%1' style='color:%2;text-decoration:none;'>%1</a>")
+                          .arg(call.filePath.toHtmlEscaped(), tm.hex("blue"));
 
         auto *headerLabel = new QLabel(header, row);
-        headerLabel->setStyleSheet("QLabel { font-size: 11px; }");
+        headerLabel->setStyleSheet(QStringLiteral(
+            "QLabel { font-size: 11px; } QLabel a:hover { text-decoration: underline; }"));
         headerLabel->setTextFormat(Qt::RichText);
+        headerLabel->setCursor(Qt::PointingHandCursor);
+        QString searchText = call.newString.isEmpty() ? call.oldString : call.newString;
+        connect(headerLabel, &QLabel::linkActivated, this, [this, searchText](const QString &fp) {
+            emit fileClicked(fp, searchText);
+        });
         rowLayout->addWidget(headerLabel);
 
         // For edit tools, show a mini diff
@@ -196,17 +203,18 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
     browser->setFrameShape(QFrame::NoFrame);
     browser->setStyleSheet(
         QStringLiteral(
-        "QTextBrowser { background: %1; border: none; font-family: 'JetBrains Mono'; "
-        "font-size: 12px; }")
-        .arg(tm.hex("bg_surface")));
+        "QTextBrowser { background: transparent; border: none; font-family: 'JetBrains Mono'; "
+        "font-size: 12px; }"));
     browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     browser->setMaximumHeight(200);
 
     QString html;
+    int lineCount = 0;
 
     // Show removed lines in red
     if (!oldStr.isEmpty()) {
         QStringList oldLines = oldStr.split('\n');
+        lineCount += oldLines.size();
         for (const QString &line : oldLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
@@ -218,6 +226,7 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
     // Show added lines in green
     if (!newStr.isEmpty()) {
         QStringList newLines = newStr.split('\n');
+        lineCount += newLines.size();
         for (const QString &line : newLines) {
             QString escaped = line.toHtmlEscaped();
             html += QStringLiteral(
@@ -226,13 +235,12 @@ QWidget *ToolCallGroupWidget::createDiffView(const QString &oldStr, const QStrin
         }
     }
 
+    browser->document()->setDocumentMargin(0);
     browser->setHtml(html);
 
-    // Auto-size
-    connect(browser->document(), &QTextDocument::contentsChanged, browser, [browser] {
-        int h = static_cast<int>(browser->document()->size().height()) + 4;
-        browser->setFixedHeight(qMin(h, 200));
-    });
+    // Size from line count: ~16px per line (12px font + 2px padding + line-height)
+    int h = qMin(lineCount * 16, 200);
+    browser->setFixedHeight(qMax(h, 10));
 
     return browser;
 }
