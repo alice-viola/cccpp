@@ -36,16 +36,19 @@ void StreamParser::feed(const QByteArray &line)
         emit textDelta(event.text);
         break;
     case StreamEvent::ToolUse:
-        // Dedup is handled in parseEvent/handleInnerEvent — just emit here
+        qDebug() << "[stream] toolUse:" << event.toolName << "id=" << event.toolId;
         emit toolUseStarted(event.toolName, event.toolId, event.toolInput);
         break;
     case StreamEvent::ToolResult:
+        qDebug() << "[stream] toolResult len=" << event.toolResultContent.size();
         emit toolResultReceived(event.toolResultContent);
         break;
     case StreamEvent::Result:
+        qDebug() << "[stream] result  session=" << event.sessionId;
         emit resultReady(event.sessionId, event.raw);
         break;
     case StreamEvent::Error:
+        qWarning() << "[stream] error:" << event.text;
         emit errorOccurred(event.text);
         break;
     default:
@@ -125,8 +128,10 @@ void StreamParser::handleInnerEvent(const json &ev)
                 pending.id = jstr(ev["content_block"], "id");
                 pending.blockIndex = idx;
                 m_pendingTools[idx] = pending;
+                qDebug() << "[stream] block_start tool_use:" << pending.name << "idx=" << idx;
             } else if (bt == "thinking") {
                 m_activeThinkingBlockIdx = idx;
+                qDebug() << "[stream] block_start thinking idx=" << idx;
                 emit thinkingStarted();
             }
         }
@@ -135,6 +140,7 @@ void StreamParser::handleInnerEvent(const json &ev)
 
     if (evType == "content_block_stop") {
         int idx = jint(ev, "index");
+        qDebug() << "[stream] block_stop idx=" << idx;
 
         if (idx == m_activeThinkingBlockIdx) {
             m_activeThinkingBlockIdx = -1;
@@ -187,6 +193,7 @@ StreamEvent StreamParser::parseEvent(const json &j)
     if (type == "system") {
         event.type = StreamEvent::Result;
         event.sessionId = jstr(j, "session_id");
+        qDebug() << "[stream] event type=system session=" << event.sessionId;
         return event;
     }
 
@@ -194,6 +201,7 @@ StreamEvent StreamParser::parseEvent(const json &j)
     if (type == "result") {
         event.type = StreamEvent::Result;
         event.sessionId = jstr(j, "session_id");
+        qDebug() << "[stream] event type=result (final) session=" << event.sessionId;
         return event;
     }
 

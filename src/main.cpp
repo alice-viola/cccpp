@@ -119,6 +119,8 @@ int main(int argc, char *argv[])
         return app.exec();
     }
 
+    qSetMessagePattern("[%{time HH:mm:ss.zzz}] %{message}");
+
     QApplication app(argc, argv);
     app.setApplicationName("CCCPP");
     app.setApplicationVersion("0.1.0");

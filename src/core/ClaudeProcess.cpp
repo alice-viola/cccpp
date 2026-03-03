@@ -267,8 +267,12 @@ void ClaudeProcess::sendToolResult(const QString &toolUseId, const QString &cont
 void ClaudeProcess::cancel()
 {
     QProcess *proc = m_process;
-    if (!proc || proc->state() == QProcess::NotRunning)
+    if (!proc || proc->state() == QProcess::NotRunning) {
+        qDebug() << "[cccpp] cancel() called but process not running";
         return;
+    }
+
+    qDebug() << "[cccpp] cancel() terminating process pid=" << proc->processId();
 
     // Disconnect all signals from proc to prevent onProcessFinished from
     // running inside waitForFinished's nested event loop, which would
@@ -278,12 +282,14 @@ void ClaudeProcess::cancel()
 
     proc->terminate();
     if (!proc->waitForFinished(2000)) {
+        qDebug() << "[cccpp] cancel() terminate timeout, killing";
         proc->kill();
         proc->waitForFinished(1000);
     }
 
     int code = proc->exitCode();
     proc->deleteLater();
+    qDebug() << "[cccpp] cancel() done, emitting finished(" << code << ")";
     emit finished(code);
 }
 
@@ -355,7 +361,7 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     } else {
         args << "--permission-mode" << "bypassPermissions"
              << "--allowedTools"
-             << "Bash,Read,Edit,Write,Glob,Grep,Task";
+             << "Bash,Read,Edit,Write,Glob,Grep,Task,AskUserQuestion";
     }
 
     return args;
@@ -383,7 +389,10 @@ void ClaudeProcess::onReadyReadStderr()
 
 void ClaudeProcess::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
-    Q_UNUSED(status);
+    qDebug() << "[cccpp] onProcessFinished  exit=" << exitCode
+             << (status == QProcess::NormalExit ? "Normal" : "Crash")
+             << "bufferRemaining=" << m_stdoutBuffer.size() << "bytes";
+
     if (!m_stdoutBuffer.trimmed().isEmpty())
         m_parser->feed(m_stdoutBuffer);
     m_stdoutBuffer.clear();
@@ -396,5 +405,6 @@ void ClaudeProcess::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 
     m_process->deleteLater();
     m_process = nullptr;
+    qDebug() << "[cccpp] emitting finished(" << exitCode << ")";
     emit finished(exitCode);
 }

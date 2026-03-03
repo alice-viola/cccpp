@@ -444,8 +444,12 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
     });
 
     connect(proc, &ClaudeProcess::finished, this, [this, proc](int exitCode) {
+        qDebug() << "[cccpp] ChatPanel received finished(" << exitCode << ")";
         auto *t = tabForProcess(proc);
-        if (!t) return;
+        if (!t) {
+            qWarning() << "[cccpp] finished: tabForProcess returned null! Processing state will NOT be cleared.";
+            return;
+        }
 
         bool wasCancelled = (exitCode == 15 || exitCode == 9
                              || exitCode == 143 || exitCode == 137);
@@ -514,9 +518,12 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
     });
 
     connect(proc, &ClaudeProcess::errorOccurred, this, [this, proc](const QString &err) {
-        qWarning() << "ClaudeProcess error:" << err;
+        qWarning() << "[cccpp] ChatPanel received errorOccurred:" << err;
         auto *t = tabForProcess(proc);
-        if (!t) return;
+        if (!t) {
+            qWarning() << "[cccpp] errorOccurred: tabForProcess returned null!";
+            return;
+        }
         if (t->currentAssistantMsg)
             t->currentAssistantMsg->appendContent(
                 QStringLiteral("\n\n**Error:** %1").arg(err));
@@ -525,6 +532,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
     connect(proc->streamParser(), &StreamParser::errorOccurred, this,
             [this, proc](const QString &err) {
+        qWarning() << "[cccpp] StreamParser errorOccurred:" << err;
         auto *t = tabForProcess(proc);
         if (!t) return;
         if (t->currentAssistantMsg)
@@ -829,6 +837,7 @@ void ChatPanel::onSendRequested(const QString &text)
     if (tab.sessionConfirmed)
         tab.process->setSessionId(tab.sessionId);
 
+    qDebug() << "[cccpp] onSendRequested: sending message, session=" << tab.sessionId;
     setTabProcessingState(tab, true);
 
     QList<QPair<QByteArray, QString>> imagePayload;
@@ -1238,6 +1247,9 @@ void ChatPanel::scrollTabToBottom(ChatTab &tab)
 
 void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
 {
+    qDebug() << "[cccpp] setTabProcessingState" << (processing ? "ON" : "OFF")
+             << "tab=" << tab.tabIndex << "session=" << tab.sessionId;
+
     tab.processing = processing;
 
     if (tab.thinkingIndicator) {

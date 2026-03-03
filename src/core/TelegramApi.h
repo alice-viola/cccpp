@@ -62,8 +62,12 @@ private:
     QNetworkReply *apiCall(const QString &method, const QByteArray &payload);
     bool isUserAllowed(qint64 userId) const;
 
+    void abortStalePoll();
+
     QNetworkAccessManager *m_nam = nullptr;
     QTimer *m_pollTimer = nullptr;
+    QTimer *m_watchdog = nullptr;
+    QNetworkReply *m_pollReply = nullptr;
     QString m_token;
     QList<qint64> m_allowedUsers;
     qint64 m_updateOffset = 0;

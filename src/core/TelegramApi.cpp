@@ -9,14 +9,20 @@
 static const QString kBaseUrl = QStringLiteral("https://api.telegram.org/bot%1/%2");
 static const int kPollTimeoutSec = 30;
 static const int kRetryIntervalMs = 3000;
+static const int kWatchdogMs = (kPollTimeoutSec + 15) * 1000; // poll timeout + 15s margin
 
 TelegramApi::TelegramApi(QObject *parent)
     : QObject(parent)
     , m_nam(new QNetworkAccessManager(this))
     , m_pollTimer(new QTimer(this))
+    , m_watchdog(new QTimer(this))
 {
     m_pollTimer->setSingleShot(true);
     connect(m_pollTimer, &QTimer::timeout, this, &TelegramApi::poll);
+
+    m_watchdog->setSingleShot(true);
+    m_watchdog->setInterval(kWatchdogMs);
+    connect(m_watchdog, &QTimer::timeout, this, &TelegramApi::abortStalePoll);
 }
 
 void TelegramApi::setToken(const QString &token)
@@ -40,6 +46,11 @@ void TelegramApi::stopPolling()
 {
     m_polling = false;
     m_pollTimer->stop();
+    m_watchdog->stop();
+    if (m_pollReply) {
+        m_pollReply->abort();
+        m_pollReply = nullptr;
+    }
 }
 
 bool TelegramApi::isUserAllowed(qint64 userId) const
@@ -69,11 +80,25 @@ void TelegramApi::poll()
 
     auto *reply = apiCall("getUpdates", QJsonDocument(body).toJson(QJsonDocument::Compact));
     m_pollInFlight = true;
+    m_pollReply = reply;
+    m_watchdog->start();
 
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        m_watchdog->stop();
+        m_pollReply = nullptr;
         handlePollResponse(reply);
         reply->deleteLater();
     });
+}
+
+void TelegramApi::abortStalePoll()
+{
+    if (!m_pollInFlight || !m_pollReply) return;
+
+    qWarning() << "[TelegramApi] Watchdog: poll request stale, aborting";
+    m_pollReply->abort();
+    // The abort triggers finished → handlePollResponse, which resets m_pollInFlight
+    // and schedules a retry via m_pollTimer.
 }
 
 void TelegramApi::handlePollResponse(QNetworkReply *reply)
@@ -81,9 +106,17 @@ void TelegramApi::handlePollResponse(QNetworkReply *reply)
     m_pollInFlight = false;
 
     if (reply->error() != QNetworkReply::NoError) {
-        qWarning() << "[TelegramApi] poll error:" << reply->errorString();
-        emit pollingError(reply->errorString());
-        if (m_polling) m_pollTimer->start(kRetryIntervalMs);
+        int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        bool is409 = (status == 409 || reply->error() == QNetworkReply::ContentConflictError);
+        if (is409) {
+            // Another instance is polling — back off long enough for its session to expire
+            qDebug() << "[TelegramApi] 409 conflict: another instance is polling, waiting 35s";
+            if (m_polling) m_pollTimer->start(35000);
+        } else {
+            qWarning() << "[TelegramApi] poll error:" << reply->errorString();
+            emit pollingError(reply->errorString());
+            if (m_polling) m_pollTimer->start(kRetryIntervalMs);
+        }
         return;
     }
 
