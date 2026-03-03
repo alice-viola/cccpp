@@ -49,7 +49,7 @@ void ModeSelector::showModeMenu()
     const auto &p = ThemeManager::instance().palette();
     QMenu menu(this);
     menu.setStyleSheet(QStringLiteral(
-        "QMenu { background: %1; border: 1px solid %2; border-radius: 6px; padding: 4px; }"
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; }"
         "QMenu::item { padding: 6px 20px 6px 12px; color: %3; border-radius: 4px; font-size: 12px; }"
         "QMenu::item:selected { background: %4; }"
         "QMenu::separator { height: 1px; background: %2; margin: 2px 8px; }")

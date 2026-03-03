@@ -10,7 +10,7 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 10px; }")
+        "border-left: 2px solid %3; border-radius: 12px; }")
         .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_layout = new QVBoxLayout(this);
@@ -25,7 +25,7 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     m_expandBtn->setFixedSize(18, 18);
     m_expandBtn->setStyleSheet(
         QStringLiteral(
-        "QPushButton { background: none; color: %1; border: none; font-size: 9px; padding: 0; }"
+        "QPushButton { background: none; color: %1; border: none; font-size: 10px; padding: 0; }"
         "QPushButton:hover { color: %2; }")
         .arg(tm.hex("text_muted"), tm.hex("text_primary")));
     m_headerLayout->addWidget(m_expandBtn);
@@ -106,12 +106,12 @@ void ToolCallGroupWidget::applyThemeColors()
     setStyleSheet(
         QStringLiteral(
         "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 10px; }")
+        "border-left: 2px solid %3; border-radius: 12px; }")
         .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
 
     m_expandBtn->setStyleSheet(
         QStringLiteral(
-        "QPushButton { background: none; color: %1; border: none; font-size: 9px; padding: 0; }"
+        "QPushButton { background: none; color: %1; border: none; font-size: 10px; padding: 0; }"
         "QPushButton:hover { color: %2; }")
         .arg(tm.hex("text_muted"), tm.hex("text_primary")));
 

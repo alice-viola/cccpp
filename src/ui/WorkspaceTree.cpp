@@ -11,6 +11,19 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QFile>
+#include <QRegularExpression>
+
+class FileFilterProxy : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+protected:
+    bool filterAcceptsRow(int row, const QModelIndex &parent) const override {
+        auto *fsm = qobject_cast<QFileSystemModel *>(sourceModel());
+        if (!fsm) return true;
+        QString name = fsm->fileName(fsm->index(row, 0, parent));
+        return name != ".DS_Store";
+    }
+};
 
 static QChar gitStatusLetter(GitFileStatus s)
 {
@@ -47,14 +60,15 @@ void ChangedFileDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
     QStyledItemDelegate::paint(painter, option, index);
 
     if (!m_model) return;
-    QString path = m_model->filePath(index);
+    QModelIndex srcIndex = m_proxy ? m_proxy->mapToSource(index) : index;
+    QString path = m_model->filePath(srcIndex);
 
     int rightOffset = 8;
 
     // --- Git status badge (letter) ---
     if (m_gitStatus && !m_rootPath.isEmpty()) {
         QString relPath = QDir(m_rootPath).relativeFilePath(path);
-        bool isDir = m_model->isDir(index);
+        bool isDir = m_model->isDir(srcIndex);
 
         // For files: exact match. For directories: scan for any child with status.
         GitFileStatus displayStatus = GitFileStatus::Unmodified;
@@ -121,17 +135,31 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_header = new QLabel("  EXPLORER", this);
-    m_header->setFixedHeight(26);
-    layout->addWidget(m_header);
+    m_headerContainer = new QWidget(this);
+    m_headerContainer->setFixedHeight(38);
+    auto *headerLayout = new QVBoxLayout(m_headerContainer);
+    headerLayout->setContentsMargins(10, 4, 10, 2);
+    headerLayout->setSpacing(0);
+
+    m_header = new QLabel("EXPLORER", m_headerContainer);
+    headerLayout->addWidget(m_header);
+
+    m_headerSubtitle = new QLabel("", m_headerContainer);
+    m_headerSubtitle->setVisible(false);
+    headerLayout->addWidget(m_headerSubtitle);
+
+    layout->addWidget(m_headerContainer);
 
     m_model = new QFileSystemModel(this);
     m_model->setIconProvider(new FileIconProvider);
     m_model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden);
     m_model->setNameFilterDisables(false);
 
+    m_proxy = new FileFilterProxy(this);
+    m_proxy->setSourceModel(m_model);
+
     m_tree = new QTreeView(this);
-    m_tree->setModel(m_model);
+    m_tree->setModel(m_proxy);
     m_tree->setHeaderHidden(true);
     m_tree->setAnimated(true);
     m_tree->setIndentation(14);
@@ -143,6 +171,7 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
     m_delegate->setChangedFiles(&m_changedFiles);
     m_delegate->setGitStatus(&m_gitStatus);
     m_delegate->setModel(m_model);
+    m_delegate->setProxy(m_proxy);
     m_tree->setItemDelegate(m_delegate);
 
     layout->addWidget(m_tree);
@@ -152,8 +181,9 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
             this, &WorkspaceTree::onContextMenu);
 
     connect(m_tree, &QTreeView::clicked, this, [this](const QModelIndex &index) {
-        QString path = m_model->filePath(index);
-        if (m_model->isDir(index))
+        QModelIndex src = mapToSource(index);
+        QString path = m_model->filePath(src);
+        if (m_model->isDir(src))
             return;
         emit fileSelected(path);
     });
@@ -166,21 +196,29 @@ WorkspaceTree::WorkspaceTree(QWidget *parent)
 void WorkspaceTree::applyThemeColors()
 {
     const auto &pal = ThemeManager::instance().palette();
+    m_headerContainer->setStyleSheet(QStringLiteral(
+        "QWidget { background: %1; border-bottom: 1px solid %2; }")
+        .arg(pal.bg_window.name(), pal.border_subtle.name()));
     m_header->setStyleSheet(QStringLiteral(
-        "QLabel { background: %1; color: %2; font-size: 11px; "
-        "font-weight: 600; letter-spacing: 0.5px; padding-left: 10px; }")
-        .arg(pal.bg_window.name(), pal.text_secondary.name()));
+        "QLabel { background: transparent; color: %1; font-size: 11px; "
+        "font-weight: 600; letter-spacing: 0.5px; }")
+        .arg(pal.text_secondary.name()));
+    m_headerSubtitle->setStyleSheet(QStringLiteral(
+        "QLabel { background: transparent; color: %1; font-size: 10px; }")
+        .arg(pal.text_faint.name()));
 }
 
 void WorkspaceTree::setRootPath(const QString &path)
 {
     m_rootPath = path;
     m_model->setRootPath(path);
-    m_tree->setRootIndex(m_model->index(path));
+    m_tree->setRootIndex(m_proxy->mapFromSource(m_model->index(path)));
 
     QString cleanPath = QDir::cleanPath(path);
     QString folderName = QDir(cleanPath).dirName();
-    m_header->setText(QStringLiteral("  %1").arg(folderName.toUpper()));
+    m_header->setText(folderName.toUpper());
+    m_headerSubtitle->setText(cleanPath);
+    m_headerSubtitle->setVisible(true);
     m_delegate->setRootPath(path);
 }
 
@@ -219,12 +257,18 @@ void WorkspaceTree::clearGitStatus()
     m_tree->viewport()->update();
 }
 
+QModelIndex WorkspaceTree::mapToSource(const QModelIndex &proxyIndex) const
+{
+    return m_proxy ? m_proxy->mapToSource(proxyIndex) : proxyIndex;
+}
+
 QString WorkspaceTree::contextDirectory(const QModelIndex &index) const
 {
     if (!index.isValid())
         return m_rootPath;
-    QString path = m_model->filePath(index);
-    if (m_model->isDir(index))
+    QModelIndex src = mapToSource(index);
+    QString path = m_model->filePath(src);
+    if (m_model->isDir(src))
         return path;
     return QFileInfo(path).absolutePath();
 }
@@ -232,9 +276,10 @@ QString WorkspaceTree::contextDirectory(const QModelIndex &index) const
 void WorkspaceTree::onContextMenu(const QPoint &pos)
 {
     QModelIndex index = m_tree->indexAt(pos);
-    QString targetPath = index.isValid() ? m_model->filePath(index) : m_rootPath;
+    QModelIndex srcIndex = mapToSource(index);
+    QString targetPath = index.isValid() ? m_model->filePath(srcIndex) : m_rootPath;
     QString parentDir = contextDirectory(index);
-    bool isDir = index.isValid() && m_model->isDir(index);
+    bool isDir = index.isValid() && m_model->isDir(srcIndex);
     bool isFile = index.isValid() && !isDir;
 
     QMenu menu(this);

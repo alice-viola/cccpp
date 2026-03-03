@@ -67,18 +67,6 @@ void GitPanel::setupUI()
     headerLayout->addWidget(m_branchLabel);
     headerLayout->addStretch();
 
-    m_fetchBtn = new QPushButton("\u2193", m_headerWidget);
-    m_fetchBtn->setFixedSize(20, 18);
-    m_fetchBtn->setToolTip("Fetch from origin");
-    headerLayout->addWidget(m_fetchBtn);
-    connect(m_fetchBtn, &QPushButton::clicked, this, &GitPanel::onFetch);
-
-    m_pushBtn = new QPushButton("\u2191", m_headerWidget);
-    m_pushBtn->setFixedSize(20, 18);
-    m_pushBtn->setToolTip("Push to origin");
-    headerLayout->addWidget(m_pushBtn);
-    connect(m_pushBtn, &QPushButton::clicked, this, &GitPanel::onPush);
-
     m_refreshBtn = new QPushButton("\xe2\x86\xbb", m_headerWidget);
     m_refreshBtn->setFixedSize(20, 18);
     m_refreshBtn->setToolTip("Refresh");
@@ -188,8 +176,6 @@ void GitPanel::applyThemeColors()
         .arg(pal.text_muted.name(), pal.text_primary.name());
 
     m_refreshBtn->setStyleSheet(iconBtnStyle);
-    m_fetchBtn->setStyleSheet(iconBtnStyle);
-    m_pushBtn->setStyleSheet(iconBtnStyle);
 
     m_branchTree->setStyleSheet(QStringLiteral(
         "QTreeWidget { background: %1; border: none; border-bottom: 1px solid %2; }"

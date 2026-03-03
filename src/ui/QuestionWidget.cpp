@@ -15,7 +15,7 @@ QuestionWidget::QuestionWidget(const nlohmann::json &input, QWidget *parent)
     setStyleSheet(
         QStringLiteral(
             "QuestionWidget { background: %1; border: 1px solid %2; "
-            "border-radius: 6px; }")
+            "border-radius: 8px; }")
         .arg(p.bg_surface.name(), p.hover_raised.name()));
 
     m_layout = new QVBoxLayout(this);

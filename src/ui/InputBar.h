@@ -29,6 +29,8 @@ public:
     explicit InputBar(QWidget *parent = nullptr);
 
     QString text() const;
+    void setText(const QString &text);
+    void focusInput();
     void clear();
     void setEnabled(bool enabled);
     void setProcessing(bool processing);

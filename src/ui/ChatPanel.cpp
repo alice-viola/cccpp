@@ -153,6 +153,20 @@ void ChatPanel::applyThemeColors()
         .arg(thm.hex("text_muted"), thm.hex("text_secondary"));
     m_newChatBtn->setStyleSheet(cornerBtnStyle);
     m_historyBtn->setStyleSheet(cornerBtnStyle);
+    m_plansBtn->setStyleSheet(cornerBtnStyle);
+
+    m_tabWidget->setStyleSheet(QStringLiteral(
+        "QTabWidget::pane { border: none; background: %1; }"
+        "QTabBar { background: %1; border-bottom: 1px solid %2; }"
+        "QTabBar::tab { background: transparent; color: %3; border: none; "
+        "  padding: 4px 12px; font-size: 12px; border-radius: 8px; margin: 2px 1px; }"
+        "QTabBar::tab:selected { color: %4; background: %5; }"
+        "QTabBar::tab:hover:!selected { color: %6; background: %7; }"
+        "QTabBar::close-button { subcontrol-position: right; padding: 2px; }"
+        "QTabBar::close-button:hover { background: %8; border-radius: 4px; }")
+        .arg(thm.hex("bg_window"), thm.hex("border_subtle"), thm.hex("text_muted"),
+             thm.hex("text_primary"), thm.hex("bg_raised"), thm.hex("text_secondary"),
+             thm.hex("bg_surface"), thm.hex("red_30pct")));
 
     for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it)
         updateTabIcon(it.key());
@@ -580,11 +594,18 @@ QString ChatPanel::newChat()
     tab.process->setWorkingDirectory(m_workingDir);
 
     auto *scrollContent = tab.scrollArea->widget();
-    auto *welcome = new QLabel(scrollContent);
+
+    auto *welcome = new QWidget(scrollContent);
     welcome->setObjectName("chatWelcome");
-    welcome->setAlignment(Qt::AlignCenter);
+    welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    auto *welcomeLayout = new QVBoxLayout(welcome);
+    welcomeLayout->setAlignment(Qt::AlignCenter);
+    welcomeLayout->setSpacing(12);
+
     auto &thm2 = ThemeManager::instance();
-    welcome->setText(
+    auto *welcomeLabel = new QLabel(welcome);
+    welcomeLabel->setAlignment(Qt::AlignCenter);
+    welcomeLabel->setText(
         QStringLiteral(
         "<div style='color:%1;font-size:32px;margin-bottom:16px;'>&#x2726;</div>"
         "<div style='color:%2;font-size:14px;font-weight:500;"
@@ -592,8 +613,22 @@ QString ChatPanel::newChat()
         "<div style='color:%3;font-size:11px;'>"
         "Type a message, @ to mention files, / for commands</div>")
         .arg(thm2.hex("surface0"), thm2.hex("text_faint"), thm2.hex("surface0")));
-    welcome->setTextFormat(Qt::RichText);
-    welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    welcomeLabel->setTextFormat(Qt::RichText);
+    welcomeLayout->addWidget(welcomeLabel);
+
+    auto *welcomeChips = new SuggestionChips(welcome);
+    welcomeChips->setSuggestions({
+        "Explain this codebase",
+        "Find bugs in recent changes",
+        "Write tests for...",
+        "Refactor..."
+    });
+    connect(welcomeChips, &SuggestionChips::suggestionClicked, this, [this](const QString &text) {
+        m_inputBar->setText(text);
+        m_inputBar->focusInput();
+    });
+    welcomeLayout->addWidget(welcomeChips, 0, Qt::AlignCenter);
+
     tab.messagesLayout->insertWidget(0, welcome);
     tab.welcomeWidget = welcome;
 
@@ -759,7 +794,13 @@ void ChatPanel::restoreSession(const QString &sessionId)
     tab.thinkingIndicator = indicator;
 
     SessionInfo info = m_sessionMgr ? m_sessionMgr->sessionInfo(sessionId) : SessionInfo();
-    QString title = info.title.isEmpty() ? sessionId.left(8) : info.title;
+    QString title;
+    if (!info.title.isEmpty()) {
+        title = info.title;
+    } else {
+        QDateTime dt = QDateTime::fromSecsSinceEpoch(info.createdAt);
+        title = dt.isValid() ? QStringLiteral("Chat %1").arg(dt.toString("MMM d")) : "Chat";
+    }
     int idx = m_tabWidget->addTab(tab.container, title);
     tab.tabIndex = idx;
     m_tabs[idx] = tab;
@@ -825,9 +866,15 @@ void ChatPanel::onSendRequested(const QString &text)
     addMessageToTab(tab, userMsg);
 
     if (tab.turnId == 1) {
-        QStringList words = text.simplified().split(' ');
-        QString title = words.mid(0, 4).join(' ');
-        if (words.size() > 4) title += "...";
+        QString simplified = text.simplified();
+        QString title;
+        if (simplified.length() <= 30) {
+            title = simplified;
+        } else {
+            int cutoff = simplified.lastIndexOf(' ', 30);
+            if (cutoff < 15) cutoff = 30;
+            title = simplified.left(cutoff) + "\xe2\x80\xa6";
+        }
         m_tabWidget->setTabText(tab.tabIndex, title);
         if (m_sessionMgr)
             m_sessionMgr->setSessionTitle(tab.sessionId, title);
@@ -1164,7 +1211,7 @@ void ChatPanel::showAcceptAllButton(ChatTab &tab)
     btn->setStyleSheet(
         QStringLiteral(
             "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-            "border-radius: 6px; padding: 6px 16px; font-size: 12px; }"
+            "border-radius: 8px; padding: 6px 16px; font-size: 12px; }"
             "QPushButton:hover { background: %4; color: %5; }")
             .arg(thm.hex("bg_raised"), thm.hex("text_secondary"),
                  thm.hex("border_standard"),

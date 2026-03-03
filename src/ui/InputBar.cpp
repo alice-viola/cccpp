@@ -75,10 +75,11 @@ InputBar::InputBar(QWidget *parent)
     m_bottomBarLayout = new QHBoxLayout(bottomBar);
     m_bottomBarLayout->setContentsMargins(10, 2, 8, 4);
     m_bottomBarLayout->setSpacing(4);
-    m_bottomBarLayout->addStretch();
+
+    // Footer widgets (mode/model selectors) inserted by addFooterWidget()
 
     m_sendBtn = new QPushButton("\xe2\x86\x91", m_inputContainer);
-    m_sendBtn->setFixedSize(28, 28);
+    m_sendBtn->setFixedSize(32, 32);
     m_bottomBarLayout->addWidget(m_sendBtn);
 
     containerLayout->addWidget(bottomBar);
@@ -128,7 +129,7 @@ void InputBar::applyThemeColors()
 
     m_sendBtn->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: none; "
-        "border-radius: 14px; font-size: 14px; font-weight: bold; }"
+        "border-radius: 16px; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }")
         .arg(p.blue.name(), p.on_accent.name(), p.lavender.name(),
@@ -137,6 +138,9 @@ void InputBar::applyThemeColors()
     m_contextIndicator->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 11px; padding: 2px 4px; }")
         .arg(p.text_muted.name()));
+
+    setStyleSheet(QStringLiteral("InputBar { border-top: 1px solid %1; }")
+        .arg(p.border_subtle.name()));
 }
 
 void InputBar::applyBorderColor(const QColor &c)
@@ -150,12 +154,26 @@ void InputBar::applyBorderColor(const QColor &c)
 
 void InputBar::addFooterWidget(QWidget *w)
 {
-    m_bottomBarLayout->insertWidget(m_bottomBarLayout->count() - 2, w);
+    // Insert before the send button (last widget)
+    m_bottomBarLayout->insertWidget(m_bottomBarLayout->count() - 1, w);
 }
 
 QString InputBar::text() const
 {
     return m_input->toPlainText();
+}
+
+void InputBar::setText(const QString &text)
+{
+    m_input->setPlainText(text);
+    QTextCursor c = m_input->textCursor();
+    c.movePosition(QTextCursor::End);
+    m_input->setTextCursor(c);
+}
+
+void InputBar::focusInput()
+{
+    m_input->setFocus();
 }
 
 void InputBar::clear()
@@ -201,7 +219,7 @@ void InputBar::setProcessing(bool processing)
         m_sendBtn->setText("\xe2\x96\xa0");
         m_sendBtn->setStyleSheet(QStringLiteral(
             "QPushButton { background: %1; color: %2; border: none; "
-            "border-radius: 14px; font-size: 12px; font-weight: bold; }"
+            "border-radius: 16px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background: %3; }")
             .arg(p.mauve.name(), p.bg_base.name(), p.lavender.name()));
     } else {
@@ -344,7 +362,7 @@ void InputBar::updateContextPills()
             QStringLiteral("@ %1  \xc3\x97").arg(m_attachedContexts[i].displayName), m_contextPillBar);
         pill->setFixedHeight(20);
         pill->setStyleSheet(QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: none; border-radius: 10px; "
+            "QPushButton { background: %1; color: %2; border: none; border-radius: 12px; "
             "font-size: 11px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; }")
             .arg(p.bg_raised.name(), p.blue.name(), p.hover_raised.name()));
@@ -404,7 +422,7 @@ void InputBar::addImageThumbnail(const QByteArray &data, const QString &format, 
     cLayout->addWidget(removeBtn);
 
     container->setStyleSheet(QStringLiteral(
-        "QWidget { background: %1; border: 1px solid %2; border-radius: 6px; }")
+        "QWidget { background: %1; border: 1px solid %2; border-radius: 8px; }")
         .arg(p.bg_raised.name(), p.border_standard.name()));
 
     // Insert before the stretch

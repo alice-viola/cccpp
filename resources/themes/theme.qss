@@ -73,7 +73,7 @@ QMenuBar {
     font-size: 13px;
     padding: 1px 0;
 }
-QMenuBar::item { padding: 4px 10px; border-radius: 6px; }
+QMenuBar::item { padding: 4px 10px; border-radius: 8px; }
 QMenuBar::item:selected { background: {{bg_raised}}; color: {{text_primary}}; }
 
 QMenu {
@@ -89,7 +89,7 @@ QMenu::separator { height: 1px; background: {{border_subtle}}; margin: 4px 8px; 
 
 /* --- Splitter ---------------------------------------------------- */
 
-QSplitter::handle { background: {{border_subtle}}; width: 1px; }
+QSplitter::handle { background: {{border_standard}}; width: 2px; }
 QSplitter::handle:hover { background: {{blue}}; width: 2px; }
 QSplitter::handle:pressed { background: {{blue}}; width: 2px; }
 
@@ -100,7 +100,7 @@ QToolTip {
     color: {{text_primary}};
     border: 1px solid {{border_subtle}};
     padding: 4px 8px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 12px;
 }
 
@@ -128,7 +128,7 @@ QTabBar::tab:selected {
 }
 QTabBar::tab:hover:!selected { color: {{text_secondary}}; }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
-QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 3px; }
+QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 4px; }
 
 /* --- Scroll areas ------------------------------------------------ */
 
@@ -183,7 +183,7 @@ QPushButton {
     background: {{bg_raised}};
     color: {{text_primary}};
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 5px 12px;
     font-size: 12px;
 }
@@ -206,7 +206,7 @@ QComboBox {
     background: {{bg_raised}};
     color: {{text_primary}};
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 3px 10px;
     font-size: 12px;
 }
@@ -222,7 +222,7 @@ QComboBox QAbstractItemView {
     background: {{bg_surface}};
     color: {{text_primary}};
     border: 1px solid {{border_subtle}};
-    border-radius: 6px;
+    border-radius: 8px;
     selection-background-color: {{bg_raised}};
     padding: 4px;
     font-size: 12px;
@@ -234,7 +234,7 @@ QLineEdit {
     background: {{bg_surface}};
     color: {{text_primary}};
     border: 1px solid {{border_subtle}};
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 4px 8px;
     font-size: 13px;
     selection-background-color: {{hover_raised}};
@@ -287,11 +287,11 @@ QCheckBox, QRadioButton {
 QCheckBox::indicator, QRadioButton::indicator {
     width: 14px; height: 14px;
     border: 1px solid {{border_standard}};
-    border-radius: 3px;
+    border-radius: 4px;
     background: {{bg_surface}};
 }
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {
     background: {{blue}};
     border-color: {{blue}};
 }
-QRadioButton::indicator { border-radius: 7px; }
+QRadioButton::indicator { border-radius: 8px; }

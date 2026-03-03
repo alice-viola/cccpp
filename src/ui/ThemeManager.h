@@ -172,23 +172,23 @@ QScrollBar::handle:horizontal:pressed { background: {{blue}}; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { width: 0; border: none; }
 QMenuBar { background: {{bg_base}}; color: {{text_secondary}}; border: none; font-size: 13px; }
-QMenuBar::item { padding: 4px 10px; border-radius: 6px; }
+QMenuBar::item { padding: 4px 10px; border-radius: 8px; }
 QMenuBar::item:selected { background: {{bg_raised}}; color: {{text_primary}}; }
 QMenu { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 8px; padding: 6px; }
 QMenu::item { padding: 6px 20px 6px 12px; border-radius: 4px; }
 QMenu::item:selected { background: {{bg_raised}}; }
 QMenu::separator { height: 1px; background: {{border_subtle}}; margin: 4px 8px; }
-QSplitter::handle { background: {{border_subtle}}; width: 1px; }
+QSplitter::handle { background: {{border_standard}}; width: 2px; }
 QSplitter::handle:hover { background: {{blue}}; width: 2px; }
 QSplitter::handle:pressed { background: {{blue}}; width: 2px; }
-QToolTip { background: {{bg_raised}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+QToolTip { background: {{bg_raised}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; padding: 4px 8px; border-radius: 8px; font-size: 12px; }
 QTabWidget::pane { border: none; background: {{bg_window}}; }
 QTabBar { background: {{bg_window}}; border-bottom: 1px solid {{border_subtle}}; qproperty-drawBase: 0; }
 QTabBar::tab { background: transparent; color: {{text_muted}}; border: none; padding: 6px 14px; font-size: 12px; min-width: 40px; margin: 0; }
 QTabBar::tab:selected { color: {{text_primary}}; border-bottom: 2px solid {{blue}}; }
 QTabBar::tab:hover:!selected { color: {{text_secondary}}; }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
-QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 3px; }
+QTabBar::close-button:hover { background: {{red_30pct}}; border-radius: 4px; }
 QScrollArea { background: {{bg_window}}; border: none; }
 QTreeView, QTreeWidget { background: {{bg_window}}; color: {{text_secondary}}; border: none; font-size: 12px; outline: none; }
 QTreeView::item, QTreeWidget::item { padding: 2px 4px; min-height: 22px; }
@@ -199,17 +199,17 @@ QTextBrowser { background: transparent; color: {{text_primary}}; border: none; f
 QTextEdit#chatInput { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 12px; padding: 8px 12px; font-size: 13px; }
 QTextEdit#chatInput:focus { border-color: {{blue}}; }
 QLabel { background: transparent; }
-QPushButton { background: {{bg_raised}}; color: {{text_primary}}; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; }
+QPushButton { background: {{bg_raised}}; color: {{text_primary}}; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; }
 QPushButton:hover { background: {{hover_raised}}; }
 QPushButton:pressed { background: {{pressed_raised}}; }
 QPushButton:disabled { background: {{bg_window}}; color: {{text_faint}}; }
 QToolBar { background: {{bg_window}}; border: none; border-bottom: 1px solid {{border_subtle}}; spacing: 2px; }
-QComboBox { background: {{bg_raised}}; color: {{text_primary}}; border: none; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
+QComboBox { background: {{bg_raised}}; color: {{text_primary}}; border: none; border-radius: 8px; padding: 3px 10px; font-size: 12px; }
 QComboBox:hover { background: {{hover_raised}}; }
 QComboBox::drop-down { border: none; width: 18px; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {{text_muted}}; }
-QComboBox QAbstractItemView { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 6px; selection-background-color: {{bg_raised}}; padding: 4px; font-size: 12px; }
-QLineEdit { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 6px; padding: 4px 8px; font-size: 13px; }
+QComboBox QAbstractItemView { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 8px; selection-background-color: {{bg_raised}}; padding: 4px; font-size: 12px; }
+QLineEdit { background: {{bg_surface}}; color: {{text_primary}}; border: 1px solid {{border_subtle}}; border-radius: 8px; padding: 4px 8px; font-size: 13px; }
 QLineEdit:focus { border-color: {{blue}}; }
 QStatusBar { background: {{bg_base}}; border-top: 1px solid {{border_subtle}}; color: {{text_muted}}; font-size: 11px; min-height: 24px; padding: 0; }
 QStatusBar::item { border: none; padding: 0; }

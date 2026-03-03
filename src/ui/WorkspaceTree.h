@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QTreeView>
 #include <QFileSystemModel>
+#include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
 #include <QLabel>
 #include <QMap>
@@ -17,6 +18,7 @@ public:
     void setChangedFiles(const QMap<QString, FileChangeType> *files) { m_files = files; }
     void setGitStatus(const QMap<QString, GitFileStatus> *gitStatus) { m_gitStatus = gitStatus; }
     void setModel(QFileSystemModel *model) { m_model = model; }
+    void setProxy(QSortFilterProxyModel *proxy) { m_proxy = proxy; }
     void setRootPath(const QString &path) { m_rootPath = path; }
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
@@ -26,6 +28,7 @@ private:
     const QMap<QString, FileChangeType> *m_files = nullptr;
     const QMap<QString, GitFileStatus> *m_gitStatus = nullptr;
     QFileSystemModel *m_model = nullptr;
+    QSortFilterProxyModel *m_proxy = nullptr;
     QString m_rootPath;
 };
 
@@ -58,9 +61,14 @@ private:
     void deleteSelected(const QString &path, bool isDir);
     QString contextDirectory(const QModelIndex &index) const;
 
+    QModelIndex mapToSource(const QModelIndex &proxyIndex) const;
+
+    QWidget *m_headerContainer = nullptr;
     QLabel *m_header = nullptr;
+    QLabel *m_headerSubtitle = nullptr;
     QTreeView *m_tree;
     QFileSystemModel *m_model;
+    QSortFilterProxyModel *m_proxy = nullptr;
     ChangedFileDelegate *m_delegate;
     QMap<QString, FileChangeType> m_changedFiles;
     QMap<QString, GitFileStatus> m_gitStatus;

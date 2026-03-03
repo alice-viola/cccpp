@@ -914,13 +914,13 @@ void CodeViewer::openMarkdown(const QString &filePath)
             .arg(pal.bg_window.name(), pal.text_primary.name(), pal.surface1.name()));
     browser->document()->setDefaultStyleSheet(
         QStringLiteral(
-        "h1 { color: %1; font-size: 20px; margin: 18px 0 8px 0; }"
-        "h2 { color: %2; font-size: 17px; margin: 16px 0 6px 0; }"
-        "h3 { color: %3; font-size: 15px; margin: 14px 0 4px 0; }"
+        "h1 { color: %1; font-size: 18px; margin: 18px 0 8px 0; }"
+        "h2 { color: %2; font-size: 16px; margin: 16px 0 6px 0; }"
+        "h3 { color: %3; font-size: 14px; margin: 14px 0 4px 0; }"
         "h4 { color: %4; font-size: 14px; margin: 12px 0 4px 0; }"
         "code { background: %5; color: %6; padding: 1px 4px;"
-        "       border-radius: 3px; font-family: 'JetBrains Mono'; font-size: 12px; }"
-        "pre  { background: %7; border: 1px solid %8; border-radius: 6px;"
+        "       border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 12px; }"
+        "pre  { background: %7; border: 1px solid %8; border-radius: 8px;"
         "       padding: 10px 12px; font-family: 'JetBrains Mono'; font-size: 12px;"
         "       color: %9; }"
         "a    { color: %2; }"

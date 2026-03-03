@@ -6,6 +6,7 @@
 #include <QTabWidget>
 #include <QLabel>
 #include <QActionGroup>
+#include <QVariantAnimation>
 #include <QShowEvent>
 
 class ClaudeProcess;
@@ -63,6 +64,7 @@ private:
     void connectGitSignals();
     void syncEditorContextToChat();
     void setupTelegram();
+    void animateSplitterSizes(const QList<int> &targetSizes, int durationMs = 200);
     void executeInlineEdit(const QString &filePath, const QString &selectedCode,
                            const QString &instruction, int startLine, int endLine,
                            const QString &modelId);
@@ -97,6 +99,8 @@ private:
     QLabel *m_statusProcessing = nullptr;
 
     QActionGroup *m_themeGroup = nullptr;
+
+    QVariantAnimation *m_splitterAnim = nullptr;
 
     // Cmd+K inline edit — dedicated process (never touches chat)
     ClaudeProcess *m_inlineEditProcess = nullptr;

@@ -268,7 +268,7 @@ void InlineEditBar::applyThemeColors()
 
     m_input->setStyleSheet(QStringLiteral(
         "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 6px; padding: 4px 8px; font-size: 13px; }")
+        "border-radius: 8px; padding: 4px 8px; font-size: 13px; }")
         .arg(p.bg_base.name(), p.text_primary.name(), p.border_standard.name()));
 
     m_submitBtn->setStyleSheet(QStringLiteral(

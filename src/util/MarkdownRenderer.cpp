@@ -79,7 +79,7 @@ QString MarkdownRenderer::toHtml(const QString &markdown) const
 
     return QStringLiteral(
         "<div style='font-family:\"Inter\";"
-        "font-size:13.5px;line-height:1.6;color:%2;'>"
+        "font-size:13px;line-height:1.6;color:%2;'>"
         "%1</div>")
         .arg(result, ThemeManager::instance().hex("text_primary"));
 }

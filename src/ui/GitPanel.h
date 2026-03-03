@@ -48,8 +48,6 @@ private:
 
     QWidget *m_headerWidget = nullptr;
     QLabel *m_branchLabel;
-    QPushButton *m_fetchBtn = nullptr;
-    QPushButton *m_pushBtn = nullptr;
     QPushButton *m_refreshBtn;
     QTreeWidget *m_branchTree = nullptr;
     QTreeWidgetItem *m_localRoot = nullptr;

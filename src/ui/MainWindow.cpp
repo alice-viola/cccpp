@@ -98,7 +98,7 @@ MainWindow::~MainWindow()
 void MainWindow::setupUI()
 {
     m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_splitter->setHandleWidth(1);
+    m_splitter->setHandleWidth(2);
 
     m_workspaceTree = new WorkspaceTree(this);
     m_codeViewer = new CodeViewer(this);
@@ -119,10 +119,10 @@ void MainWindow::setupUI()
     m_leftTabs->setTabPosition(QTabWidget::South);
     m_leftTabs->addTab(m_workspaceTree, "Files");
     m_leftTabs->addTab(m_gitPanel, "Git");
-    m_leftTabs->addTab(m_searchPanel, "Search");
+    m_leftTabs->addTab(m_searchPanel, "Find");
 
     m_centerSplitter = new QSplitter(Qt::Vertical, this);
-    m_centerSplitter->setHandleWidth(1);
+    m_centerSplitter->setHandleWidth(2);
     m_centerSplitter->addWidget(m_codeViewer);
     m_centerSplitter->addWidget(m_terminalPanel);
     m_centerSplitter->setStretchFactor(0, 3);
@@ -196,7 +196,7 @@ void MainWindow::setupUI()
                 int total = m_splitter->width();
                 sizes[1] = static_cast<int>(total * kEditorFraction);
                 sizes[2] = total - sizes[0] - sizes[1];
-                m_splitter->setSizes(sizes);
+                animateSplitterSizes(sizes);
             }
             updateToggleButtons();
         }
@@ -215,8 +215,7 @@ void MainWindow::setupUI()
             int total = m_splitter->width();
             int editorW = static_cast<int>(total * kEditorFraction);
             int chatW = total - kTreePanelWidth - editorW;
-            m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
-            updateToggleButtons();
+            animateSplitterSizes({kTreePanelWidth, editorW, chatW});
         }
         m_codeViewer->openMarkdown(filePath);
     });
@@ -468,6 +467,8 @@ void MainWindow::setupStatusBar()
     m_statusBranch     = new QLabel("", this);
     m_statusModel      = new QLabel("", this);
     m_statusProcessing = new QLabel("", this);
+    m_statusProcessing->setMinimumWidth(100);
+    m_statusProcessing->setText("\u25CB Ready");
 
     statusBar()->addWidget(m_statusFile, 1);
     statusBar()->addPermanentWidget(m_statusModel);
@@ -504,7 +505,7 @@ void MainWindow::setupStatusBar()
             QList<int> sizes = m_splitter->sizes();
             if (sizes.size() >= 3 && sizes[0] < 50) {
                 sizes[0] = kTreePanelWidth + 30;
-                m_splitter->setSizes(sizes);
+                animateSplitterSizes(sizes);
             }
         }
         updateToggleButtons();
@@ -520,7 +521,7 @@ void MainWindow::setupStatusBar()
                 int total = m_splitter->width();
                 sizes[1] = static_cast<int>(total * kEditorFraction);
                 sizes[2] = total - sizes[0] - sizes[1];
-                m_splitter->setSizes(sizes);
+                animateSplitterSizes(sizes);
             }
         }
         updateToggleButtons();
@@ -536,7 +537,7 @@ void MainWindow::setupStatusBar()
                 int total = m_splitter->width();
                 sizes[2] = static_cast<int>(total * kChatFraction);
                 sizes[1] = total - sizes[0] - sizes[2];
-                m_splitter->setSizes(sizes);
+                animateSplitterSizes(sizes);
             }
         }
         updateToggleButtons();
@@ -556,13 +557,15 @@ void MainWindow::setupStatusBar()
     });
 
     connect(m_chatPanel, &ChatPanel::processingChanged, this, [this](bool processing) {
+        auto &pal = ThemeManager::instance().palette();
         if (processing) {
             m_statusProcessing->setStyleSheet(
-                QStringLiteral("QLabel { color: %1; }").arg(ThemeManager::instance().hex("mauve")));
+                QStringLiteral("QLabel { color: %1; }").arg(pal.mauve.name()));
             m_statusProcessing->setText("\u25CF Processing");
         } else {
-            m_statusProcessing->setStyleSheet("");
-            m_statusProcessing->clear();
+            m_statusProcessing->setStyleSheet(
+                QStringLiteral("QLabel { color: %1; }").arg(pal.text_faint.name()));
+            m_statusProcessing->setText("\u25CB Ready");
         }
     });
 }
@@ -733,6 +736,45 @@ void MainWindow::updateToggleButtons()
     m_toggleTerminal->setChecked(m_terminalPanel->isVisible());
 }
 
+void MainWindow::animateSplitterSizes(const QList<int> &targetSizes, int durationMs)
+{
+    if (m_splitterAnim) {
+        m_splitterAnim->stop();
+        m_splitterAnim->deleteLater();
+        m_splitterAnim = nullptr;
+    }
+
+    QList<int> startSizes = m_splitter->sizes();
+    if (startSizes.size() != targetSizes.size()) {
+        m_splitter->setSizes(targetSizes);
+        updateToggleButtons();
+        return;
+    }
+
+    m_splitterAnim = new QVariantAnimation(this);
+    m_splitterAnim->setDuration(durationMs);
+    m_splitterAnim->setStartValue(0.0);
+    m_splitterAnim->setEndValue(1.0);
+    m_splitterAnim->setEasingCurve(QEasingCurve::OutCubic);
+
+    connect(m_splitterAnim, &QVariantAnimation::valueChanged, this,
+            [this, startSizes, targetSizes](const QVariant &v) {
+        double t = v.toDouble();
+        QList<int> sizes;
+        for (int i = 0; i < startSizes.size(); ++i)
+            sizes.append(startSizes[i] + static_cast<int>((targetSizes[i] - startSizes[i]) * t));
+        m_splitter->setSizes(sizes);
+    });
+
+    connect(m_splitterAnim, &QVariantAnimation::finished, this, [this] {
+        updateToggleButtons();
+        m_splitterAnim->deleteLater();
+        m_splitterAnim = nullptr;
+    });
+
+    m_splitterAnim->start();
+}
+
 void MainWindow::loadStylesheet()
 {
     auto &tm = ThemeManager::instance();
@@ -768,26 +810,29 @@ void MainWindow::applyThemeColors()
     m_leftTabs->setStyleSheet(QStringLiteral(
         "QTabWidget::pane { border: none; background: %1; }"
         "QTabBar { background: %1; border-top: 1px solid %2; border-bottom: none; }"
-        "QTabBar::tab { background: transparent; color: %3; border: none; padding: 4px 12px; font-size: 11px; }"
+        "QTabBar::tab { background: transparent; color: %3; border: none; padding: 4px 8px; font-size: 11px; }"
         "QTabBar::tab:selected { color: %4; border-top: 2px solid %5; }"
         "QTabBar::tab:hover:!selected { color: %6; }")
         .arg(p.bg_window.name(), p.border_subtle.name(), p.text_muted.name(),
              p.text_primary.name(), p.blue.name(), p.text_secondary.name()));
 
     auto toggleStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: %1; border: none; "
-        "border-radius: 4px; font-size: 11px; font-weight: 500; padding: 2px 12px; margin: 0 1px; }"
-        "QPushButton:hover { color: %2; }"
-        "QPushButton:checked { color: %3; }")
-        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name());
+        "QPushButton { background: transparent; color: %1; border: 1px solid transparent; "
+        "border-radius: 4px; font-size: 11px; font-weight: 500; padding: 2px 8px; margin: 0 1px; min-width: 56px; }"
+        "QPushButton:hover { color: %2; background: %4; }"
+        "QPushButton:checked { color: %3; background: %4; border-color: %5; }")
+        .arg(p.text_muted.name(), p.text_secondary.name(), p.text_primary.name(),
+             p.bg_raised.name(), p.border_standard.name());
 
     m_toggleTree->setStyleSheet(toggleStyle);
     m_toggleEditor->setStyleSheet(toggleStyle);
     m_toggleChat->setStyleSheet(toggleStyle);
     m_toggleTerminal->setStyleSheet(toggleStyle);
 
-    if (!m_statusProcessing->text().isEmpty())
+    if (m_statusProcessing->text().contains("Processing"))
         m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.mauve.name()));
+    else
+        m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.text_faint.name()));
 }
 
 void MainWindow::onThemeChanged(const QString &name)
@@ -857,8 +902,7 @@ void MainWindow::onFileSelected(const QString &filePath)
         int total = m_splitter->width();
         int editorW = static_cast<int>(total * kEditorFraction);
         int chatW = total - kTreePanelWidth - editorW;
-        m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
-        updateToggleButtons();
+        animateSplitterSizes({kTreePanelWidth, editorW, chatW});
     }
 
     m_codeViewer->loadFile(filePath);
@@ -946,8 +990,7 @@ void MainWindow::connectGitSignals()
             int total = m_splitter->width();
             int editorW = static_cast<int>(total * kEditorFractionGit);
             int chatW = total - kTreePanelWidth - editorW;
-            m_splitter->setSizes({kTreePanelWidth, editorW, chatW});
-            updateToggleButtons();
+            animateSplitterSizes({kTreePanelWidth, editorW, chatW});
         }
 
         QString leftLabel = staged ? "HEAD" : "HEAD";

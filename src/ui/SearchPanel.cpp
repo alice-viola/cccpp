@@ -305,7 +305,7 @@ void SearchPanel::applyThemeColors()
 
     QString checkStyle = QStringLiteral(
         "QCheckBox { color: %1; font-size: 11px; spacing: 2px; }"
-        "QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; "
+        "QCheckBox::indicator { width: 14px; height: 14px; border-radius: 4px; "
         "border: 1px solid %2; background: %3; }"
         "QCheckBox::indicator:checked { background: %4; border-color: %4; }")
         .arg(p.text_muted.name(), p.border_standard.name(),

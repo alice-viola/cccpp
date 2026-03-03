@@ -62,7 +62,7 @@ void InlineDiffOverlay::applyThemeColors()
     auto &p = ThemeManager::instance().palette();
 
     setStyleSheet(QStringLiteral(
-        "InlineDiffOverlay { background: %1; border: 1px solid %2; border-radius: 6px; }")
+        "InlineDiffOverlay { background: %1; border: 1px solid %2; border-radius: 8px; }")
         .arg(p.bg_surface.name(), p.border_standard.name()));
 
     m_titleLabel->setStyleSheet(QStringLiteral(
@@ -166,7 +166,7 @@ void InlineDiffOverlay::rebuild()
         acceptBtn->setToolTip("Accept this change");
         acceptBtn->setStyleSheet(QStringLiteral(
             "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; }"
-            "QPushButton:hover { color: %2; background: %3; border-radius: 10px; }")
+            "QPushButton:hover { color: %2; background: %3; border-radius: 12px; }")
             .arg(p.text_muted.name(), p.green.name(), p.bg_raised.name()));
         connect(acceptBtn, &QPushButton::clicked, this, [this, i] { emit acceptHunk(i); });
         hdrLayout->addWidget(acceptBtn);
@@ -176,7 +176,7 @@ void InlineDiffOverlay::rebuild()
         rejectBtn->setToolTip("Reject this change");
         rejectBtn->setStyleSheet(QStringLiteral(
             "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; }"
-            "QPushButton:hover { color: %2; background: %3; border-radius: 10px; }")
+            "QPushButton:hover { color: %2; background: %3; border-radius: 12px; }")
             .arg(p.text_muted.name(), p.red.name(), p.bg_raised.name()));
         connect(rejectBtn, &QPushButton::clicked, this, [this, i] { emit rejectHunk(i); });
         hdrLayout->addWidget(rejectBtn);
