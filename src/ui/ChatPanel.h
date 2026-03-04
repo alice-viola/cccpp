@@ -64,6 +64,7 @@ struct ChatTab {
     int editCount = 0;
     QString lastActivity;
     QStringList profileIds;
+    QString overrideMode;  // if set, overrides the UI mode selector
     qint64 updatedAt = 0;
     bool favorite = false;
 };
@@ -110,6 +111,18 @@ public:
     void setSessionFavorite(const QString &sessionId, bool favorite);
     void renameSession(const QString &sessionId, const QString &title);
 
+    // Delegation API
+    QString delegateToChild(const QString &parentSessionId,
+                            const QString &task,
+                            const QString &context,
+                            const QString &specialistProfileId = {},
+                            const QStringList &extraProfileIds = {});
+    void sendMessageToSession(const QString &sessionId, const QString &text);
+    void configureSession(const QString &sessionId,
+                          const QString &mode,
+                          const QStringList &profileIds);
+    QString sessionFinalOutput(const QString &sessionId) const;
+
 signals:
     void fileChanged(const QString &filePath);
     void navigateToFile(const QString &filePath, int line);
@@ -123,6 +136,18 @@ signals:
     void rewindCompleted(bool success);
     void inlineEditRequested(const QString &filePath, const QString &selectedCode,
                              const QString &instruction);
+
+    // Delegation signals
+    void childSessionCompleted(const QString &parentSessionId,
+                               const QString &childSessionId,
+                               const QString &output);
+    void pipelineRequested(const QString &pipelineName, const QString &task);
+    void orchestrateRequested(const QString &task, const QStringList &profileIds);
+    void sessionIdChanged(const QString &oldId, const QString &newId);
+    void sessionFinishedProcessing(const QString &sessionId);
+    void mcpOrchestratorToolCalled(const QString &sessionId,
+                                    const QString &toolName,
+                                    const nlohmann::json &arguments);
 
     // Agent Fleet signals
     void sessionListChanged();
@@ -172,6 +197,7 @@ private:
     ModeSelector *m_modeSelector;
     ModelSelector *m_modelSelector;
     ProfileSelector *m_profileSelector;
+    QPushButton *m_orchestratorToggle;
     QLabel *m_statsLabel;
     QMap<int, ChatTab> m_tabs;
 

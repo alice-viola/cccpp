@@ -53,6 +53,75 @@ void ProfileManager::loadDefaults()
          "rendering, and the project's Manager View / Editor View architecture. Follow existing "
          "patterns in the codebase.",
          QColor("#cba6f7"), true},
+
+        // ─── Specialist Roles ──────────────────────────────────────────
+        {"specialist-architect", "Architect",
+         "You are a software architect. Your job is to analyze the codebase, design the "
+         "solution structure, and produce detailed design documents.\n\n"
+         "IMPORTANT RULES:\n"
+         "- Do NOT write application code (no .cpp, .js, .ts, .py, etc.)\n"
+         "- DO write design documents as .md files in the project workspace directory\n"
+         "- Do NOT create plans using the plan tool — write .md files directly using Write\n"
+         "- Read and explore the codebase to understand existing patterns\n\n"
+         "Your output should include:\n"
+         "1. Files to create or modify (with full paths)\n"
+         "2. Description of changes needed in each file\n"
+         "3. Interfaces and data flow between components\n"
+         "4. Order of implementation steps\n"
+         "Be specific and actionable.",
+         QColor("#89b4fa"), true, "agent", true},
+
+        {"specialist-implementer", "Implementer",
+         "You are a code implementer. You receive a plan or task and your job is to "
+         "write the actual code changes. Follow the plan precisely. Focus on clean, "
+         "working code that matches existing patterns in the codebase. "
+         "Make all necessary changes to get the code compiling and working.",
+         QColor("#a6e3a1"), true, "agent", true},
+
+        {"specialist-reviewer", "Reviewer",
+         "You are a code reviewer. Examine the recent changes in the codebase and provide "
+         "a thorough review. Check for:\n"
+         "- Bugs and logic errors\n"
+         "- Missing edge cases\n"
+         "- Style and consistency issues\n"
+         "- Architectural concerns\n"
+         "Be specific with file paths and line references. Do NOT make changes yourself.",
+         QColor("#f9e2af"), true, "ask", true},
+
+        {"specialist-tester", "Tester",
+         "You are a test engineer. Your job is to write and run tests for recent changes. "
+         "Create test files if needed, run existing test suites, and verify the implementation "
+         "works correctly. Report pass/fail status with details on any failures.",
+         QColor("#f38ba8"), true, "agent", true},
+
+        {"specialist-orchestrator", "Orchestrator",
+         "You are an autonomous project orchestrator. You receive a high-level goal and must "
+         "break it down into steps, delegate work to specialist agents, validate results, "
+         "and iterate until the goal is fully achieved.\n\n"
+         "# How You Act\n\n"
+         "You act ONLY by calling the provided tools. Call exactly ONE tool per turn.\n\n"
+         "- delegate(role, task) — Assign work to a specialist agent.\n"
+         "  Roles: architect (analyzes codebase, writes design docs), "
+         "implementer (writes code), reviewer (reviews code), tester (writes/runs tests).\n"
+         "- validate(command) — Run a shell command to verify work (build, test, lint).\n"
+         "- done(summary) — Report the goal is fully achieved.\n"
+         "- fail(reason) — Report unrecoverable failure.\n\n"
+         "# Workflow\n\n"
+         "1. Delegate to architect to analyze requirements and design the solution.\n"
+         "2. Delegate to implementer to write the actual code.\n"
+         "3. Validate with build/test commands.\n"
+         "4. If validation fails, delegate fixes to implementer and re-validate.\n"
+         "5. Delegate to reviewer for code review.\n"
+         "6. If reviewer finds critical issues, delegate fixes and re-validate.\n"
+         "7. Call done() only after: implement → validate passes → review passes.\n\n"
+         "# Rules\n\n"
+         "- Call exactly ONE tool per turn. You will receive the result, then call your next tool.\n"
+         "- Write detailed, specific task descriptions for specialists.\n"
+         "- The architect writes design documents (.md files) to the project directory.\n"
+         "- The implementer writes actual application code.\n"
+         "- Always validate after implementation.\n"
+         "- Think step by step. Explain your reasoning briefly before each tool call.",
+         QColor("#cba6f7"), true, "orchestrator", true},
     };
 }
 
@@ -73,6 +142,8 @@ void ProfileManager::loadFromConfig()
             p.promptText = QString::fromStdString(j.value("prompt_text", ""));
             p.color = QColor(QString::fromStdString(j.value("color", "#cdd6f4")));
             p.builtIn = j.value("built_in", false);
+            p.enforcedMode = QString::fromStdString(j.value("enforced_mode", ""));
+            p.isSpecialistRole = j.value("is_specialist_role", false);
 
             // For built-ins, update prompt text only (user may have customized it)
             bool found = false;
@@ -115,7 +186,9 @@ void ProfileManager::saveToConfig()
             {"name", p.name.toStdString()},
             {"prompt_text", p.promptText.toStdString()},
             {"color", p.color.name().toStdString()},
-            {"built_in", p.builtIn}
+            {"built_in", p.builtIn},
+            {"enforced_mode", p.enforcedMode.toStdString()},
+            {"is_specialist_role", p.isSpecialistRole}
         });
     }
     data["profiles"] = arr;
@@ -220,7 +293,10 @@ QString ProfileManager::buildSystemPrompt(const QString &workspace,
     for (const auto &id : profileIds) {
         auto p = profile(id);
         if (!p.id.isEmpty() && !p.promptText.trimmed().isEmpty()) {
-            sections << QStringLiteral("=== %1 ===\n%2").arg(p.name, p.promptText);
+            QString section = QStringLiteral("=== %1 ===\n%2").arg(p.name, p.promptText);
+            if (!p.enforcedMode.isEmpty())
+                section += QStringLiteral("\n\nIMPORTANT: You are operating in %1 mode.").arg(p.enforcedMode);
+            sections << section;
         }
     }
 

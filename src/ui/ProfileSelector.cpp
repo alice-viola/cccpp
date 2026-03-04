@@ -29,8 +29,15 @@ ProfileSelector::ProfileSelector(QWidget *parent)
 
 void ProfileSelector::setSelectedIds(const QStringList &ids)
 {
-    if (m_selectedIds == ids) return;
-    m_selectedIds = ids;
+    // Filter out specialist roles (internal, not user-facing)
+    QStringList filtered;
+    for (const auto &id : ids) {
+        auto prof = ProfileManager::instance().profile(id);
+        if (!prof.isSpecialistRole)
+            filtered.append(id);
+    }
+    if (m_selectedIds == filtered) return;
+    m_selectedIds = filtered;
     updateLabel();
     emit selectionChanged(m_selectedIds);
 }
@@ -73,6 +80,7 @@ void ProfileSelector::showProfileMenu()
              p.text_primary.name(), p.bg_raised.name()));
 
     for (const auto &prof : profiles) {
+        if (prof.isSpecialistRole) continue;  // internal roles, not user-facing
         auto *action = menu.addAction(prof.name);
         action->setCheckable(true);
         action->setChecked(m_selectedIds.contains(prof.id));

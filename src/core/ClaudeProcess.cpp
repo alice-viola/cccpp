@@ -370,7 +370,17 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     if (!m_systemPrompt.isEmpty())
         args << "--append-system-prompt" << m_systemPrompt;
 
-    if (m_mode == "ask") {
+    if (m_mode == "orchestrator") {
+        // Orchestrator: ONLY MCP orchestrator tools, max 1 agentic turn.
+        // Claude calls delegate/validate/done/fail as structured tool calls.
+        // The MCP server acknowledges; our C++ code intercepts via toolUseStarted.
+        args << "--permission-mode" << "bypassPermissions"
+             << "--allowedTools" << "mcp__c3p2-orchestrator__delegate,"
+                                    "mcp__c3p2-orchestrator__validate,"
+                                    "mcp__c3p2-orchestrator__done,"
+                                    "mcp__c3p2-orchestrator__fail"
+             << "--max-turns" << "1";
+    } else if (m_mode == "ask") {
         args << "--permission-mode" << "bypassPermissions"
              << "--tools" << "Read,Glob,Grep";
     } else if (m_mode == "plan") {

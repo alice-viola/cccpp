@@ -214,10 +214,40 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_statsLabel->hide();
     mainLayout->addWidget(m_statsLabel);
 
+    // Orchestrator toggle
+    m_orchestratorToggle = new QPushButton(this);
+    m_orchestratorToggle->setCheckable(true);
+    m_orchestratorToggle->setChecked(false);
+    m_orchestratorToggle->setCursor(Qt::PointingHandCursor);
+    m_orchestratorToggle->setFixedHeight(24);
+    m_orchestratorToggle->setToolTip("Orchestrate: delegate work to specialist agents");
+    auto updateOrcToggleStyle = [this] {
+        const auto &pal = ThemeManager::instance().palette();
+        bool on = m_orchestratorToggle->isChecked();
+        m_orchestratorToggle->setText(on ? "\xe2\x9a\x99 Orchestrate \u25BE" : "\xe2\x9a\x99 Orchestrate");
+        QColor fg = on ? pal.mauve : pal.text_muted;
+        QColor bg = on ? QColor(pal.mauve.red(), pal.mauve.green(), pal.mauve.blue(), 25)
+                       : Qt::transparent;
+        m_orchestratorToggle->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 12px; }"
+            "QPushButton:hover { color: %4; }")
+            .arg(bg.name(QColor::HexArgb), fg.name(),
+                 on ? pal.mauve.name() : QString("transparent"),
+                 pal.text_primary.name()));
+    };
+    updateOrcToggleStyle();
+    connect(m_orchestratorToggle, &QPushButton::toggled, this, [updateOrcToggleStyle] {
+        updateOrcToggleStyle();
+    });
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, [updateOrcToggleStyle] { updateOrcToggleStyle(); });
+
     m_inputBar = new InputBar(this);
     m_inputBar->addFooterWidget(m_modeSelector);
     m_inputBar->addFooterWidget(m_modelSelector);
     m_inputBar->addFooterWidget(m_profileSelector);
+    m_inputBar->addFooterWidget(m_orchestratorToggle);
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
@@ -589,6 +619,14 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         }
     });
 
+    // Forward MCP orchestrator tool calls to the Orchestrator
+    connect(proc->streamParser(), &StreamParser::toolUseStarted, this,
+            [this, proc](const QString &name, const QString &, const nlohmann::json &input) {
+        if (!name.startsWith("mcp__c3p2-orchestrator__")) return;
+        auto *t = tabForProcess(proc);
+        if (t) emit mcpOrchestratorToolCalled(t->sessionId, name, input);
+    });
+
     connect(proc->streamParser(), &StreamParser::toolResultReceived, this,
             [this, proc](const QString &) {
         auto *t = tabForProcess(proc);
@@ -614,6 +652,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 m_database->updateMessageSessionId(oldId, sessionId);
                 m_database->deleteSession(oldId);
             }
+            emit sessionIdChanged(oldId, sessionId);
             // Notify EffectsPanel and DiffEngine of the confirmed session ID
             emit activeSessionChanged(sessionId);
         }
@@ -1049,6 +1088,13 @@ void ChatPanel::sendMessage(const QString &text)
 
 void ChatPanel::onSendRequested(const QString &text)
 {
+    // If orchestrator toggle is ON, route through the Orchestrator
+    if (m_orchestratorToggle->isChecked()) {
+        m_orchestratorToggle->setChecked(false);  // one-shot: reset after use
+        emit orchestrateRequested(text, m_profileSelector->selectedIds());
+        return;
+    }
+
     if (m_tabs.isEmpty())
         newChat();
 
@@ -1156,7 +1202,10 @@ void ChatPanel::onSlashCommand(const QString &command, const QString &args)
             "- `/compact` - Compact conversation history\n"
             "- `/help` - Show this help\n"
             "- `/model <name>` - Switch Claude model\n"
-            "- `/mode <agent|ask|plan>` - Switch mode\n\n"
+            "- `/mode <agent|ask|plan>` - Switch mode\n"
+            "- `/delegate <role> <task>` - Delegate to specialist (architect/implementer/reviewer/tester)\n"
+            "- `/pipeline <name> <task>` - Run a pipeline (refactor/review)\n"
+            "- `/orchestrate <goal>` - Autonomous orchestration (plan, implement, validate, review)\n\n"
             "**Shortcuts:**\n"
             "- `@` - Mention files to attach as context\n"
             "- Paste images with Ctrl/Cmd+V\n"
@@ -1166,6 +1215,51 @@ void ChatPanel::onSlashCommand(const QString &command, const QString &args)
         m_modeSelector->setMode(args.toLower());
     } else if (command == "/model" && !args.isEmpty()) {
         // Model switching handled by ModelSelector
+    } else if (command == "/delegate") {
+        QStringList parts = args.split(' ', Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            QString role = parts.takeFirst();
+            QString task = parts.join(' ');
+            QString profileId = "specialist-" + role.toLower();
+            QString context = sessionFinalOutput(currentSessionId());
+            delegateToChild(currentSessionId(), task, context, profileId);
+        } else {
+            if (m_tabs.isEmpty()) newChat();
+            auto &tab = currentTab();
+            auto *msg = new ChatMessageWidget(ChatMessageWidget::Assistant,
+                "Usage: `/delegate <role> <task>`\n\n"
+                "Roles: `architect`, `implementer`, `reviewer`, `tester`\n\n"
+                "Example: `/delegate architect Design a REST API for user management`");
+            addMessageToTab(tab, msg);
+        }
+    } else if (command == "/pipeline") {
+        QStringList parts = args.split(' ', Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            QString name = parts.takeFirst();
+            QString task = parts.join(' ');
+            emit pipelineRequested(name, task);
+        } else {
+            if (m_tabs.isEmpty()) newChat();
+            auto &tab = currentTab();
+            auto *msg = new ChatMessageWidget(ChatMessageWidget::Assistant,
+                "Usage: `/pipeline <name> <task>`\n\n"
+                "Built-in pipelines: `refactor`, `review`\n\n"
+                "Example: `/pipeline refactor Refactor the authentication module`");
+            addMessageToTab(tab, msg);
+        }
+    } else if (command == "/orchestrate") {
+        if (!args.trimmed().isEmpty()) {
+            emit orchestrateRequested(args.trimmed(), m_profileSelector->selectedIds());
+        } else {
+            if (m_tabs.isEmpty()) newChat();
+            auto &tab = currentTab();
+            auto *msg = new ChatMessageWidget(ChatMessageWidget::Assistant,
+                "Usage: `/orchestrate <goal>`\n\n"
+                "Starts an autonomous orchestrator that plans, delegates to specialists, "
+                "validates builds, and self-corrects until the goal is achieved.\n\n"
+                "Example: `/orchestrate Build a REST API with authentication and tests`");
+            addMessageToTab(tab, msg);
+        }
     }
 }
 
@@ -1422,6 +1516,14 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
         s.profileIds = it->profileIds;
         s.updatedAt = it->updatedAt;
         s.favorite = it->favorite;
+        // Hierarchy fields
+        if (m_sessionMgr) {
+            auto info = m_sessionMgr->sessionInfo(it->sessionId);
+            s.parentSessionId = info.parentSessionId;
+            s.delegationTask = info.delegationTask;
+            s.pipelineId = info.pipelineId;
+            s.isDelegatedChild = !info.parentSessionId.isEmpty();
+        }
         result.append(s);
         openIds.insert(it->sessionId);
     }
@@ -1452,6 +1554,9 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
             s.updatedAt = session.updatedAt;
             s.turnCount = turnCounts.value(session.sessionId, 0);
             s.favorite = session.favorite;
+            s.parentSessionId = session.parentSessionId;
+            s.delegationTask = session.delegationTask;
+            s.pipelineId = session.pipelineId;
             result.append(s);
         }
     }
@@ -1805,6 +1910,10 @@ void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
 
     if (tab.tabIndex == m_tabWidget->currentIndex())
         refreshInputBarForCurrentTab();
+
+    // Per-session signal for orchestrator/pipeline turn detection
+    if (!processing)
+        emit sessionFinishedProcessing(tab.sessionId);
 
     bool anyProcessing = false;
     for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
@@ -2204,6 +2313,209 @@ static QString formatTokenCount(int tokens)
     if (tokens >= 1000)
         return QString::number(tokens / 1000.0, 'f', 1) + "k";
     return QString::number(tokens);
+}
+
+// ─── Delegation API ──────────────────────────────────────────────────────────
+
+QString ChatPanel::delegateToChild(const QString &parentSessionId,
+                                    const QString &task,
+                                    const QString &context,
+                                    const QString &specialistProfileId,
+                                    const QStringList &extraProfileIds)
+{
+    // Determine mode and profile from specialist
+    QString mode = "agent";
+    QStringList profileIds;
+    if (!specialistProfileId.isEmpty()) {
+        auto prof = ProfileManager::instance().profile(specialistProfileId);
+        if (!prof.id.isEmpty()) {
+            if (!prof.enforcedMode.isEmpty())
+                mode = prof.enforcedMode;
+            profileIds << specialistProfileId;
+        }
+    }
+    // Append user's personality/domain profiles (e.g. vue3-expert, postgres-expert)
+    for (const auto &id : extraProfileIds) {
+        if (!profileIds.contains(id))
+            profileIds << id;
+    }
+
+    // Create child session
+    if (!m_sessionMgr) return {};
+    QString childId = m_sessionMgr->createChildSession(parentSessionId, m_workingDir, mode, task);
+
+    // Build ChatTab
+    ChatTab tab;
+    tab.sessionId = childId;
+    tab.updatedAt = QDateTime::currentSecsSinceEpoch();
+    tab.profileIds = profileIds;
+    tab.container = createChatContent();
+    tab.scrollArea = tab.container->findChild<QScrollArea *>();
+    tab.messagesLayout = tab.scrollArea->widget()->findChild<QVBoxLayout *>("messagesLayout");
+
+    tab.process = new ClaudeProcess(this);
+    tab.process->setWorkingDirectory(m_workingDir);
+    tab.process->setMode(mode);
+
+    auto *scrollContent = tab.scrollArea->widget();
+    auto *indicator = new ThinkingIndicator(scrollContent);
+    tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
+    tab.thinkingIndicator = indicator;
+
+    // Build a descriptive title: "Role: task summary..."
+    QString roleName;
+    if (!specialistProfileId.isEmpty()) {
+        auto prof = ProfileManager::instance().profile(specialistProfileId);
+        if (!prof.id.isEmpty()) roleName = prof.name;
+    }
+    QString shortTask = task.left(20) + (task.length() > 20 ? QStringLiteral("\u2026") : QString());
+    QString shortTitle = roleName.isEmpty() ? shortTask : QStringLiteral("%1: %2").arg(roleName, shortTask);
+    int idx = m_tabWidget->addTab(tab.container, shortTitle);
+    // Persist the title so restoreSession() doesn't derive from "## Context from parent session"
+    if (m_sessionMgr)
+        m_sessionMgr->setSessionTitle(childId, shortTitle);
+    tab.tabIndex = idx;
+    m_tabs[idx] = tab;
+    wireProcessSignals(m_tabs[idx]);
+
+    // Wire completion: when child finishes, extract output and emit.
+    // Use LIVE session IDs (not captured values) because Claude CLI
+    // assigns its own IDs, which updates both child and parent tabs.
+    auto *proc = tab.process;
+    connect(proc, &ClaudeProcess::finished, this,
+            [this, proc](int) {
+        auto *t = tabForProcess(proc);
+        if (!t) return;
+        flushPendingText(*t);
+        saveCurrentTextSegment(*t);
+        QString currentChildId = t->sessionId;
+        // Look up the LIVE parent session ID from SessionManager
+        QString liveParentId;
+        if (m_sessionMgr) {
+            auto info = m_sessionMgr->sessionInfo(currentChildId);
+            liveParentId = info.parentSessionId;
+            m_sessionMgr->setDelegationStatus(currentChildId, SessionInfo::Completed);
+        }
+        QString output = sessionFinalOutput(currentChildId);
+        if (m_sessionMgr)
+            m_sessionMgr->setDelegationResult(currentChildId, output);
+        emit childSessionCompleted(liveParentId, currentChildId, output);
+    });
+
+    // Build and send message
+    QString message = task;
+    if (!context.isEmpty()) {
+        message = QStringLiteral(
+            "## Context from parent session\n%1\n\n## Your Task\n%2")
+            .arg(context, task);
+    }
+
+    // Create user message widget
+    tab.turnId++;
+    tab.updatedAt = QDateTime::currentSecsSinceEpoch();
+    auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, message);
+    userMsg->setTurnId(tab.turnId);
+    userMsg->setTimestamp(QDateTime::currentDateTime());
+    addMessageToTab(m_tabs[idx], userMsg);
+
+    // Save to DB
+    if (m_database) {
+        MessageRecord rec;
+        rec.sessionId = childId;
+        rec.role = "user";
+        rec.content = message;
+        rec.turnId = tab.turnId;
+        rec.timestamp = QDateTime::currentSecsSinceEpoch();
+        m_database->saveMessage(rec);
+    }
+
+    // Configure and send
+    QString systemPrompt = ProfileManager::instance().buildSystemPrompt(m_workingDir, profileIds);
+    m_tabs[idx].process->setSystemPrompt(systemPrompt);
+    m_tabs[idx].process->setProfileIds(profileIds);
+    m_tabs[idx].process->setModel(m_modelSelector->currentModelId());
+
+    m_sessionMgr->setDelegationStatus(childId, SessionInfo::Running);
+    setTabProcessingState(m_tabs[idx], true);
+    m_tabs[idx].process->sendMessage(message);
+
+    emit sessionListChanged();
+    return childId;
+}
+
+void ChatPanel::sendMessageToSession(const QString &sessionId, const QString &text)
+{
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->sessionId != sessionId) continue;
+        auto &tab = it.value();
+
+        tab.turnId++;
+        tab.updatedAt = QDateTime::currentSecsSinceEpoch();
+        emit turnStarted(tab.sessionId, tab.turnId);
+        tab.accumulatedRawContent.clear();
+        tab.hasFirstAssistantMsg = false;
+        tab.currentAssistantMsg = nullptr;
+        tab.currentToolGroup = nullptr;
+
+        auto *userMsg = new ChatMessageWidget(ChatMessageWidget::User, text);
+        userMsg->setTurnId(tab.turnId);
+        userMsg->setTimestamp(QDateTime::currentDateTime());
+        addMessageToTab(tab, userMsg);
+
+        if (m_database) {
+            MessageRecord rec;
+            rec.sessionId = tab.sessionId;
+            rec.role = "user";
+            rec.content = text;
+            rec.turnId = tab.turnId;
+            rec.timestamp = QDateTime::currentSecsSinceEpoch();
+            m_database->saveMessage(rec);
+        }
+
+        // Apply process configuration (mode, model, profiles, system prompt)
+        if (!tab.overrideMode.isEmpty())
+            tab.process->setMode(tab.overrideMode);
+        else
+            tab.process->setMode(m_modeSelector->currentMode());
+        tab.process->setModel(m_modelSelector->currentModelId());
+        if (tab.sessionConfirmed)
+            tab.process->setSessionId(tab.sessionId);
+
+        QString systemPrompt = ProfileManager::instance().buildSystemPrompt(
+            m_workingDir, tab.profileIds);
+        tab.process->setSystemPrompt(systemPrompt);
+        tab.process->setProfileIds(tab.profileIds);
+
+        setTabProcessingState(tab, true);
+        tab.process->sendMessage(text);
+        return;
+    }
+}
+
+void ChatPanel::configureSession(const QString &sessionId,
+                                  const QString &mode,
+                                  const QStringList &profileIds)
+{
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->sessionId != sessionId) continue;
+        it->overrideMode = mode;
+        it->profileIds = profileIds;
+        return;
+    }
+}
+
+QString ChatPanel::sessionFinalOutput(const QString &sessionId) const
+{
+    if (!m_database) return {};
+    auto messages = m_database->loadMessages(sessionId);
+    QString lastAssistantContent;
+    for (const auto &msg : messages) {
+        if (msg.role == "assistant")
+            lastAssistantContent = msg.content;
+    }
+    if (lastAssistantContent.length() > 4000)
+        lastAssistantContent = lastAssistantContent.left(4000) + "\n\n[... truncated ...]";
+    return lastAssistantContent;
 }
 
 void ChatPanel::updateStatsLabel()

@@ -38,6 +38,7 @@ void AgentCard::update(const AgentSummary &summary)
     m_favorite = summary.favorite;
     m_editCount = summary.editCount;
     m_turnCount = summary.turnCount;
+    m_depth = summary.depth;
     m_costUsd = summary.costUsd;
     m_updatedAt = summary.updatedAt;
     m_profileIds = summary.profileIds;
@@ -178,8 +179,17 @@ void AgentCard::paintEvent(QPaintEvent *)
     }
 
     // ─── Expanded mode ───
-    int leftPad = 14;
+    int depthIndent = m_depth * 16;
+    int leftPad = 14 + depthIndent;
     int textRight = width() - 10;
+
+    // Draw connector lines for child agents
+    if (m_depth > 0) {
+        p.setPen(QPen(pal.surface2, 1.0));
+        int lineX = 14 + (m_depth - 1) * 16 + 4;
+        p.drawLine(lineX, 0, lineX, height());
+        p.drawLine(lineX, height() / 2, lineX + 10, height() / 2);
+    }
 
     // Title line
     p.setFont(m_titleFont);
@@ -406,15 +416,59 @@ void AgentFleetPanel::setCollapsed(bool)
     // Agent panel never collapses
 }
 
+QList<AgentSummary> AgentFleetPanel::buildHierarchicalOrder(const QList<AgentSummary> &flat) const
+{
+    QMap<QString, AgentSummary> byId;
+    QMap<QString, QList<QString>> childrenOf;
+    QList<QString> roots;
+
+    for (const auto &a : flat) {
+        byId[a.sessionId] = a;
+        if (a.parentSessionId.isEmpty())
+            roots.append(a.sessionId);
+        else
+            childrenOf[a.parentSessionId].append(a.sessionId);
+    }
+
+    QList<AgentSummary> result;
+    std::function<void(const QString &, int)> visit = [&](const QString &id, int depth) {
+        if (!byId.contains(id)) return;
+        auto s = byId[id];
+        s.depth = depth;
+        s.isDelegatedChild = (depth > 0);
+        result.append(s);
+        auto children = childrenOf.value(id);
+        // Sort children by updatedAt descending
+        std::sort(children.begin(), children.end(), [&byId](const QString &a, const QString &b) {
+            return byId[a].updatedAt > byId[b].updatedAt;
+        });
+        for (const auto &childId : children)
+            visit(childId, depth + 1);
+    };
+
+    for (const auto &rootId : roots)
+        visit(rootId, 0);
+
+    return result;
+}
+
 void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &selectedId)
 {
     m_selectedId = selectedId;
 
-    // Sort by updatedAt descending (most recent first)
+    // Sort by updatedAt descending (most recent first), then apply hierarchy
     auto sorted = agents;
     std::sort(sorted.begin(), sorted.end(), [](const AgentSummary &a, const AgentSummary &b) {
         return a.updatedAt > b.updatedAt;
     });
+
+    // Check if any agents have parent relationships
+    bool hasHierarchy = false;
+    for (const auto &a : sorted) {
+        if (!a.parentSessionId.isEmpty()) { hasHierarchy = true; break; }
+    }
+    if (hasHierarchy)
+        sorted = buildHierarchicalOrder(sorted);
 
     // Check if structure changed (adds/removes) vs. data-only update
     QSet<QString> incomingIds;

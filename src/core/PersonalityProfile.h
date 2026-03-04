@@ -13,6 +13,10 @@ struct PersonalityProfile {
     QString promptText;
     QColor  color;
     bool    builtIn = false;
+
+    // Specialist role fields
+    QString enforcedMode;          // "agent", "ask", "plan", or "" (user's choice)
+    bool    isSpecialistRole = false;
 };
 
 struct WorkspaceSpec {

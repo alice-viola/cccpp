@@ -23,6 +23,13 @@ struct AgentSummary {
     double costUsd = 0.0;
     qint64 updatedAt = 0;
     QStringList profileIds;
+
+    // Hierarchy
+    QString parentSessionId;
+    int depth = 0;
+    bool isDelegatedChild = false;
+    QString delegationTask;
+    QString pipelineId;
 };
 
 class AgentCard : public QWidget {
@@ -71,6 +78,7 @@ private:
     bool m_hovered = false;
     int m_editCount = 0;
     int m_turnCount = 0;
+    int m_depth = 0;
     double m_costUsd = 0.0;
     qint64 m_updatedAt = 0;
     QStringList m_profileIds;
@@ -128,4 +136,6 @@ private:
     QList<QWidget *> m_dividers;
     QString m_selectedId;
     bool m_collapsed = false;
+
+    QList<AgentSummary> buildHierarchicalOrder(const QList<AgentSummary> &flat) const;
 };

@@ -81,14 +81,24 @@ void Database::createTables()
 
     // Migrations — add columns introduced after initial schema
     q.exec("ALTER TABLE sessions ADD COLUMN favorite INTEGER DEFAULT 0");
+
+    // Delegation hierarchy columns
+    q.exec("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT DEFAULT ''");
+    q.exec("ALTER TABLE sessions ADD COLUMN pipeline_id TEXT DEFAULT ''");
+    q.exec("ALTER TABLE sessions ADD COLUMN pipeline_node_id TEXT DEFAULT ''");
+    q.exec("ALTER TABLE sessions ADD COLUMN delegation_task TEXT DEFAULT ''");
+    q.exec("ALTER TABLE sessions ADD COLUMN delegation_status INTEGER DEFAULT 0");
+    q.exec("ALTER TABLE sessions ADD COLUMN delegation_result TEXT DEFAULT ''");
 }
 
 void Database::saveSession(const SessionInfo &info)
 {
     QSqlQuery q(m_db);
     q.prepare(
-        "INSERT OR REPLACE INTO sessions (session_id, title, workspace, mode, created_at, updated_at, favorite) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)");
+        "INSERT OR REPLACE INTO sessions "
+        "(session_id, title, workspace, mode, created_at, updated_at, favorite, "
+        " parent_session_id, pipeline_id, pipeline_node_id, delegation_task, delegation_status, delegation_result) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     q.addBindValue(info.sessionId);
     q.addBindValue(info.title);
     q.addBindValue(info.workspace);
@@ -96,6 +106,12 @@ void Database::saveSession(const SessionInfo &info)
     q.addBindValue(info.createdAt);
     q.addBindValue(info.updatedAt);
     q.addBindValue(info.favorite ? 1 : 0);
+    q.addBindValue(info.parentSessionId);
+    q.addBindValue(info.pipelineId);
+    q.addBindValue(info.pipelineNodeId);
+    q.addBindValue(info.delegationTask);
+    q.addBindValue(static_cast<int>(info.delegationStatus));
+    q.addBindValue(info.delegationResult);
     q.exec();
 }
 
@@ -103,7 +119,8 @@ QList<SessionInfo> Database::loadSessions()
 {
     QList<SessionInfo> list;
     QSqlQuery q(m_db);
-    q.exec("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite "
+    q.exec("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite, "
+           "parent_session_id, pipeline_id, pipeline_node_id, delegation_task, delegation_status, delegation_result "
            "FROM sessions ORDER BY updated_at DESC");
     while (q.next()) {
         SessionInfo info;
@@ -114,6 +131,12 @@ QList<SessionInfo> Database::loadSessions()
         info.createdAt = q.value(4).toLongLong();
         info.updatedAt = q.value(5).toLongLong();
         info.favorite = q.value(6).toInt() != 0;
+        info.parentSessionId = q.value(7).toString();
+        info.pipelineId = q.value(8).toString();
+        info.pipelineNodeId = q.value(9).toString();
+        info.delegationTask = q.value(10).toString();
+        info.delegationStatus = static_cast<SessionInfo::DelegationStatus>(q.value(11).toInt());
+        info.delegationResult = q.value(12).toString();
         list.append(info);
     }
     return list;
@@ -123,7 +146,8 @@ SessionInfo Database::loadSession(const QString &sessionId)
 {
     SessionInfo info;
     QSqlQuery q(m_db);
-    q.prepare("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite "
+    q.prepare("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite, "
+              "parent_session_id, pipeline_id, pipeline_node_id, delegation_task, delegation_status, delegation_result "
               "FROM sessions WHERE session_id = ? LIMIT 1");
     q.addBindValue(sessionId);
     q.exec();
@@ -135,6 +159,12 @@ SessionInfo Database::loadSession(const QString &sessionId)
         info.createdAt = q.value(4).toLongLong();
         info.updatedAt = q.value(5).toLongLong();
         info.favorite = q.value(6).toInt() != 0;
+        info.parentSessionId = q.value(7).toString();
+        info.pipelineId = q.value(8).toString();
+        info.pipelineNodeId = q.value(9).toString();
+        info.delegationTask = q.value(10).toString();
+        info.delegationStatus = static_cast<SessionInfo::DelegationStatus>(q.value(11).toInt());
+        info.delegationResult = q.value(12).toString();
     }
     return info;
 }

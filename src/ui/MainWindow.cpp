@@ -22,6 +22,8 @@
 #include "core/DaemonClient.h"
 #include "core/ClaudeProcess.h"
 #include "core/StreamParser.h"
+#include "core/PipelineEngine.h"
+#include "core/Orchestrator.h"
 #include "util/Config.h"
 #include "util/MacUtils.h"
 #include "util/JsonUtils.h"
@@ -81,6 +83,15 @@ MainWindow::MainWindow(QWidget *parent)
         updateToggleButtons();
     });
 
+    // Pipeline Engine + Orchestrator (must be created before openWorkspace)
+    m_pipelineEngine = new PipelineEngine(this);
+    m_pipelineEngine->setChatPanel(m_chatPanel);
+    m_pipelineEngine->setSessionManager(m_sessionMgr);
+    m_pipelineEngine->setDatabase(m_database);
+
+    m_orchestrator = new Orchestrator(this);
+    m_orchestrator->setChatPanel(m_chatPanel);
+
     QString lastWorkspace = Config::instance().lastWorkspace();
     if (!lastWorkspace.isEmpty())
         openWorkspace(lastWorkspace);
@@ -90,6 +101,63 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_sessionMgr, &SessionManager::sessionUpdated, this, [this](const QString &id) {
         m_database->saveSession(m_sessionMgr->sessionInfo(id));
+    });
+
+    // Track session ID changes (Claude CLI assigns its own IDs)
+    connect(m_chatPanel, &ChatPanel::sessionIdChanged,
+            m_pipelineEngine, &PipelineEngine::onSessionIdChanged);
+
+    // Route child completions to pipeline engine and orchestrator
+    connect(m_chatPanel, &ChatPanel::childSessionCompleted, this,
+            [this](const QString &parentId, const QString &childId, const QString &output) {
+        if (m_orchestrator->isRunning() && parentId == m_orchestrator->sessionId())
+            m_orchestrator->onDelegateFinished(childId, output);
+        else
+            m_pipelineEngine->onChildSessionFinished(childId);
+    });
+
+    // Pipeline slash command
+    connect(m_chatPanel, &ChatPanel::pipelineRequested, this,
+            [this](const QString &name, const QString &task) {
+        QString parentSession = m_chatPanel->currentSessionId();
+        m_pipelineEngine->startPipeline(name, parentSession, task);
+    });
+
+    // Orchestrate — from toggle button or /orchestrate command
+    connect(m_chatPanel, &ChatPanel::orchestrateRequested, this,
+            [this](const QString &task, const QStringList &profileIds) {
+        m_orchestrator->start(task, profileIds);
+    });
+
+    // Pipeline/orchestrator events → rebuild fleet + toast
+    connect(m_pipelineEngine, &PipelineEngine::nodeStarted, this, [this]() {
+        rebuildFleetPanel();
+    });
+    connect(m_pipelineEngine, &PipelineEngine::nodeCompleted, this, [this]() {
+        rebuildFleetPanel();
+    });
+    connect(m_pipelineEngine, &PipelineEngine::pipelineCompleted, this,
+            [this](const QString &) {
+        rebuildFleetPanel();
+        ToastManager::instance().show("Pipeline completed successfully");
+    });
+    connect(m_pipelineEngine, &PipelineEngine::pipelineFailed, this,
+            [this](const QString &, const QString &error) {
+        rebuildFleetPanel();
+        ToastManager::instance().show("Pipeline failed: " + error.left(80), ToastType::Error);
+    });
+    connect(m_orchestrator, &Orchestrator::delegationStarted, this, [this]() {
+        rebuildFleetPanel();
+    });
+    connect(m_orchestrator, &Orchestrator::completed, this,
+            [this](const QString &summary) {
+        rebuildFleetPanel();
+        ToastManager::instance().show("Orchestration complete: " + summary.left(80));
+    });
+    connect(m_orchestrator, &Orchestrator::failed, this,
+            [this](const QString &reason) {
+        rebuildFleetPanel();
+        ToastManager::instance().show("Orchestration failed: " + reason.left(80), ToastType::Error);
     });
 
     setupTelegram();
@@ -1345,6 +1413,8 @@ void MainWindow::openWorkspace(const QString &path)
 
     // Update Mission Control panels
     m_effectsPanel->setRootPath(path);
+    m_pipelineEngine->setWorkspace(path);
+    m_orchestrator->setWorkspace(path);
 
     syncEditorContextToChat();
 

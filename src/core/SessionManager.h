@@ -12,6 +12,15 @@ struct SessionInfo {
     qint64 createdAt = 0;
     qint64 updatedAt = 0;
     bool favorite = false;
+
+    // Delegation hierarchy
+    QString parentSessionId;
+    QString pipelineId;
+    QString pipelineNodeId;
+    QString delegationTask;
+    enum DelegationStatus { None, Pending, Running, Completed, Failed };
+    DelegationStatus delegationStatus = None;
+    QString delegationResult;
 };
 
 class SessionManager : public QObject {
@@ -29,6 +38,13 @@ public:
     SessionInfo sessionInfo(const QString &sessionId) const;
     QList<SessionInfo> allSessions() const;
     bool hasSession(const QString &sessionId) const;
+
+    // Delegation hierarchy
+    QString createChildSession(const QString &parentId, const QString &workspace,
+                               const QString &mode, const QString &task);
+    QList<SessionInfo> childSessions(const QString &parentId) const;
+    void setDelegationStatus(const QString &sessionId, SessionInfo::DelegationStatus status);
+    void setDelegationResult(const QString &sessionId, const QString &result);
 
 signals:
     void sessionCreated(const QString &sessionId);

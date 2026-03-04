@@ -26,6 +26,8 @@ class GitManager;
 class TelegramApi;
 class TelegramBridge;
 class DaemonClient;
+class PipelineEngine;
+class Orchestrator;
 
 enum class ViewMode { Manager, Editor };
 
@@ -111,6 +113,8 @@ private:
     TelegramApi *m_telegramApi = nullptr;
     TelegramBridge *m_telegramBridge = nullptr;
     DaemonClient *m_daemonClient = nullptr;
+    PipelineEngine *m_pipelineEngine = nullptr;
+    Orchestrator *m_orchestrator = nullptr;
 
     QString m_workspacePath;
 

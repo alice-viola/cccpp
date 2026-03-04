@@ -49,6 +49,8 @@ set(CORE_SOURCES
     src/core/TelegramDaemon.cpp
     src/core/DaemonClient.cpp
     src/core/PersonalityProfile.cpp
+    src/core/PipelineEngine.cpp
+    src/core/Orchestrator.cpp
 )
 
 set(UI_SOURCES
@@ -136,3 +138,18 @@ if(QSCINTILLA_FOUND)
     target_include_directories(c3p2 PRIVATE ${QSCINTILLA_INCLUDE_DIRS})
     target_link_libraries(c3p2 PRIVATE ${QSCINTILLA_LIBRARIES})
 endif()
+
+# Test executable for pipeline/orchestrator (data layer only)
+add_executable(test_pipeline
+    src/test_main.cpp
+    src/core/PersonalityProfile.cpp
+    src/core/SessionManager.cpp
+    src/core/PipelineEngine.cpp
+    src/test_stubs.cpp
+    src/util/Config.cpp
+)
+target_include_directories(test_pipeline PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party
+)
+target_link_libraries(test_pipeline PRIVATE Qt6::Core Qt6::Widgets Qt6::Sql Qt6::Network)
