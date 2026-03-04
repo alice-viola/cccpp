@@ -247,6 +247,9 @@ void MainWindow::setupUI()
             int effectsW = 300;
             int centerW = total - fleetW - effectsW;
             m_splitter->setSizes({fleetW, 0, centerW, 0, effectsW});
+
+            // Show breadcrumb for plan file
+            showFileBar(QFileInfo(filePath).fileName());
         }
     });
     connect(m_chatPanel, &ChatPanel::aboutToSendMessage,
@@ -477,7 +480,7 @@ void MainWindow::setupUI()
             m_codeViewer->hide();
             m_centerSplitter->hide();
             m_chatPanel->show();
-            if (m_backBtn) m_backBtn->hide();
+            if (m_fileBar) m_fileBar->hide();
             int total = m_splitter->width();
             int fleetW = 300;
             int effectsW = 300;
@@ -640,7 +643,7 @@ void MainWindow::setupStatusBar()
         return btn;
     };
 
-    m_toggleMode = makeToggle("Editor", "Toggle Manager/Editor View (Ctrl+E)");
+    m_toggleMode = makeToggle("\u2318 Editor", "Toggle Manager/Editor View (Ctrl+E)");
     m_toggleMode->setChecked(false);
     m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
     m_toggleTree->setChecked(false);
@@ -922,7 +925,7 @@ void MainWindow::setupMenuBar()
 void MainWindow::updateToggleButtons()
 {
     m_toggleMode->setChecked(m_viewMode == ViewMode::Editor);
-    m_toggleMode->setText(m_viewMode == ViewMode::Editor ? "Manager" : "Editor");
+    m_toggleMode->setText(m_viewMode == ViewMode::Editor ? "\u2318 Manager" : "\u2318 Editor");
     m_toggleTree->setChecked(m_leftTabs->isVisible() && m_leftTabs->width() > 10);
     m_toggleEditor->setChecked(m_codeViewer->isVisible() && m_centerSplitter->width() > 10);
     m_toggleChat->setChecked(m_chatPanel->isVisible() && m_chatPanel->width() > 10);
@@ -1071,37 +1074,48 @@ void MainWindow::wireEffectsPanel()
             int centerW = total - fleetW - effectsW;
             m_splitter->setSizes({fleetW, 0, centerW, 0, effectsW});
 
-            // Show floating back button
-            if (!m_backBtn) {
-                m_backBtn = new QPushButton(m_codeViewer);
-                m_backBtn->setFixedSize(70, 28);
-                m_backBtn->setCursor(Qt::PointingHandCursor);
-                auto &thm = ThemeManager::instance();
-                m_backBtn->setStyleSheet(QStringLiteral(
-                    "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-                    "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 0 8px; }"
-                    "QPushButton:hover { background: %4; color: %5; border-color: %5; }")
-                    .arg(thm.hex("bg_surface"), thm.hex("text_secondary"), thm.hex("border_subtle"),
-                         thm.hex("bg_raised"), thm.hex("text_primary")));
-                m_backBtn->setText("\xe2\x86\x90 Back");
-                connect(m_backBtn, &QPushButton::clicked, this, [this] {
-                    m_codeViewer->hide();
-                    m_centerSplitter->hide();
-                    m_chatPanel->show();
-                    m_backBtn->hide();
-                    int total = m_splitter->width();
-                    int fleetW = 300;
-                    int effectsW = 300;
-                    int chatW = total - fleetW - effectsW;
-                    m_splitter->setSizes({fleetW, 0, 0, chatW, effectsW});
-                });
-            }
-            m_backBtn->move(8, 8);
-            m_backBtn->raise();
-            m_backBtn->show();
+            showFileBar(QFileInfo(filePath).fileName());
         }
 
         syncEditorContextToChat();
+    });
+}
+
+void MainWindow::showFileBar(const QString &fileName)
+{
+    if (!m_fileBar) {
+        m_fileBar = new QWidget(m_codeViewer);
+        m_fileBar->setFixedHeight(32);
+        m_fileBar->setCursor(Qt::PointingHandCursor);
+        auto *barLayout = new QHBoxLayout(m_fileBar);
+        barLayout->setContentsMargins(12, 0, 12, 0);
+        barLayout->setSpacing(0);
+        m_fileBarLabel = new QLabel(m_fileBar);
+        m_fileBarLabel->setTextFormat(Qt::RichText);
+        barLayout->addWidget(m_fileBarLabel);
+        barLayout->addStretch();
+        auto &thm = ThemeManager::instance();
+        m_fileBar->setStyleSheet(QStringLiteral(
+            "QWidget { background: %1; border-bottom: 1px solid %2; }")
+            .arg(thm.hex("bg_surface"), thm.hex("border_subtle")));
+        m_fileBar->installEventFilter(this);
+        m_codeViewer->installEventFilter(this);
+    }
+    auto &thm = ThemeManager::instance();
+    m_fileBarLabel->setText(QStringLiteral(
+        "<span style='color:%1;font-size:11px;'>\xe2\x86\x90 Back to Chat</span>"
+        "<span style='color:%2;font-size:11px;'>  \xc2\xb7  </span>"
+        "<span style='color:%3;font-size:11px;font-weight:500;'>%4</span>")
+        .arg(thm.hex("mauve"), thm.hex("text_faint"),
+             thm.hex("text_primary"), fileName));
+    m_fileBar->show();
+    // Defer positioning until after layout has been computed
+    QTimer::singleShot(0, this, [this]() {
+        if (m_fileBar && m_fileBar->isVisible()) {
+            m_fileBar->move(0, 0);
+            m_fileBar->resize(m_codeViewer->width(), 32);
+            m_fileBar->raise();
+        }
     });
 }
 
@@ -1117,11 +1131,36 @@ void MainWindow::loadStylesheet()
 
 }
 
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_fileBar && event->type() == QEvent::MouseButtonPress) {
+        // Dismiss file bar and restore chat
+        m_codeViewer->hide();
+        m_centerSplitter->hide();
+        m_chatPanel->show();
+        m_fileBar->hide();
+        int total = m_splitter->width();
+        int fleetW = 300;
+        int effectsW = 300;
+        int chatW = total - fleetW - effectsW;
+        m_splitter->setSizes({fleetW, 0, 0, chatW, effectsW});
+        return true;
+    }
+    if (obj == m_codeViewer && event->type() == QEvent::Resize) {
+        if (m_fileBar && m_fileBar->isVisible()) {
+            m_fileBar->move(0, 0);
+            m_fileBar->resize(m_codeViewer->width(), 32);
+            m_fileBar->raise();
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
     const auto &pal = ThemeManager::instance().palette();
-    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
+    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_surface);
 }
 
 void MainWindow::changeEvent(QEvent *event)
@@ -1129,7 +1168,7 @@ void MainWindow::changeEvent(QEvent *event)
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange) {
         const auto &pal = ThemeManager::instance().palette();
-        MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
+        MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_surface);
     }
 }
 
@@ -1160,6 +1199,13 @@ void MainWindow::applyThemeColors()
     m_toggleChat->setStyleSheet(toggleStyle);
     m_toggleTerminal->setStyleSheet(toggleStyle);
 
+    statusBar()->setStyleSheet(QStringLiteral(
+        "QStatusBar { background: %1; border-top: 1px solid %2; }"
+        "QStatusBar::item { border: none; }"
+        "QStatusBar QLabel { color: %3; font-size: 11px; padding: 0 10px; "
+        "border-right: 1px solid %2; background: transparent; min-height: 24px; }")
+        .arg(p.bg_surface.name(), p.border_subtle.name(), p.text_muted.name()));
+
     if (m_statusProcessing->text().contains("Processing"))
         m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.mauve.name()));
     else
@@ -1172,7 +1218,7 @@ void MainWindow::onThemeChanged(const QString &name)
     Config::instance().setTheme(name);
 
     const auto &pal = ThemeManager::instance().palette();
-    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_window);
+    MacUtils::applyTitleBarStyle(this, !pal.isLight, pal.bg_surface);
 
     if (m_themeGroup) {
         for (auto *action : m_themeGroup->actions()) {

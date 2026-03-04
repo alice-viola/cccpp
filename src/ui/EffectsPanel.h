@@ -60,6 +60,7 @@ public:
     void clear();
 
 protected:
+    void paintEvent(QPaintEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 signals:

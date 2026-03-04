@@ -29,7 +29,7 @@ FileChangeItem::FileChangeItem(const FileChange &change, const QString &rootPath
 
     setCursor(Qt::PointingHandCursor);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setFixedHeight(32);
+    setFixedHeight(36);
     setMouseTracking(true);
 }
 
@@ -43,7 +43,7 @@ void FileChangeItem::update(const FileChange &change)
 
 QSize FileChangeItem::sizeHint() const
 {
-    return {200, 32};
+    return {200, 36};
 }
 
 void FileChangeItem::paintEvent(QPaintEvent *)
@@ -63,10 +63,12 @@ void FileChangeItem::paintEvent(QPaintEvent *)
 
     int x = 10;
 
+    int midY = height() / 2;
+
     // File icon
     QIcon icon = FileIconProvider::iconForFile(m_filePath);
     if (!icon.isNull()) {
-        icon.paint(&p, x, 6, 18, 18);
+        icon.paint(&p, x, midY - 9, 18, 18);
         x += 24;
     }
 
@@ -82,22 +84,23 @@ void FileChangeItem::paintEvent(QPaintEvent *)
     p.setFont(nameFont);
     p.setPen(pal.text_primary);
 
+    int textBaseY = midY + p.fontMetrics().ascent() / 2;
     int nameW = p.fontMetrics().horizontalAdvance(fileName);
-    p.drawText(x, 20, fileName);
+    p.drawText(x, textBaseY, fileName);
     x += nameW;
 
     if (!dirPath.isEmpty()) {
         QFont dirFont = font();
         dirFont.setPixelSize(10);
         p.setFont(dirFont);
-        p.setPen(pal.text_faint);
+        p.setPen(pal.text_muted);
         int availW = width() - x - 80;
         QString elidedDir = p.fontMetrics().elidedText(" " + dirPath, Qt::ElideMiddle, availW);
-        p.drawText(x, 20, elidedDir);
+        p.drawText(x, textBaseY, elidedDir);
     }
 
     // Badge (M/A/D)
-    int badgeX = width() - 70;
+    int badgeX = width() - 72;
     QFont badgeFont = font();
     badgeFont.setPixelSize(9);
     badgeFont.setWeight(QFont::Bold);
@@ -120,30 +123,32 @@ void FileChangeItem::paintEvent(QPaintEvent *)
         break;
     }
 
-    // Badge background
-    QRect badgeRect(badgeX, 8, 16, 16);
+    // Badge background — centered vertically
+    QRect badgeRect(badgeX, midY - 9, 18, 18);
     QPainterPath badgePath;
-    badgePath.addRoundedRect(badgeRect, 3, 3);
+    badgePath.addRoundedRect(badgeRect, 4, 4);
     QColor badgeBg = badgeColor;
     badgeBg.setAlphaF(0.15);
     p.fillPath(badgePath, badgeBg);
     p.setPen(badgeColor);
     p.drawText(badgeRect, Qt::AlignCenter, badge);
 
-    // Line delta
-    int deltaX = badgeX + 22;
+    // Line delta — centered vertically
+    int deltaX = badgeX + 24;
     QFont deltaFont = font();
-    deltaFont.setPixelSize(9);
+    deltaFont.setPixelSize(10);
     p.setFont(deltaFont);
+    int deltaBaseY = midY + p.fontMetrics().ascent() / 2;
 
     if (m_linesAdded > 0) {
         p.setPen(pal.green);
-        p.drawText(deltaX, 14, QStringLiteral("+%1").arg(m_linesAdded));
-        deltaX += p.fontMetrics().horizontalAdvance(QStringLiteral("+%1").arg(m_linesAdded)) + 3;
+        QString addStr = QStringLiteral("+%1").arg(m_linesAdded);
+        p.drawText(deltaX, deltaBaseY, addStr);
+        deltaX += p.fontMetrics().horizontalAdvance(addStr) + 3;
     }
     if (m_linesRemoved > 0) {
         p.setPen(pal.red);
-        p.drawText(deltaX, 14, QStringLiteral("-%1").arg(m_linesRemoved));
+        p.drawText(deltaX, deltaBaseY, QStringLiteral("-%1").arg(m_linesRemoved));
     }
 }
 
@@ -177,9 +182,9 @@ EffectsPanel::EffectsPanel(QWidget *parent)
 
     // Header
     m_header = new QWidget(this);
-    m_header->setFixedHeight(38);
+    m_header->setFixedHeight(44);
     auto *headerLayout = new QHBoxLayout(m_header);
-    headerLayout->setContentsMargins(12, 0, 8, 0);
+    headerLayout->setContentsMargins(12, 8, 8, 0);
 
     m_headerLabel = new QLabel("EFFECTS", m_header);
     QFont hf = m_headerLabel->font();
@@ -204,8 +209,8 @@ EffectsPanel::EffectsPanel(QWidget *parent)
 
     // Stats bar
     m_statsLabel = new QLabel(this);
-    m_statsLabel->setFixedHeight(22);
-    m_statsLabel->setContentsMargins(12, 0, 12, 0);
+    m_statsLabel->setFixedHeight(26);
+    m_statsLabel->setContentsMargins(12, 2, 12, 2);
     m_mainLayout->addWidget(m_statsLabel);
 
     // File list scroll area
@@ -377,13 +382,13 @@ void EffectsPanel::rebuildList()
     for (const auto &entry : entries) {
         if (entry.turnId != lastTurnId && entry.turnId > 0) {
             auto *divider = new QLabel(m_scrollContent);
-            divider->setFixedHeight(26);
-            divider->setContentsMargins(10, 8, 8, 2);
+            divider->setFixedHeight(30);
+            divider->setContentsMargins(10, 10, 8, 4);
             divider->setCursor(Qt::PointingHandCursor);
             QFont df = divider->font();
-            df.setPixelSize(9);
+            df.setPixelSize(10);
             df.setWeight(QFont::DemiBold);
-            df.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
+            df.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
             divider->setFont(df);
             divider->setTextFormat(Qt::RichText);
             m_fileLayout->insertWidget(m_fileLayout->count() - 1, divider);
@@ -439,19 +444,19 @@ void EffectsPanel::updateStats()
     auto &pal = ThemeManager::instance().palette();
     if (totalFiles == 0) {
         m_statsLabel->setText(QStringLiteral(
-            "<span style='color:%1;font-size:10px;'>No changes yet</span>")
+            "<span style='color:%1;font-size:11px;'>No changes yet</span>")
             .arg(pal.text_faint.name()));
     } else {
         m_statsLabel->setText(QStringLiteral(
-            "<span style='color:%1;font-size:10px;'>%2 file%3</span>"
-            "<span style='color:%4;font-size:10px;'> \u00b7 </span>"
-            "<span style='color:%5;font-size:10px;'>+%6</span>"
-            "<span style='color:%4;font-size:10px;'> </span>"
-            "<span style='color:%7;font-size:10px;'>-%8</span>")
+            "<span style='color:%1;font-size:11px;font-weight:500;'>%2 file%3</span>"
+            "<span style='color:%4;font-size:11px;'> \u00b7 </span>"
+            "<span style='color:%5;font-size:11px;font-weight:600;'>+%6</span>"
+            "<span style='color:%4;font-size:11px;'> </span>"
+            "<span style='color:%7;font-size:11px;font-weight:600;'>-%8</span>")
             .arg(pal.text_secondary.name())
             .arg(totalFiles)
             .arg(totalFiles > 1 ? "s" : "")
-            .arg(pal.text_faint.name())
+            .arg(pal.text_muted.name())
             .arg(pal.green.name())
             .arg(totalAdded)
             .arg(pal.red.name())
@@ -482,16 +487,16 @@ void EffectsPanel::updateTurnDividerLabels()
         }
 
         // Build rich text
-        QColor labelColor = highlighted ? pal.mauve : pal.text_faint;
-        QColor timeColor = highlighted ? pal.mauve : pal.text_faint;
-        timeColor.setAlphaF(highlighted ? 0.7f : 0.6f);
+        QColor labelColor = highlighted ? pal.mauve : pal.text_muted;
+        QColor timeColor = highlighted ? pal.mauve : pal.text_muted;
+        timeColor.setAlphaF(highlighted ? 0.7f : 0.5f);
 
         QString html = QStringLiteral(
-            "<span style='color:%1;font-size:9px;'>%2</span>")
+            "<span style='color:%1;font-size:10px;'>%2</span>")
             .arg(labelColor.name(), text);
         if (!timeStr.isEmpty()) {
             html += QStringLiteral(
-                "<span style='color:%1;font-size:9px;'> \u00b7 %2</span>")
+                "<span style='color:%1;font-size:10px;'> \u00b7 %2</span>")
                 .arg(timeColor.name(), timeStr);
         }
         div->setText(html);
@@ -527,13 +532,17 @@ QString EffectsPanel::formatRelativeTime(qint64 refTimestamp, qint64 turnTimesta
     return (diff >= 0 ? "+" : "\u2212") + timeStr;
 }
 
+void EffectsPanel::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.fillRect(rect(), ThemeManager::instance().palette().surface0);
+}
+
 void EffectsPanel::applyThemeColors()
 {
     auto &thm = ThemeManager::instance();
 
-    setStyleSheet(QStringLiteral(
-        "EffectsPanel { background: %1; }")
-        .arg(thm.hex("bg_window")));
+    m_header->setStyleSheet(QStringLiteral("background: %1;").arg(thm.hex("bg_raised")));
 
     m_headerLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; background: transparent; }").arg(thm.hex("text_muted")));
@@ -542,12 +551,13 @@ void EffectsPanel::applyThemeColors()
         "QPushButton { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 4px; font-size: 10px; padding: 2px 8px; }"
         "QPushButton:hover { background: %4; color: %5; }")
-        .arg(thm.hex("bg_surface"), thm.hex("text_muted"), thm.hex("border_subtle"),
+        .arg(thm.hex("bg_raised"), thm.hex("text_muted"), thm.hex("border_subtle"),
              thm.hex("bg_raised"), thm.hex("text_primary")));
 
     m_scrollArea->setStyleSheet(QStringLiteral(
         "QScrollArea { background: transparent; border: none; }"
         "QWidget#effectsScrollContent { background: transparent; }"));
+    m_scrollArea->viewport()->setAutoFillBackground(false);
 
     updateStats();
 }

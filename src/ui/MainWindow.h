@@ -40,6 +40,7 @@ public:
 protected:
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
     void onFileSelected(const QString &filePath);
@@ -77,6 +78,7 @@ private:
     void switchToMode(ViewMode mode);
     void rebuildFleetPanel();
     void wireEffectsPanel();
+    void showFileBar(const QString &fileName);
 
     ViewMode m_viewMode = ViewMode::Manager;
 
@@ -86,7 +88,8 @@ private:
     QPushButton *m_toggleTerminal = nullptr;
     QPushButton *m_toggleMode = nullptr;
     QPushButton *m_toggleEffects = nullptr;
-    QPushButton *m_backBtn = nullptr;
+    QWidget *m_fileBar = nullptr;
+    QLabel *m_fileBarLabel = nullptr;
     QSplitter *m_splitter;
     QSplitter *m_centerSplitter;
     QTabWidget *m_leftTabs;

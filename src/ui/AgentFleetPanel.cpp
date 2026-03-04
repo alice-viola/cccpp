@@ -77,12 +77,12 @@ void AgentCard::updatePulseAnimation()
 QSize AgentCard::sizeHint() const
 {
     if (m_collapsed) return {36, 36};
-    return {200, 48};
+    return {200, 56};
 }
 
 QSize AgentCard::minimumSizeHint() const
 {
-    return m_collapsed ? QSize(36, 36) : QSize(100, 44);
+    return m_collapsed ? QSize(36, 36) : QSize(100, 52);
 }
 
 void AgentCard::paintEvent(QPaintEvent *)
@@ -118,7 +118,7 @@ void AgentCard::paintEvent(QPaintEvent *)
     // Selection/hover background on top
     QColor bg = Qt::transparent;
     if (m_selected)
-        bg = pal.bg_raised;
+        bg = pal.surface1;
     else if (m_hovered)
         bg = QColor(pal.text_primary.red(), pal.text_primary.green(),
                      pal.text_primary.blue(), 8);
@@ -177,8 +177,8 @@ void AgentCard::paintEvent(QPaintEvent *)
 
     // Status dot before title
     int dotX = leftPad;
-    int titleY = 18;
-    float dotR = 3.5f;
+    int titleY = 22;
+    float dotR = 4.0f;
     p.setPen(Qt::NoPen);
     p.setBrush(dotColor);
     p.drawEllipse(QPointF(dotX, titleY - 1), dotR, dotR);
@@ -230,7 +230,7 @@ void AgentCard::paintEvent(QPaintEvent *)
         else
             dateStr = dt.toString("MMM d");
 
-        p.drawText(textX, 36, dateStr);
+        p.drawText(textX, 42, dateStr);
     }
 
     // Processing activity indicator
@@ -241,7 +241,7 @@ void AgentCard::paintEvent(QPaintEvent *)
         p.setPen(pal.green);
         int actW = width() - textX - 10;
         QString elidedAct = p.fontMetrics().elidedText(m_activity, Qt::ElideRight, actW);
-        p.drawText(textX, 36, elidedAct);
+        p.drawText(textX, 42, elidedAct);
     }
 
     // Unread dot
@@ -293,9 +293,9 @@ AgentFleetPanel::AgentFleetPanel(QWidget *parent)
 
     // Header
     m_header = new QWidget(this);
-    m_header->setFixedHeight(38);
+    m_header->setFixedHeight(44);
     auto *headerLayout = new QHBoxLayout(m_header);
-    headerLayout->setContentsMargins(12, 0, 4, 0);
+    headerLayout->setContentsMargins(12, 8, 4, 0);
 
     m_headerLabel = new QLabel("AGENTS", m_header);
     QFont hf = m_headerLabel->font();
@@ -323,8 +323,8 @@ AgentFleetPanel::AgentFleetPanel(QWidget *parent)
 
     m_scrollContent = new QWidget(m_scrollArea);
     m_agentLayout = new QVBoxLayout(m_scrollContent);
-    m_agentLayout->setContentsMargins(4, 4, 4, 4);
-    m_agentLayout->setSpacing(2);
+    m_agentLayout->setContentsMargins(4, 2, 4, 4);
+    m_agentLayout->setSpacing(1);
     m_agentLayout->addStretch();
 
     m_scrollArea->setWidget(m_scrollContent);
@@ -369,16 +369,17 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
 
             if (dateGroup != lastDateGroup) {
                 auto *divider = new QLabel(dateGroup, m_scrollContent);
-                divider->setFixedHeight(24);
-                divider->setContentsMargins(14, 8, 0, 2);
+                divider->setFixedHeight(30);
+                divider->setContentsMargins(14, 12, 0, 4);
                 QFont df = divider->font();
                 df.setPixelSize(10);
                 df.setWeight(QFont::DemiBold);
-                df.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+                df.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
                 divider->setFont(df);
                 divider->setStyleSheet(QStringLiteral(
-                    "QLabel { color: %1; background: transparent; }")
-                    .arg(thm.hex("text_faint")));
+                    "QLabel { color: %1; background: transparent; "
+                    "border-top: 1px solid %2; }")
+                    .arg(thm.hex("text_muted"), thm.hex("border_subtle")));
                 m_agentLayout->insertWidget(m_agentLayout->count() - 1, divider);
                 m_dividers.append(divider);
                 lastDateGroup = dateGroup;
@@ -428,13 +429,17 @@ void AgentFleetPanel::clearCards()
     m_dividers.clear();
 }
 
+void AgentFleetPanel::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.fillRect(rect(), ThemeManager::instance().palette().surface0);
+}
+
 void AgentFleetPanel::applyThemeColors()
 {
     auto &thm = ThemeManager::instance();
 
-    setStyleSheet(QStringLiteral(
-        "AgentFleetPanel { background: %1; }")
-        .arg(thm.hex("bg_window")));
+    m_header->setStyleSheet(QStringLiteral("background: %1;").arg(thm.hex("bg_raised")));
 
     m_headerLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; background: transparent; }").arg(thm.hex("text_muted")));
@@ -452,5 +457,6 @@ void AgentFleetPanel::applyThemeColors()
     m_scrollArea->setStyleSheet(QStringLiteral(
         "QScrollArea { background: transparent; border: none; }"
         "QWidget#scrollContent { background: transparent; }"));
+    m_scrollArea->viewport()->setAutoFillBackground(false);
     m_scrollContent->setObjectName("scrollContent");
 }

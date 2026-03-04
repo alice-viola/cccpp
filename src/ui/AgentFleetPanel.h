@@ -89,6 +89,9 @@ signals:
     void deleteRequested(const QString &sessionId);
     void exportAndDeleteRequested(const QString &sessionId);
 
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
 private:
     void applyThemeColors();
     void clearCards();

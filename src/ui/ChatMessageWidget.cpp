@@ -25,28 +25,30 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
     if (role == User) {
         m_layout->setContentsMargins(14, 10, 14, 10);
 
-        // Directive header row: "DIRECTIVE" label + timestamp + revert
+        // User message content — bold directive text
+        m_userLabel = new QLabel(content, this);
+        m_userLabel->setWordWrap(true);
+        m_userLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_userLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: %1; font-size: 13px; font-weight: 500; }")
+            .arg(tm.hex("text_primary")));
+        m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        m_layout->addWidget(m_userLabel);
+
+        // Footer row: timestamp (bottom right) + revert button
         m_headerWidget = new QWidget(this);
+        m_headerWidget->setAttribute(Qt::WA_TranslucentBackground);
+        m_headerWidget->setStyleSheet("background: transparent;");
         auto *directiveHeader = new QHBoxLayout(m_headerWidget);
         directiveHeader->setSpacing(6);
-        directiveHeader->setContentsMargins(0, 0, 0, 4);
+        directiveHeader->setContentsMargins(0, 2, 0, 0);
 
-        m_roleLabel = new QLabel("DIRECTIVE", m_headerWidget);
-        QFont directiveFont = m_roleLabel->font();
-        directiveFont.setPixelSize(9);
-        directiveFont.setWeight(QFont::Bold);
-        directiveFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
-        m_roleLabel->setFont(directiveFont);
-        m_roleLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; }").arg(tm.hex("mauve")));
-        directiveHeader->addWidget(m_roleLabel);
+        directiveHeader->addStretch();
 
         m_timestampLabel = new QLabel(m_headerWidget);
         m_timestampLabel->setStyleSheet(
             QStringLiteral("QLabel { color: %1; font-size: 10px; }").arg(tm.hex("text_faint")));
         directiveHeader->addWidget(m_timestampLabel);
-
-        directiveHeader->addStretch();
 
         m_revertBtn = new QPushButton("Revert", m_headerWidget);
         m_revertBtn->setFixedHeight(20);
@@ -63,15 +65,7 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
 
         m_layout->addWidget(m_headerWidget);
 
-        // User message content — bold directive text
-        m_userLabel = new QLabel(content, this);
-        m_userLabel->setWordWrap(true);
-        m_userLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        m_userLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; font-size: 13px; font-weight: 500; }")
-            .arg(tm.hex("text_primary")));
-        m_userLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-        m_layout->addWidget(m_userLabel);
+        m_roleLabel = nullptr;
 
         m_acceptBtn = nullptr;
         m_rejectBtn = nullptr;
