@@ -79,12 +79,12 @@ void AgentCard::updatePulseAnimation()
 QSize AgentCard::sizeHint() const
 {
     if (m_collapsed) return {36, 36};
-    return {200, m_profileIds.isEmpty() ? 56 : 64};
+    return {200, 56};
 }
 
 QSize AgentCard::minimumSizeHint() const
 {
-    return m_collapsed ? QSize(36, 36) : QSize(100, m_profileIds.isEmpty() ? 52 : 60);
+    return m_collapsed ? QSize(36, 36) : QSize(100, 52);
 }
 
 void AgentCard::paintEvent(QPaintEvent *)
@@ -244,23 +244,6 @@ void AgentCard::paintEvent(QPaintEvent *)
             dateStr = dt.toString("MMM d");
 
         p.drawText(textX, 42, dateStr);
-    }
-
-    // Profile color dots (bottom-left, subtle)
-    if (!m_profileIds.isEmpty()) {
-        int dotX2 = textX;
-        int dotY2 = 52;
-        for (const auto &pid : m_profileIds) {
-            auto prof = ProfileManager::instance().profile(pid);
-            if (prof.id.isEmpty()) continue;
-            p.setPen(Qt::NoPen);
-            QColor dc = prof.color;
-            dc.setAlpha(180);
-            p.setBrush(dc);
-            p.drawEllipse(QPointF(dotX2, dotY2), 3, 3);
-            dotX2 += 9;
-            if (dotX2 > width() - 20) break;
-        }
     }
 
     // Unread dot

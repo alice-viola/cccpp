@@ -1191,8 +1191,8 @@ void MainWindow::showFileBar(const QString &fileName)
     }
     auto &thm = ThemeManager::instance();
     m_fileBarLabel->setText(QStringLiteral(
-        "<span style='color:%1;font-size:11px;'>\xe2\x86\x90 Back to Chat</span>"
-        "<span style='color:%2;font-size:11px;'>  \xc2\xb7  </span>"
+        "<span style='color:%1;font-size:11px;'>\u2190 Back to Chat</span>"
+        "<span style='color:%2;font-size:11px;'>  \u00B7  </span>"
         "<span style='color:%3;font-size:11px;font-weight:500;'>%4</span>")
         .arg(thm.hex("teal"), thm.hex("text_faint"),
              thm.hex("text_primary"), fileName));
