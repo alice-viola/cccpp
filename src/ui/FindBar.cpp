@@ -15,7 +15,7 @@ FindBar::FindBar(QWidget *parent) : QWidget(parent) {
             "QLabel { color: %6; font-size: 11px; }")
             .arg(pal.bg_surface.name(), pal.border_standard.name(),
                  pal.bg_raised.name(), pal.text_primary.name(),
-                 pal.mauve.name(), pal.text_muted.name()));
+                 pal.teal.name(), pal.text_muted.name()));
 
     auto *lay = new QHBoxLayout(this);
     lay->setContentsMargins(8, 4, 8, 4);

@@ -44,6 +44,11 @@ void ClaudeProcess::setModel(const QString &model)
     m_model = model;
 }
 
+void ClaudeProcess::setSystemPrompt(const QString &prompt)
+{
+    m_systemPrompt = prompt;
+}
+
 QProcessEnvironment ClaudeProcess::buildProcessEnvironment() const
 {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -352,6 +357,9 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
         // Force a fresh session to prevent auto-resuming old sessions from other projects
         args << "--session-id" << QUuid::createUuid().toString(QUuid::WithoutBraces);
     }
+
+    if (!m_systemPrompt.isEmpty())
+        args << "--append-system-prompt" << m_systemPrompt;
 
     if (m_mode == "ask") {
         args << "--permission-mode" << "bypassPermissions"

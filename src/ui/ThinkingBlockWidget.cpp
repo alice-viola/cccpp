@@ -165,7 +165,7 @@ void ThinkingBlockWidget::applyThemeColors()
 
     m_dotsLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 12px; font-weight: bold; }")
-        .arg(p.mauve.name()));
+        .arg(p.teal.name()));
 
     m_contentBrowser->setStyleSheet(QStringLiteral(
         "QTextBrowser { background: transparent; border: none; }"));

@@ -115,8 +115,10 @@ FileDiff DiffEngine::computeDiff(const QString &oldContent, const QString &newCo
 }
 
 void DiffEngine::recordEditToolChange(const QString &filePath,
-                                       const QString &oldString, const QString &newString)
+                                       const QString &oldString, const QString &newString,
+                                       const QString &sessionId)
 {
+    QString sid = sessionId.isEmpty() ? m_currentSessionId : sessionId;
     // Build diff directly from old_string/new_string — no disk read needed.
     // The file on disk is already modified by claude, so we can't read the "before" state.
     FileDiff editDiff = computeDiff(oldString, newString, filePath);
@@ -149,15 +151,17 @@ void DiffEngine::recordEditToolChange(const QString &filePath,
     m_pendingDiffs.append(editDiff);
     emit fileChanged(filePath, m_fileDiffs[filePath]);
 
-    if (!m_currentSessionId.isEmpty()) {
-        if (!m_sessionFiles[m_currentSessionId].contains(filePath))
-            m_sessionFiles[m_currentSessionId].append(filePath);
-        emit sessionFileChanged(m_currentSessionId, filePath);
+    if (!sid.isEmpty()) {
+        if (!m_sessionFiles[sid].contains(filePath))
+            m_sessionFiles[sid].append(filePath);
+        emit sessionFileChanged(sid, filePath);
     }
 }
 
-void DiffEngine::recordWriteToolChange(const QString &filePath, const QString &newContent)
+void DiffEngine::recordWriteToolChange(const QString &filePath, const QString &newContent,
+                                        const QString &sessionId)
 {
+    QString sid = sessionId.isEmpty() ? m_currentSessionId : sessionId;
     FileDiff diff;
     diff.filePath = filePath;
     diff.isNewFile = true;
@@ -173,10 +177,10 @@ void DiffEngine::recordWriteToolChange(const QString &filePath, const QString &n
     m_pendingDiffs.append(diff);
     emit fileChanged(filePath, diff);
 
-    if (!m_currentSessionId.isEmpty()) {
-        if (!m_sessionFiles[m_currentSessionId].contains(filePath))
-            m_sessionFiles[m_currentSessionId].append(filePath);
-        emit sessionFileChanged(m_currentSessionId, filePath);
+    if (!sid.isEmpty()) {
+        if (!m_sessionFiles[sid].contains(filePath))
+            m_sessionFiles[sid].append(filePath);
+        emit sessionFileChanged(sid, filePath);
     }
 }
 

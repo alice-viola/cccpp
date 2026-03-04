@@ -37,7 +37,7 @@ QuestionWidget::QuestionWidget(const nlohmann::json &input, QWidget *parent)
     auto *title = new QLabel("Claude needs your input:", this);
     title->setStyleSheet(
         QStringLiteral("QLabel { color: %1; font-weight: bold; font-size: 12px; }")
-        .arg(p.blue.name()));
+        .arg(p.teal.name()));
     m_layout->addWidget(title);
 
     buildUI(input);

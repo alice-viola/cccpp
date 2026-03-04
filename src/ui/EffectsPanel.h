@@ -94,4 +94,5 @@ private:
     QMap<int, qint64> m_turnTimestamps;  // turnId -> epoch secs
     QMap<QString, FileChangeItem *> m_items;  // compound key -> item
     QMap<int, QLabel *> m_turnDividers;  // turnId -> divider label
+    QWidget *m_emptyState = nullptr;
 };

@@ -2,6 +2,9 @@
 #include "ui/InputBar.h"
 #include "ui/ModeSelector.h"
 #include "ui/ModelSelector.h"
+#include "ui/ProfileSelector.h"
+#include "ui/ProfileEditorDialog.h"
+#include "core/PersonalityProfile.h"
 #include "ui/ChatMessageWidget.h"
 #include "ui/ToolCallGroupWidget.h"
 #include "ui/ThinkingIndicator.h"
@@ -16,6 +19,7 @@
 #include "core/DiffEngine.h"
 #include "core/Database.h"
 #include "util/JsonUtils.h"
+#include <QLabel>
 #include <QScrollBar>
 #include <QTimer>
 #include <QDateTime>
@@ -32,6 +36,129 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
+#include <cmath>
+
+// ---------------------------------------------------------------------------
+// Welcome state widget — shown in empty chat tabs
+// ---------------------------------------------------------------------------
+
+class ChatWelcomeState : public QWidget {
+public:
+    explicit ChatWelcomeState(QWidget *parent = nullptr) : QWidget(parent) {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        setAttribute(Qt::WA_TranslucentBackground);
+
+        auto *layout = new QVBoxLayout(this);
+        layout->setAlignment(Qt::AlignCenter);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+
+        // Spacer absorbs space above the painted area
+        layout->addStretch(1);
+
+        // Fixed-height region where icon is painted
+        m_paintArea = new QWidget(this);
+        m_paintArea->setFixedHeight(80);
+        m_paintArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_paintArea->setAttribute(Qt::WA_TransparentForMouseEvents);
+        layout->addWidget(m_paintArea);
+
+        // Title
+        auto &pal = ThemeManager::instance().palette();
+        m_title = new QLabel("What can I help you with?", this);
+        m_title->setAlignment(Qt::AlignCenter);
+        m_title->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; font-size: 16px; font-weight: 500; background: transparent; }")
+            .arg(pal.text_primary.name()));
+        layout->addWidget(m_title);
+
+        layout->addSpacing(6);
+
+        // Subtitle
+        m_subtitle = new QLabel("Ask me to build features, debug issues, refactor code,\nor explore this codebase.", this);
+        m_subtitle->setAlignment(Qt::AlignCenter);
+        m_subtitle->setWordWrap(true);
+        m_subtitle->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; font-size: 12px; background: transparent; }")
+            .arg(pal.text_muted.name()));
+        layout->addWidget(m_subtitle);
+
+        layout->addSpacing(20);
+
+        // Chips label
+        auto *chipsLabel = new QLabel("Suggestions", this);
+        chipsLabel->setAlignment(Qt::AlignCenter);
+        chipsLabel->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; font-size: 10px; font-weight: 600; "
+            "letter-spacing: 1px; text-transform: uppercase; background: transparent; }")
+            .arg(pal.text_faint.name()));
+        layout->addWidget(chipsLabel);
+
+        layout->addSpacing(8);
+
+        m_chips = new SuggestionChips(this);
+        m_chips->setSuggestions({
+            "Survey this codebase",
+            "Find bugs in recent changes",
+            "Write tests for...",
+            "Refactor..."
+        });
+        layout->addWidget(m_chips, 0, Qt::AlignCenter);
+
+        // Spacer below chips
+        layout->addStretch(2);
+    }
+
+    SuggestionChips *chips() const { return m_chips; }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        const auto &pal = ThemeManager::instance().palette();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        // Icon center — middle of the paint area widget
+        QRect pa = m_paintArea->geometry();
+        int cx = pa.center().x();
+        int iconCy = pa.center().y();
+
+        // Outer ring arc (decorative, partial — 220°)
+        p.setPen(QPen(pal.surface1, 1.0));
+        p.setBrush(Qt::NoBrush);
+        QRect outerRect(cx - 28, iconCy - 28, 56, 56);
+        p.drawArc(outerRect, 160 * 16, 220 * 16);
+
+        // Middle ring arc (teal accent — 180°)
+        p.setPen(QPen(pal.teal, 1.5));
+        QRect midRect(cx - 20, iconCy - 20, 40, 40);
+        p.drawArc(midRect, 180 * 16, 180 * 16);
+
+        // Inner circle (agent node)
+        p.setPen(QPen(pal.teal, 1.5));
+        p.setBrush(pal.bg_raised);
+        p.drawEllipse(QPointF(cx, iconCy), 8, 8);
+
+        // Center dot
+        p.setPen(Qt::NoPen);
+        p.setBrush(pal.teal);
+        p.drawEllipse(QPointF(cx, iconCy), 3, 3);
+
+        // Satellite dots at 45° and 225°
+        p.setBrush(pal.surface2);
+        double r = 34.0;
+        double d = r * 0.707;
+        p.drawEllipse(QPointF(cx + d, iconCy - d), 2, 2);
+        p.drawEllipse(QPointF(cx - d, iconCy + d), 2, 2);
+    }
+
+private:
+    QWidget *m_paintArea = nullptr;
+    QLabel *m_title = nullptr;
+    QLabel *m_subtitle = nullptr;
+    SuggestionChips *m_chips = nullptr;
+};
+
+// ---------------------------------------------------------------------------
 
 ChatPanel::ChatPanel(QWidget *parent)
     : QWidget(parent)
@@ -73,6 +200,7 @@ ChatPanel::ChatPanel(QWidget *parent)
 
     m_modeSelector = new ModeSelector(this);
     m_modelSelector = new ModelSelector(this);
+    m_profileSelector = new ProfileSelector(this);
 
     m_statsLabel = new QLabel(this);
     m_statsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -85,6 +213,7 @@ ChatPanel::ChatPanel(QWidget *parent)
     m_inputBar = new InputBar(this);
     m_inputBar->addFooterWidget(m_modeSelector);
     m_inputBar->addFooterWidget(m_modelSelector);
+    m_inputBar->addFooterWidget(m_profileSelector);
     mainLayout->addWidget(m_inputBar);
 
     connect(m_inputBar, &InputBar::sendRequested, this, &ChatPanel::onSendRequested);
@@ -95,6 +224,19 @@ ChatPanel::ChatPanel(QWidget *parent)
         }
     });
     connect(m_inputBar, &InputBar::slashCommand, this, &ChatPanel::onSlashCommand);
+
+    // Keep current tab's profileIds in sync with ProfileSelector
+    connect(m_profileSelector, &ProfileSelector::selectionChanged, this, [this](const QStringList &ids) {
+        int idx = m_tabWidget->currentIndex();
+        if (m_tabs.contains(idx))
+            m_tabs[idx].profileIds = ids;
+    });
+
+    // Open profile editor dialog
+    connect(m_profileSelector, &ProfileSelector::manageProfilesRequested, this, [this] {
+        ProfileEditorDialog dlg(m_workingDir, this);
+        dlg.exec();
+    });
     connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int idx) {
         refreshInputBarForCurrentTab();
         updateStatsLabel();
@@ -322,7 +464,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             info.newString = JsonUtils::getString(input, "new_string");
 
             if (m_diffEngine)
-                m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString);
+                m_diffEngine->recordEditToolChange(info.filePath, info.oldString, info.newString, t->sessionId);
             t->pendingEditFile = info.filePath;
             t->editCount++;
             emit fileChanged(info.filePath);
@@ -347,7 +489,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             info.newString = JsonUtils::getString(input, "content",
                              JsonUtils::getString(input, "contents"));
             if (m_diffEngine)
-                m_diffEngine->recordWriteToolChange(info.filePath, info.newString);
+                m_diffEngine->recordWriteToolChange(info.filePath, info.newString, t->sessionId);
 
             t->pendingEditFile = info.filePath;
             t->editCount++;
@@ -593,6 +735,7 @@ QString ChatPanel::newChat()
 
     ChatTab tab;
     tab.sessionId = sessionId;
+    tab.profileIds = m_profileSelector->selectedIds();
     tab.container = createChatContent();
     tab.scrollArea = tab.container->findChild<QScrollArea *>();
     tab.messagesLayout = tab.scrollArea->widget()->findChild<QVBoxLayout *>("messagesLayout");
@@ -602,40 +745,12 @@ QString ChatPanel::newChat()
 
     auto *scrollContent = tab.scrollArea->widget();
 
-    auto *welcome = new QWidget(scrollContent);
+    auto *welcome = new ChatWelcomeState(scrollContent);
     welcome->setObjectName("chatWelcome");
-    welcome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    auto *welcomeLayout = new QVBoxLayout(welcome);
-    welcomeLayout->setAlignment(Qt::AlignCenter);
-    welcomeLayout->setSpacing(12);
-
-    auto &thm2 = ThemeManager::instance();
-    auto *welcomeLabel = new QLabel(welcome);
-    welcomeLabel->setAlignment(Qt::AlignCenter);
-    welcomeLabel->setText(
-        QStringLiteral(
-        "<div style='color:%1;font-size:32px;margin-bottom:16px;'>&#x2726;</div>"
-        "<div style='color:%2;font-size:14px;font-weight:500;"
-        "margin-bottom:6px;'>Start a conversation</div>"
-        "<div style='color:%3;font-size:11px;'>"
-        "Type a message, @ to mention files, / for commands</div>")
-        .arg(thm2.hex("surface0"), thm2.hex("text_faint"), thm2.hex("surface0")));
-    welcomeLabel->setTextFormat(Qt::RichText);
-    welcomeLayout->addWidget(welcomeLabel);
-
-    auto *welcomeChips = new SuggestionChips(welcome);
-    welcomeChips->setSuggestions({
-        "Explain this codebase",
-        "Find bugs in recent changes",
-        "Write tests for...",
-        "Refactor..."
-    });
-    connect(welcomeChips, &SuggestionChips::suggestionClicked, this, [this](const QString &text) {
+    connect(welcome->chips(), &SuggestionChips::suggestionClicked, this, [this](const QString &text) {
         m_inputBar->setText(text);
         m_inputBar->focusInput();
     });
-    welcomeLayout->addWidget(welcomeChips, 0, Qt::AlignCenter);
-
     tab.messagesLayout->insertWidget(0, welcome);
     tab.welcomeWidget = welcome;
 
@@ -828,9 +943,25 @@ void ChatPanel::restoreSession(const QString &sessionId)
     if (!info.title.isEmpty()) {
         title = info.title;
     } else {
-        QDateTime dt = QDateTime::fromSecsSinceEpoch(info.createdAt);
-        title = dt.isValid() ? QStringLiteral("Chat %1").arg(dt.toString("MMM d")) : "Chat";
+        // Derive title from first user message
+        for (const auto &msg : messages) {
+            if (msg.role == "user" && !msg.content.trimmed().isEmpty()) {
+                QString simplified = msg.content.simplified();
+                if (simplified.length() <= 30) {
+                    title = simplified;
+                } else {
+                    int cutoff = simplified.lastIndexOf(' ', 30);
+                    if (cutoff < 15) cutoff = 30;
+                    title = simplified.left(cutoff) + "\xe2\x80\xa6";
+                }
+                break;
+            }
+        }
+        if (title.isEmpty())
+            title = QStringLiteral("Chat");
     }
+    if (m_sessionMgr)
+        m_sessionMgr->setSessionTitle(sessionId, title);
     int idx = m_tabWidget->addTab(tab.container, title);
     tab.tabIndex = idx;
     m_tabs[idx] = tab;
@@ -950,6 +1081,11 @@ void ChatPanel::onSendRequested(const QString &text)
     tab.process->setModel(m_modelSelector->currentModelId());
     if (tab.sessionConfirmed)
         tab.process->setSessionId(tab.sessionId);
+
+    // Inject personality profiles + workspace spec as system prompt
+    QString systemPrompt = ProfileManager::instance().buildSystemPrompt(
+        m_workingDir, tab.profileIds);
+    tab.process->setSystemPrompt(systemPrompt);
 
     qDebug() << "[cccpp] onSendRequested: sending message, session=" << tab.sessionId;
     setTabProcessingState(tab, true);
@@ -1247,6 +1383,7 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
         s.editCount = it->editCount;
         s.turnCount = it->turnId;
         s.costUsd = it->totalCostUsd;
+        s.profileIds = it->profileIds;
         s.updatedAt = QDateTime::currentSecsSinceEpoch();
         result.append(s);
         openIds.insert(it->sessionId);
@@ -1611,9 +1748,9 @@ void ChatPanel::updateTabIcon(int tabIndex)
     auto &thm = ThemeManager::instance();
 
     if (tab.processing) {
-        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("mauve"))));
+        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("teal"))));
     } else if (tab.unread && tabIndex != m_tabWidget->currentIndex()) {
-        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("blue"))));
+        m_tabWidget->setTabIcon(tabIndex, dotIcon(QColor(thm.hex("teal"))));
     } else {
         m_tabWidget->setTabIcon(tabIndex, QIcon());
     }
@@ -1640,6 +1777,10 @@ void ChatPanel::refreshInputBarForCurrentTab()
         m_inputBar->setPlaceholder("Ask Claude anything... (@ to mention files, / for commands)");
     }
     updateInputBarContext();
+
+    // Sync profile selector with current tab
+    if (m_tabs.contains(idx))
+        m_profileSelector->setSelectedIds(m_tabs[idx].profileIds);
 }
 
 QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &oldStr, const QString &newStr)
@@ -1668,7 +1809,7 @@ QString ChatPanel::buildInlineDiffHtml(const QString &filePath, const QString &o
         "font-family:\"JetBrains Mono\";font-size:12px;'>%7</a></td></tr>")
         .arg(thm.hex("bg_base"), thm.hex("border_standard"), thm.hex("bg_surface"),
              filePath.toHtmlEscaped(), QString::number(editLine),
-             thm.hex("blue"), fi.fileName().toHtmlEscaped());
+             thm.hex("teal"), fi.fileName().toHtmlEscaped());
 
     html += QStringLiteral("<tr><td style='padding:4px 0;font-family:\"JetBrains Mono\";font-size:12px;'>");
 
@@ -1803,6 +1944,11 @@ void ChatPanel::deleteSession(const QString &sessionId)
     if (answer != QMessageBox::Yes)
         return;
 
+    deleteSessionNoConfirm(sessionId);
+}
+
+void ChatPanel::deleteSessionNoConfirm(const QString &sessionId)
+{
     for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
         if (it->sessionId == sessionId) {
             if (it->process && it->process->isRunning())
@@ -1826,7 +1972,6 @@ void ChatPanel::deleteSession(const QString &sessionId)
         m_database->deleteSession(sessionId);
     if (m_sessionMgr)
         m_sessionMgr->removeSession(sessionId);
-
 }
 
 void ChatPanel::showHistoryMenu()
@@ -1869,7 +2014,7 @@ void ChatPanel::showHistoryMenu()
                 "QPushButton { text-align: left; padding: 4px 4px; border: none;"
                 " color: %1; font-size: 12px; }"
                 "QPushButton:hover { color: %2; }")
-            .arg(thm.hex("text_primary"), thm.hex("blue")));
+            .arg(thm.hex("text_primary"), thm.hex("teal")));
 
         auto actionBtnStyle = QStringLiteral(
             "QPushButton { border: 1px solid %1; font-size: 11px;"
@@ -1880,7 +2025,7 @@ void ChatPanel::showHistoryMenu()
         exportBtn->setCursor(Qt::PointingHandCursor);
         exportBtn->setStyleSheet(actionBtnStyle
             .arg(thm.hex("border_standard"), thm.hex("bg_base"),
-                 thm.hex("bg_surface"), thm.hex("blue"),
+                 thm.hex("bg_surface"), thm.hex("teal"),
                  thm.hex("text_muted")));
 
         auto *delBtn = new QPushButton("Delete", row);

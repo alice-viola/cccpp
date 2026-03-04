@@ -251,7 +251,7 @@ void InlineEditBar::applyThemeColors()
 
     setStyleSheet(QStringLiteral(
         "InlineEditBar { background: %1; border: 1px solid %2; border-radius: 8px; }")
-        .arg(p.bg_surface.name(), p.blue.name()));
+        .arg(p.bg_surface.name(), p.teal.name()));
 
     m_contextLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 11px; font-family: 'JetBrains Mono'; }")
@@ -264,7 +264,7 @@ void InlineEditBar::applyThemeColors()
         "QComboBox QAbstractItemView { background: %4; color: %2; border: 1px solid %3; "
         "selection-background-color: %5; }")
         .arg(p.bg_raised.name(), p.text_secondary.name(), p.border_standard.name(),
-             p.bg_window.name(), p.blue.name()));
+             p.bg_window.name(), p.teal.name()));
 
     m_input->setStyleSheet(QStringLiteral(
         "QTextEdit { background: %1; color: %2; border: 1px solid %3; "
@@ -275,7 +275,7 @@ void InlineEditBar::applyThemeColors()
         "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; "
         "font-size: 11px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }")
-        .arg(p.blue.name(), p.on_accent.name(), p.lavender.name()));
+        .arg(p.teal.name(), p.on_accent.name(), p.sky.name()));
 
     m_cancelBtn->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; font-size: 11px; }"
@@ -284,7 +284,7 @@ void InlineEditBar::applyThemeColors()
 
     m_processingLabel->setStyleSheet(QStringLiteral(
         "QLabel { color: %1; font-size: 12px; font-family: 'JetBrains Mono'; }")
-        .arg(p.blue.name()));
+        .arg(p.teal.name()));
 
     m_cancelProcessBtn->setStyleSheet(QStringLiteral(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 4px; font-size: 11px; }"

@@ -54,11 +54,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
         m_revertBtn->setFixedHeight(20);
         m_revertBtn->setStyleSheet(
             QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "QPushButton { background: %1; color: %2; border: none; "
             "border-radius: 4px; font-size: 10px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; color: %4; }")
             .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
-                 tm.hex("border_standard"), tm.hex("text_primary")));
+                 tm.hex("hover_raised"), tm.hex("text_primary")));
         m_revertBtn->setVisible(false);
         connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
         directiveHeader->addWidget(m_revertBtn);
@@ -124,11 +124,11 @@ ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget 
         m_revertBtn->setFixedHeight(20);
         m_revertBtn->setStyleSheet(
             QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "QPushButton { background: %1; color: %2; border: none; "
             "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; color: %4; }")
             .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
-                 tm.hex("border_standard"), tm.hex("text_primary")));
+                 tm.hex("hover_raised"), tm.hex("text_primary")));
         m_revertBtn->setVisible(false);
         connect(m_revertBtn, &QPushButton::clicked, this, [this] { emit revertRequested(m_turnId); });
         headerLayout->addWidget(m_revertBtn);
@@ -411,12 +411,12 @@ void ChatMessageWidget::applyStyle()
     auto &tm = ThemeManager::instance();
     switch (m_role) {
     case User:
-        // Directive card: raised background with mauve left accent
+        // Directive card: raised background with full teal border
         setStyleSheet(
             QStringLiteral(
-            "ChatMessageWidget { background: %1; border: 1px solid %2; "
-            "border-left: 3px solid %3; border-radius: 8px; }")
-            .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("mauve")));
+            "ChatMessageWidget { background: %1; "
+            "border: 1px solid %2; border-radius: 8px; }")
+            .arg(tm.hex("bg_raised"), tm.hex("teal")));
         break;
     case Assistant:
         setStyleSheet(
@@ -469,11 +469,11 @@ void ChatMessageWidget::applyThemeColors()
     if (m_revertBtn)
         m_revertBtn->setStyleSheet(
             QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "QPushButton { background: %1; color: %2; border: none; "
             "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; color: %4; }")
             .arg(tm.hex("bg_raised"), tm.hex("text_muted"),
-                 tm.hex("border_standard"), tm.hex("text_primary")));
+                 tm.hex("hover_raised"), tm.hex("text_primary")));
 
     if (m_contentBrowser && !m_rawContent.isEmpty()) {
         MarkdownRenderer renderer;

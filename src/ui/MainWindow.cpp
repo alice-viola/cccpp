@@ -219,20 +219,29 @@ void MainWindow::setupUI()
         if (!resolved.startsWith('/') && !m_workspacePath.isEmpty())
             resolved = m_workspacePath + "/" + resolved;
 
-        // Switch to editor view to show the file
-        if (m_viewMode == ViewMode::Manager)
-            switchToMode(ViewMode::Editor);
-        else if (!m_codeViewer->isVisible() || m_centerSplitter->width() < 10) {
-            m_codeViewer->setVisible(true);
-            m_centerSplitter->setVisible(true);
-        }
-
+        m_centerSplitter->show();
+        m_codeViewer->show();
         m_codeViewer->loadFile(resolved);
+        m_statusFile->setText(QFileInfo(resolved).fileName());
+
         FileDiff diff = m_diffEngine->diffForFile(resolved);
         if (!diff.hunks.isEmpty())
             m_codeViewer->showDiff(diff);
         if (line > 0)
             m_codeViewer->scrollToLine(line);
+
+        if (m_viewMode == ViewMode::Manager) {
+            // Show inline file preview with back button (same as Effects click)
+            m_chatPanel->hide();
+            int total = m_splitter->width();
+            int fleetW = m_agentFleet->isVisible() ? m_splitter->sizes()[0] : 0;
+            int effectsW = m_effectsPanel->isVisible() ? m_splitter->sizes()[4] : 0;
+            int centerW = total - fleetW - effectsW;
+            m_splitter->setSizes({fleetW, 0, centerW, 0, effectsW});
+            showFileBar(QFileInfo(resolved).fileName());
+        }
+
+        syncEditorContextToChat();
     });
     connect(m_chatPanel, &ChatPanel::planFileDetected, this,
             [this](const QString &filePath) {
@@ -366,6 +375,7 @@ void MainWindow::setupUI()
 
     // ── Mission Control: Agent Fleet wiring ──
     connect(m_agentFleet, &AgentFleetPanel::agentSelected, this, [this](const QString &sid) {
+        dismissInlineFilePreview();
         m_chatPanel->selectSession(sid);
     });
     connect(m_agentFleet, &AgentFleetPanel::newAgentRequested, this, &MainWindow::onNewChat);
@@ -376,6 +386,54 @@ void MainWindow::setupUI()
     connect(m_agentFleet, &AgentFleetPanel::exportAndDeleteRequested, this, [this](const QString &sid) {
         m_chatPanel->exportChatHistory(sid);
         m_chatPanel->deleteSession(sid);
+        rebuildFleetPanel();
+    });
+    connect(m_agentFleet, &AgentFleetPanel::deleteAllExceptTodayRequested, this, [this]() {
+        QDate today = QDate::currentDate();
+        auto summaries = m_chatPanel->agentSummaries();
+        QList<AgentSummary> toDelete;
+        for (const auto &s : summaries) {
+            if (s.updatedAt <= 0 || QDateTime::fromSecsSinceEpoch(s.updatedAt).date() != today)
+                toDelete.append(s);
+        }
+        if (toDelete.isEmpty()) return;
+        auto answer = QMessageBox::question(
+            this, "Keep Only Today's Chats",
+            QString("Permanently delete %1 chat(s) from before today?").arg(toDelete.size()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return;
+        for (const auto &s : toDelete)
+            m_chatPanel->deleteSessionNoConfirm(s.sessionId);
+        rebuildFleetPanel();
+    });
+    connect(m_agentFleet, &AgentFleetPanel::deleteAllRequested, this, [this]() {
+        auto summaries = m_chatPanel->agentSummaries();
+        if (summaries.isEmpty()) return;
+        auto answer = QMessageBox::question(
+            this, "Delete All Chats",
+            QString("Permanently delete all %1 chats?").arg(summaries.size()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return;
+        for (const auto &s : summaries)
+            m_chatPanel->deleteSessionNoConfirm(s.sessionId);
+        rebuildFleetPanel();
+    });
+    connect(m_agentFleet, &AgentFleetPanel::deleteOlderThanDayRequested, this, [this]() {
+        qint64 cutoff = QDateTime::currentSecsSinceEpoch() - 86400;
+        auto summaries = m_chatPanel->agentSummaries();
+        QList<AgentSummary> toDelete;
+        for (const auto &s : summaries) {
+            if (s.updatedAt > 0 && s.updatedAt < cutoff)
+                toDelete.append(s);
+        }
+        if (toDelete.isEmpty()) return;
+        auto answer = QMessageBox::question(
+            this, "Delete Old Chats",
+            QString("Permanently delete %1 chat(s) older than 1 day?").arg(toDelete.size()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return;
+        for (const auto &s : toDelete)
+            m_chatPanel->deleteSessionNoConfirm(s.sessionId);
         rebuildFleetPanel();
     });
 
@@ -475,17 +533,8 @@ void MainWindow::setupUI()
     connect(escShortcut, &QShortcut::activated, this, [this] {
         if (m_viewMode == ViewMode::Editor) {
             switchToMode(ViewMode::Manager);
-        } else if (m_codeViewer->isVisible()) {
-            // Dismiss inline code viewer in Manager mode, restore chat
-            m_codeViewer->hide();
-            m_centerSplitter->hide();
-            m_chatPanel->show();
-            if (m_fileBar) m_fileBar->hide();
-            int total = m_splitter->width();
-            int fleetW = 300;
-            int effectsW = 300;
-            int chatW = total - fleetW - effectsW;
-            m_splitter->setSizes({fleetW, 0, 0, chatW, effectsW});
+        } else {
+            dismissInlineFilePreview();
         }
     });
 }
@@ -643,76 +692,56 @@ void MainWindow::setupStatusBar()
         return btn;
     };
 
-    m_toggleMode = makeToggle("\u2318 Editor", "Toggle Manager/Editor View (Ctrl+E)");
+    // -- Mode switch button (always visible, text changes per mode) --
+    m_toggleMode = makeToggle("Editor", "Toggle Manager/Editor View (Ctrl+E)");
     m_toggleMode->setChecked(false);
-    m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
-    m_toggleTree->setChecked(false);
-    m_toggleEditor = makeToggle("Editor", "Toggle Editor (Ctrl+2)");
-    m_toggleEditor->setChecked(false);
-    m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
-    m_toggleTerminal = makeToggle("Terminal", "Toggle Terminal (Ctrl+`)");
-    m_toggleTerminal->setChecked(false);
+
+    // -- AGM mode buttons --
+    m_toggleAgents = makeToggle("Agents", "Toggle Agent Fleet Panel");
+    m_toggleAgents->setChecked(true);
     m_toggleEffects = makeToggle("Effects", "Toggle Effects Panel");
     m_toggleEffects->setChecked(true);
 
-    statusBar()->addPermanentWidget(m_toggleMode);
-    statusBar()->addPermanentWidget(m_toggleTree);
-    statusBar()->addPermanentWidget(m_toggleEditor);
-    statusBar()->addPermanentWidget(m_toggleTerminal);
-    statusBar()->addPermanentWidget(m_toggleEffects);
-    statusBar()->addPermanentWidget(m_toggleChat);
+    // -- Editor mode buttons --
+    m_toggleTree = makeToggle("Explorer", "Toggle Workspace (Ctrl+1)");
+    m_toggleTree->setChecked(false);
+    m_toggleChat = makeToggle("Chat", "Toggle Chat (Ctrl+3)");
+    m_toggleChat->setChecked(true);
 
+    statusBar()->addPermanentWidget(m_toggleMode);
+    statusBar()->addPermanentWidget(m_toggleAgents);   // AGM mode
+    statusBar()->addPermanentWidget(m_toggleEffects);   // AGM mode
+    statusBar()->addPermanentWidget(m_toggleTree);      // Editor mode
+    statusBar()->addPermanentWidget(m_toggleChat);      // Editor mode
+
+    // --- Mode switch ---
     connect(m_toggleMode, &QPushButton::clicked, this, [this] {
         switchToMode(m_viewMode == ViewMode::Manager ? ViewMode::Editor : ViewMode::Manager);
     });
-    connect(m_toggleTree, &QPushButton::clicked, this, [this] {
-        if (m_viewMode == ViewMode::Manager) {
-            switchToMode(ViewMode::Editor);
-        } else {
-            bool currentlyUsable = m_leftTabs->isVisible() && m_leftTabs->width() > 10;
-            m_leftTabs->setVisible(!currentlyUsable);
-            if (!currentlyUsable) {
-                QList<int> sizes = m_splitter->sizes();
-                if (sizes.size() >= 5 && sizes[1] < 50) {
-                    sizes[1] = kTreePanelWidth + 30;
-                    animateSplitterSizes(sizes);
-                }
-            }
-        }
-        updateToggleButtons();
-    });
-    connect(m_toggleEditor, &QPushButton::clicked, this, [this] {
-        if (m_viewMode == ViewMode::Manager) {
-            switchToMode(ViewMode::Editor);
-        } else {
-            bool currentlyUsable = m_codeViewer->isVisible() && m_centerSplitter->width() > 10;
-            if (currentlyUsable) {
-                m_codeViewer->setVisible(false);
-            } else {
-                m_codeViewer->setVisible(true);
-                m_centerSplitter->setVisible(true);
-            }
-        }
-        updateToggleButtons();
-    });
-    connect(m_toggleChat, &QPushButton::clicked, this, [this] {
-        bool currentlyUsable = m_chatPanel->isVisible() && m_chatPanel->width() > 10;
+
+    // --- Agents toggle (AGM mode) ---
+    connect(m_toggleAgents, &QPushButton::clicked, this, [this] {
+        if (m_viewMode != ViewMode::Manager) return;
+        bool currentlyUsable = m_agentFleet->isVisible() && m_agentFleet->width() > 10;
         if (currentlyUsable) {
-            m_chatPanel->setVisible(false);
-        } else {
-            m_chatPanel->setVisible(true);
             QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 5 && sizes[3] < 50) {
-                int total = m_splitter->width();
-                sizes[3] = static_cast<int>(total * kChatFraction);
-                animateSplitterSizes(sizes);
-            }
+            sizes[3] += sizes[0];
+            sizes[0] = 0;
+            m_agentFleet->setVisible(false);
+            animateSplitterSizes(sizes);
+        } else {
+            m_agentFleet->setVisible(true);
+            int total = m_splitter->width();
+            QList<int> sizes = m_splitter->sizes();
+            int fleetW = 300;
+            sizes[0] = fleetW;
+            sizes[3] = total - fleetW - sizes[1] - sizes[2] - sizes[4];
+            animateSplitterSizes(sizes);
         }
         updateToggleButtons();
     });
-    connect(m_toggleTerminal, &QPushButton::clicked, this, [this] {
-        onToggleTerminal();
-    });
+
+    // --- Effects toggle (AGM mode) ---
     connect(m_toggleEffects, &QPushButton::clicked, this, [this] {
         if (m_viewMode != ViewMode::Manager) return;
         bool currentlyUsable = m_effectsPanel->isVisible() && m_effectsPanel->width() > 10;
@@ -724,13 +753,45 @@ void MainWindow::setupStatusBar()
             animateSplitterSizes(sizes);
         } else {
             m_effectsPanel->setVisible(true);
-            m_effectsPanel->show();
             int total = m_splitter->width();
             QList<int> sizes = m_splitter->sizes();
             int effectsW = 300;
             sizes[4] = effectsW;
             sizes[3] = total - sizes[0] - sizes[1] - sizes[2] - effectsW;
             animateSplitterSizes(sizes);
+        }
+        updateToggleButtons();
+    });
+
+    // --- Explorer toggle (Editor mode) ---
+    connect(m_toggleTree, &QPushButton::clicked, this, [this] {
+        if (m_viewMode != ViewMode::Editor) return;
+        bool currentlyUsable = m_leftTabs->isVisible() && m_leftTabs->width() > 10;
+        m_leftTabs->setVisible(!currentlyUsable);
+        if (!currentlyUsable) {
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 5 && sizes[1] < 50) {
+                sizes[1] = kTreePanelWidth + 30;
+                animateSplitterSizes(sizes);
+            }
+        }
+        updateToggleButtons();
+    });
+
+    // --- Chat toggle (Editor mode) ---
+    connect(m_toggleChat, &QPushButton::clicked, this, [this] {
+        if (m_viewMode != ViewMode::Editor) return;
+        bool currentlyUsable = m_chatPanel->isVisible() && m_chatPanel->width() > 10;
+        if (currentlyUsable) {
+            m_chatPanel->setVisible(false);
+        } else {
+            m_chatPanel->setVisible(true);
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 5 && sizes[3] < 50) {
+                int total = m_splitter->width();
+                sizes[3] = static_cast<int>(total * kChatFraction);
+                animateSplitterSizes(sizes);
+            }
         }
         updateToggleButtons();
     });
@@ -749,7 +810,7 @@ void MainWindow::setupStatusBar()
         auto &pal = ThemeManager::instance().palette();
         if (processing) {
             m_statusProcessing->setStyleSheet(
-                QStringLiteral("QLabel { color: %1; }").arg(pal.mauve.name()));
+                QStringLiteral("QLabel { color: %1; }").arg(pal.teal.name()));
             m_statusProcessing->setText("\u25CF Processing");
         } else {
             m_statusProcessing->setStyleSheet(
@@ -924,14 +985,23 @@ void MainWindow::setupMenuBar()
 
 void MainWindow::updateToggleButtons()
 {
-    m_toggleMode->setChecked(m_viewMode == ViewMode::Editor);
-    m_toggleMode->setText(m_viewMode == ViewMode::Editor ? "\u2318 Manager" : "\u2318 Editor");
-    m_toggleTree->setChecked(m_leftTabs->isVisible() && m_leftTabs->width() > 10);
-    m_toggleEditor->setChecked(m_codeViewer->isVisible() && m_centerSplitter->width() > 10);
-    m_toggleChat->setChecked(m_chatPanel->isVisible() && m_chatPanel->width() > 10);
-    m_toggleTerminal->setChecked(m_terminalPanel->isVisible());
+    bool isManager = (m_viewMode == ViewMode::Manager);
+
+    // Mode switch button — text shows the target mode
+    m_toggleMode->setChecked(!isManager);
+    m_toggleMode->setText(isManager ? "Editor" : "AGM");
+
+    // AGM mode buttons
+    m_toggleAgents->setVisible(isManager);
+    m_toggleAgents->setChecked(m_agentFleet->isVisible() && m_agentFleet->width() > 10);
+    m_toggleEffects->setVisible(isManager);
     m_toggleEffects->setChecked(m_effectsPanel->isVisible() && m_effectsPanel->width() > 10);
-    m_toggleEffects->setVisible(m_viewMode == ViewMode::Manager);
+
+    // Editor mode buttons
+    m_toggleTree->setVisible(!isManager);
+    m_toggleTree->setChecked(m_leftTabs->isVisible() && m_leftTabs->width() > 10);
+    m_toggleChat->setVisible(!isManager);
+    m_toggleChat->setChecked(m_chatPanel->isVisible() && m_chatPanel->width() > 10);
 }
 
 void MainWindow::animateSplitterSizes(const QList<int> &targetSizes, int durationMs)
@@ -982,18 +1052,18 @@ void MainWindow::switchToMode(ViewMode mode)
 
     if (mode == ViewMode::Editor) {
         // Transition to Editor View
-        // Show left tabs + code viewer, hide effects panel
+        // Hide agent fleet + effects, show left tabs + code viewer
+        m_agentFleet->hide();
+        m_effectsPanel->hide();
         m_leftTabs->show();
         m_centerSplitter->show();
         m_codeViewer->show();
-        m_effectsPanel->hide();
 
-        // [Fleet=200, LeftTabs=210, Center=flex, Chat=320, Effects=0]
-        int fleetW = 200;
+        // [Fleet=0, LeftTabs=210, Center=flex, Chat=320, Effects=0]
         int treeW = 210;
         int chatW = 320;
-        int centerW = total - fleetW - treeW - chatW;
-        animateSplitterSizes({fleetW, treeW, centerW, chatW, 0}, 250);
+        int centerW = total - treeW - chatW;
+        animateSplitterSizes({0, treeW, centerW, chatW, 0}, 250);
 
         m_splitter->setStretchFactor(0, 0);
         m_splitter->setStretchFactor(1, 0);
@@ -1002,7 +1072,9 @@ void MainWindow::switchToMode(ViewMode mode)
         m_splitter->setStretchFactor(4, 0);
     } else {
         // Transition to Manager View
-        // Hide left tabs + code viewer, show effects panel
+        // Show agent fleet + effects + chat, hide left tabs + code viewer
+        if (m_fileBar) m_fileBar->hide();
+        m_agentFleet->show();
         m_leftTabs->hide();
         m_centerSplitter->hide();
         m_effectsPanel->show();
@@ -1021,6 +1093,22 @@ void MainWindow::switchToMode(ViewMode mode)
         m_splitter->setStretchFactor(4, 0);
     }
     updateToggleButtons();
+}
+
+void MainWindow::dismissInlineFilePreview()
+{
+    if (m_viewMode != ViewMode::Manager || !m_codeViewer->isVisible()) return;
+
+    m_codeViewer->hide();
+    m_centerSplitter->hide();
+    m_chatPanel->show();
+    if (m_fileBar) m_fileBar->hide();
+
+    int total = m_splitter->width();
+    int fleetW = m_agentFleet->isVisible() ? m_splitter->sizes()[0] : 0;
+    int effectsW = m_effectsPanel->isVisible() ? m_splitter->sizes()[4] : 0;
+    int chatW = total - fleetW - effectsW;
+    m_splitter->setSizes({fleetW, 0, 0, chatW, effectsW});
 }
 
 void MainWindow::rebuildFleetPanel()
@@ -1106,7 +1194,7 @@ void MainWindow::showFileBar(const QString &fileName)
         "<span style='color:%1;font-size:11px;'>\xe2\x86\x90 Back to Chat</span>"
         "<span style='color:%2;font-size:11px;'>  \xc2\xb7  </span>"
         "<span style='color:%3;font-size:11px;font-weight:500;'>%4</span>")
-        .arg(thm.hex("mauve"), thm.hex("text_faint"),
+        .arg(thm.hex("teal"), thm.hex("text_faint"),
              thm.hex("text_primary"), fileName));
     m_fileBar->show();
     // Defer positioning until after layout has been computed
@@ -1134,16 +1222,7 @@ void MainWindow::loadStylesheet()
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == m_fileBar && event->type() == QEvent::MouseButtonPress) {
-        // Dismiss file bar and restore chat
-        m_codeViewer->hide();
-        m_centerSplitter->hide();
-        m_chatPanel->show();
-        m_fileBar->hide();
-        int total = m_splitter->width();
-        int fleetW = 300;
-        int effectsW = 300;
-        int chatW = total - fleetW - effectsW;
-        m_splitter->setSizes({fleetW, 0, 0, chatW, effectsW});
+        dismissInlineFilePreview();
         return true;
     }
     if (obj == m_codeViewer && event->type() == QEvent::Resize) {
@@ -1183,7 +1262,7 @@ void MainWindow::applyThemeColors()
         "QTabBar::tab:selected { color: %4; border-top: 2px solid %5; }"
         "QTabBar::tab:hover:!selected { color: %6; }")
         .arg(p.bg_window.name(), p.border_subtle.name(), p.text_muted.name(),
-             p.text_primary.name(), p.blue.name(), p.text_secondary.name()));
+             p.text_primary.name(), p.teal.name(), p.text_secondary.name()));
 
     auto toggleStyle = QStringLiteral(
         "QPushButton { background: transparent; color: %1; border: 1px solid transparent; "
@@ -1194,20 +1273,20 @@ void MainWindow::applyThemeColors()
              p.bg_raised.name(), p.border_standard.name());
 
     m_toggleMode->setStyleSheet(toggleStyle);
+    m_toggleAgents->setStyleSheet(toggleStyle);
+    m_toggleEffects->setStyleSheet(toggleStyle);
     m_toggleTree->setStyleSheet(toggleStyle);
-    m_toggleEditor->setStyleSheet(toggleStyle);
     m_toggleChat->setStyleSheet(toggleStyle);
-    m_toggleTerminal->setStyleSheet(toggleStyle);
 
     statusBar()->setStyleSheet(QStringLiteral(
         "QStatusBar { background: %1; border-top: 1px solid %2; }"
         "QStatusBar::item { border: none; }"
         "QStatusBar QLabel { color: %3; font-size: 11px; padding: 0 10px; "
-        "border-right: 1px solid %2; background: transparent; min-height: 24px; }")
+        "background: transparent; min-height: 24px; }")
         .arg(p.bg_surface.name(), p.border_subtle.name(), p.text_muted.name()));
 
     if (m_statusProcessing->text().contains("Processing"))
-        m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.mauve.name()));
+        m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.teal.name()));
     else
         m_statusProcessing->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(p.text_faint.name()));
 }

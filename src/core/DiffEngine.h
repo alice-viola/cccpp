@@ -31,9 +31,11 @@ public:
     void setCurrentSessionId(const QString &sessionId);
 
     void recordEditToolChange(const QString &filePath,
-                              const QString &oldString, const QString &newString);
+                              const QString &oldString, const QString &newString,
+                              const QString &sessionId = {});
 
-    void recordWriteToolChange(const QString &filePath, const QString &newContent);
+    void recordWriteToolChange(const QString &filePath, const QString &newContent,
+                               const QString &sessionId = {});
 
     QList<FileDiff> pendingDiffs() const { return m_pendingDiffs; }
     FileDiff diffForFile(const QString &filePath) const;

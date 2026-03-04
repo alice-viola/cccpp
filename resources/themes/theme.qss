@@ -35,12 +35,12 @@ QScrollBar:vertical {
     margin: 0;
 }
 QScrollBar::handle:vertical {
-    background: {{border_subtle}};
+    background: {{teal}};
     border-radius: 4px;
     min-height: 24px;
 }
-QScrollBar::handle:vertical:hover   { background: {{border_standard}}; }
-QScrollBar::handle:vertical:pressed { background: {{blue}}; }
+QScrollBar::handle:vertical:hover   { background: {{sky}}; }
+QScrollBar::handle:vertical:pressed { background: {{teal}}; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none; height: 0; border: none;
@@ -53,12 +53,12 @@ QScrollBar:horizontal {
     margin: 0;
 }
 QScrollBar::handle:horizontal {
-    background: {{border_subtle}};
+    background: {{teal}};
     border-radius: 4px;
     min-width: 24px;
 }
-QScrollBar::handle:horizontal:hover   { background: {{border_standard}}; }
-QScrollBar::handle:horizontal:pressed { background: {{blue}}; }
+QScrollBar::handle:horizontal:hover   { background: {{sky}}; }
+QScrollBar::handle:horizontal:pressed { background: {{teal}}; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: none; width: 0; border: none;
@@ -90,8 +90,8 @@ QMenu::separator { height: 1px; background: {{border_subtle}}; margin: 4px 8px; 
 /* --- Splitter ---------------------------------------------------- */
 
 QSplitter::handle { background: {{border_standard}}; width: 2px; }
-QSplitter::handle:hover { background: {{blue}}; width: 2px; }
-QSplitter::handle:pressed { background: {{blue}}; width: 2px; }
+QSplitter::handle:hover { background: {{teal}}; width: 2px; }
+QSplitter::handle:pressed { background: {{teal}}; width: 2px; }
 
 /* --- Tooltips ---------------------------------------------------- */
 
@@ -124,7 +124,7 @@ QTabBar::tab {
 }
 QTabBar::tab:selected {
     color: {{text_primary}};
-    border-bottom: 2px solid {{blue}};
+    border-bottom: 2px solid {{teal}};
 }
 QTabBar::tab:hover:!selected { color: {{text_secondary}}; }
 QTabBar::close-button { subcontrol-position: right; padding: 2px; }
@@ -171,7 +171,7 @@ QTextEdit#chatInput {
     padding: 8px 12px;
     font-size: 13px;
 }
-QTextEdit#chatInput:focus { border-color: {{blue}}; }
+QTextEdit#chatInput:focus { border-color: {{teal}}; }
 
 /* --- Labels ------------------------------------------------------ */
 
@@ -239,7 +239,7 @@ QLineEdit {
     font-size: 13px;
     selection-background-color: {{hover_raised}};
 }
-QLineEdit:focus { border-color: {{blue}}; }
+QLineEdit:focus { border-color: {{teal}}; }
 
 /* --- Group boxes ------------------------------------------------- */
 
@@ -272,11 +272,9 @@ QStatusBar QLabel {
     color: {{text_muted}};
     font-size: 11px;
     padding: 0 10px;
-    border-right: 1px solid {{border_subtle}};
     background: transparent;
     min-height: 24px;
 }
-QStatusBar QLabel:last-child { border-right: none; }
 
 /* --- Checkboxes / Radio buttons ---------------------------------- */
 
@@ -291,7 +289,7 @@ QCheckBox::indicator, QRadioButton::indicator {
     background: {{bg_surface}};
 }
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-    background: {{blue}};
-    border-color: {{blue}};
+    background: {{teal}};
+    border-color: {{teal}};
 }
 QRadioButton::indicator { border-radius: 8px; }

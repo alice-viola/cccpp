@@ -78,7 +78,7 @@ void ToastNotification::paintEvent(QPaintEvent *)
     case ToastType::Success: accent = pal.green; break;
     case ToastType::Error:   accent = pal.red; break;
     case ToastType::Warning: accent = pal.yellow; break;
-    default:                 accent = pal.blue; break;
+    default:                 accent = pal.teal; break;
     }
     p.setPen(Qt::NoPen);
     p.setBrush(accent);

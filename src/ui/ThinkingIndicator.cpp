@@ -57,7 +57,7 @@ void ThinkingIndicator::paintEvent(QPaintEvent *)
         float alpha  = 0.20f + 0.80f * wave;
         int   bounce = static_cast<int>(5.0f * wave);      // 0..5 px upward
 
-        QColor mc = ThemeManager::instance().palette().mauve;
+        QColor mc = ThemeManager::instance().palette().teal;
         QColor c(mc.red(), mc.green(), mc.blue(), static_cast<int>(alpha * 255.0f));
         p.setBrush(c);
         p.setPen(Qt::NoPen);

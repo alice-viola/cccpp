@@ -1,5 +1,6 @@
 #include "ui/AgentFleetPanel.h"
 #include "ui/ThemeManager.h"
+#include "core/PersonalityProfile.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -30,6 +31,7 @@ void AgentCard::update(const AgentSummary &summary)
     m_turnCount = summary.turnCount;
     m_costUsd = summary.costUsd;
     m_updatedAt = summary.updatedAt;
+    m_profileIds = summary.profileIds;
     updatePulseAnimation();
     setFixedHeight(sizeHint().height());
     QWidget::update();
@@ -77,12 +79,12 @@ void AgentCard::updatePulseAnimation()
 QSize AgentCard::sizeHint() const
 {
     if (m_collapsed) return {36, 36};
-    return {200, 56};
+    return {200, m_profileIds.isEmpty() ? 56 : 64};
 }
 
 QSize AgentCard::minimumSizeHint() const
 {
-    return m_collapsed ? QSize(36, 36) : QSize(100, 52);
+    return m_collapsed ? QSize(36, 36) : QSize(100, m_profileIds.isEmpty() ? 52 : 60);
 }
 
 void AgentCard::paintEvent(QPaintEvent *)
@@ -104,10 +106,10 @@ void AgentCard::paintEvent(QPaintEvent *)
     }
     float intensity = qMin(1.0f, turnIntensity + recencyBoost);
 
-    QColor tintColor = m_processing ? pal.green : pal.mauve;
+    QColor tintColor = m_processing ? pal.green : pal.teal;
 
     // Intensity wash (subtle background tint)
-    if (intensity > 0.01f && !m_collapsed) {
+    if (intensity > 0.01f && !m_collapsed && !m_selected) {
         QPainterPath washPath;
         washPath.addRoundedRect(rect().adjusted(2, 1, -2, -1), 6, 6);
         QColor wash = tintColor;
@@ -129,11 +131,13 @@ void AgentCard::paintEvent(QPaintEvent *)
         p.fillPath(path, bg);
     }
 
-    // Selected accent bar
+    // Selected border
     if (m_selected) {
-        p.setPen(Qt::NoPen);
-        p.setBrush(pal.mauve);
-        p.drawRoundedRect(QRect(0, 6, 3, height() - 12), 1.5, 1.5);
+        QPainterPath borderPath;
+        borderPath.addRoundedRect(QRectF(rect()).adjusted(2.5, 1.5, -2.5, -1.5), 6, 6);
+        p.setPen(QPen(pal.teal, 1.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(borderPath);
     }
 
     // Status dot color
@@ -143,7 +147,7 @@ void AgentCard::paintEvent(QPaintEvent *)
     else if (m_processing)
         dotColor = pal.green;
     else
-        dotColor = pal.overlay0;
+        dotColor = pal.surface2;
 
     if (m_processing)
         dotColor.setAlphaF(0.4 + 0.6 * m_pulsePhase);
@@ -157,7 +161,7 @@ void AgentCard::paintEvent(QPaintEvent *)
         p.drawEllipse(center, dotR, dotR);
 
         if (m_unread) {
-            p.setPen(QPen(pal.mauve, 1.5));
+            p.setPen(QPen(pal.teal, 1.5));
             p.setBrush(Qt::NoBrush);
             p.drawEllipse(center, dotR + 3, dotR + 3);
         }
@@ -178,7 +182,7 @@ void AgentCard::paintEvent(QPaintEvent *)
     // Status dot before title
     int dotX = leftPad;
     int titleY = 22;
-    float dotR = 4.0f;
+    float dotR = (m_blocked || m_processing) ? 4.0f : 3.0f;
     p.setPen(Qt::NoPen);
     p.setBrush(dotColor);
     p.drawEllipse(QPointF(dotX, titleY - 1), dotR, dotR);
@@ -212,8 +216,17 @@ void AgentCard::paintEvent(QPaintEvent *)
     QString elidedTitle = p.fontMetrics().elidedText(m_title, Qt::ElideRight, textRight - textX);
     p.drawText(textX, titleY, elidedTitle);
 
-    // Date line
-    if (m_updatedAt > 0) {
+    // Second line: activity (if processing) or date
+    bool showActivity = m_processing && !m_activity.isEmpty();
+    if (showActivity) {
+        QFont actFont = font();
+        actFont.setPixelSize(10);
+        p.setFont(actFont);
+        p.setPen(pal.green);
+        int actW = width() - textX - 10;
+        QString elidedAct = p.fontMetrics().elidedText(m_activity, Qt::ElideRight, actW);
+        p.drawText(textX, 42, elidedAct);
+    } else if (m_updatedAt > 0) {
         QFont dateFont = font();
         dateFont.setPixelSize(10);
         p.setFont(dateFont);
@@ -233,21 +246,27 @@ void AgentCard::paintEvent(QPaintEvent *)
         p.drawText(textX, 42, dateStr);
     }
 
-    // Processing activity indicator
-    if (m_processing && !m_activity.isEmpty()) {
-        QFont actFont = font();
-        actFont.setPixelSize(10);
-        p.setFont(actFont);
-        p.setPen(pal.green);
-        int actW = width() - textX - 10;
-        QString elidedAct = p.fontMetrics().elidedText(m_activity, Qt::ElideRight, actW);
-        p.drawText(textX, 42, elidedAct);
+    // Profile color dots (bottom-left, subtle)
+    if (!m_profileIds.isEmpty()) {
+        int dotX2 = textX;
+        int dotY2 = 52;
+        for (const auto &pid : m_profileIds) {
+            auto prof = ProfileManager::instance().profile(pid);
+            if (prof.id.isEmpty()) continue;
+            p.setPen(Qt::NoPen);
+            QColor dc = prof.color;
+            dc.setAlpha(180);
+            p.setBrush(dc);
+            p.drawEllipse(QPointF(dotX2, dotY2), 3, 3);
+            dotX2 += 9;
+            if (dotX2 > width() - 20) break;
+        }
     }
 
     // Unread dot
     if (m_unread && !m_selected) {
         p.setPen(Qt::NoPen);
-        p.setBrush(pal.mauve);
+        p.setBrush(pal.teal);
         p.drawEllipse(QPointF(width() - 10, 12), 3, 3);
     }
 }
@@ -297,7 +316,7 @@ AgentFleetPanel::AgentFleetPanel(QWidget *parent)
     auto *headerLayout = new QHBoxLayout(m_header);
     headerLayout->setContentsMargins(12, 8, 4, 0);
 
-    m_headerLabel = new QLabel("AGENTS", m_header);
+    m_headerLabel = new QLabel("Agents", m_header);
     QFont hf = m_headerLabel->font();
     hf.setPixelSize(10);
     hf.setWeight(QFont::DemiBold);
@@ -310,9 +329,29 @@ AgentFleetPanel::AgentFleetPanel(QWidget *parent)
     m_newAgentBtn->setCursor(Qt::PointingHandCursor);
     connect(m_newAgentBtn, &QPushButton::clicked, this, &AgentFleetPanel::newAgentRequested);
 
+    m_menuBtn = new QPushButton(m_header);
+    m_menuBtn->setFixedSize(26, 26);
+    m_menuBtn->setToolTip("Actions");
+    m_menuBtn->setCursor(Qt::PointingHandCursor);
+
+    m_actionsMenu = new QMenu(m_menuBtn);
+    m_actionsMenu->addAction("Keep only today's chats", this, [this]() {
+        emit deleteAllExceptTodayRequested();
+    });
+    m_actionsMenu->addAction("Delete older than 1 day", this, [this]() {
+        emit deleteOlderThanDayRequested();
+    });
+    m_actionsMenu->addAction("Delete all", this, [this]() {
+        emit deleteAllRequested();
+    });
+    connect(m_menuBtn, &QPushButton::clicked, this, [this]() {
+        m_actionsMenu->popup(m_menuBtn->mapToGlobal(QPoint(0, m_menuBtn->height())));
+    });
+
     headerLayout->addWidget(m_headerLabel);
     headerLayout->addStretch();
     headerLayout->addWidget(m_newAgentBtn);
+    headerLayout->addWidget(m_menuBtn);
     m_mainLayout->addWidget(m_header);
 
     // Scroll area for agent cards
@@ -324,7 +363,7 @@ AgentFleetPanel::AgentFleetPanel(QWidget *parent)
     m_scrollContent = new QWidget(m_scrollArea);
     m_agentLayout = new QVBoxLayout(m_scrollContent);
     m_agentLayout->setContentsMargins(4, 2, 4, 4);
-    m_agentLayout->setSpacing(1);
+    m_agentLayout->setSpacing(2);
     m_agentLayout->addStretch();
 
     m_scrollArea->setWidget(m_scrollContent);
@@ -376,10 +415,13 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
                 df.setWeight(QFont::DemiBold);
                 df.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
                 divider->setFont(df);
-                divider->setStyleSheet(QStringLiteral(
-                    "QLabel { color: %1; background: transparent; "
-                    "border-top: 1px solid %2; }")
-                    .arg(thm.hex("text_muted"), thm.hex("border_subtle")));
+                bool isFirst = m_dividers.isEmpty();
+                divider->setStyleSheet(isFirst
+                    ? QStringLiteral("QLabel { color: %1; background: transparent; }")
+                        .arg(thm.hex("text_muted"))
+                    : QStringLiteral("QLabel { color: %1; background: transparent; "
+                        "border-top: 1px solid %2; }")
+                        .arg(thm.hex("text_muted"), thm.hex("border_subtle")));
                 m_agentLayout->insertWidget(m_agentLayout->count() - 1, divider);
                 m_dividers.append(divider);
                 lastDateGroup = dateGroup;
@@ -446,13 +488,22 @@ void AgentFleetPanel::applyThemeColors()
 
     // Circular new agent button
     auto btnStyle = QStringLiteral(
-        "QPushButton { background: transparent; color: %1; border: 1px solid %2; "
+        "QPushButton { background: transparent; color: %1; border: none; "
         "border-radius: 13px; font-size: 16px; font-weight: 300; padding: 0px 0px 2px 0px; }"
-        "QPushButton:hover { background: %3; color: %4; border-color: %4; }")
-        .arg(thm.hex("text_muted"), thm.hex("border_subtle"),
-             thm.hex("bg_raised"), thm.hex("text_primary"));
+        "QPushButton:hover { background: %2; color: %3; border: none; }")
+        .arg(thm.hex("text_muted"), thm.hex("bg_raised"), thm.hex("text_primary"));
     m_newAgentBtn->setStyleSheet(btnStyle);
     m_newAgentBtn->setText("+");
+
+    m_menuBtn->setStyleSheet(btnStyle);
+    m_menuBtn->setText("\u22EF");  // midline horizontal ellipsis
+
+    m_actionsMenu->setStyleSheet(QStringLiteral(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 6px; padding: 4px 0; }"
+        "QMenu::item { color: %3; padding: 6px 16px; font-size: 12px; }"
+        "QMenu::item:selected { background: %4; }")
+        .arg(thm.hex("bg_raised"), thm.hex("border_standard"),
+             thm.hex("text_secondary"), thm.hex("surface1")));
 
     m_scrollArea->setStyleSheet(QStringLiteral(
         "QScrollArea { background: transparent; border: none; }"

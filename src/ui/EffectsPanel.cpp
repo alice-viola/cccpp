@@ -10,6 +10,88 @@
 #include <algorithm>
 #include <cmath>
 
+// ─── EffectsPanelEmptyState ─────────────────────────────────────────────────
+
+class EffectsPanelEmptyState : public QWidget {
+public:
+    explicit EffectsPanelEmptyState(QWidget *parent = nullptr) : QWidget(parent) {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override {
+        const auto &pal = ThemeManager::instance().palette();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.fillRect(rect(), pal.surface0);
+
+        QPoint c = rect().center();
+        int cx = c.x();
+        int iconCy = c.y() - 24;
+
+        // Document body
+        p.setPen(Qt::NoPen);
+        p.setBrush(pal.bg_raised);
+        p.drawRoundedRect(cx - 14, iconCy - 18, 28, 36, 3, 3);
+
+        // Folded corner cutout
+        p.setBrush(pal.surface0);
+        QPolygon cutout;
+        cutout << QPoint(cx + 4, iconCy - 18)
+               << QPoint(cx + 14, iconCy - 8)
+               << QPoint(cx + 14, iconCy - 18);
+        p.drawPolygon(cutout);
+
+        // Fold fill
+        p.setBrush(pal.hover_raised);
+        QPolygon fold;
+        fold << QPoint(cx + 4, iconCy - 18)
+             << QPoint(cx + 14, iconCy - 8)
+             << QPoint(cx + 4, iconCy - 8);
+        p.drawPolygon(fold);
+
+        // Text line hints inside document
+        p.setBrush(pal.pressed_raised);
+        for (int i = 0; i < 3; ++i) {
+            int lw = (i == 2) ? 10 : 18;
+            p.drawRoundedRect(cx - 10, iconCy - 10 + i * 7, lw, 2, 1, 1);
+        }
+
+        // Checkmark circle background
+        QColor greenBg = pal.green;
+        greenBg.setAlpha(50);
+        p.setBrush(greenBg);
+        p.setPen(Qt::NoPen);
+        p.drawEllipse(QPointF(cx + 10, iconCy + 14), 7, 7);
+
+        // Checkmark stroke
+        p.setPen(QPen(pal.green, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setBrush(Qt::NoBrush);
+        QPolygonF check;
+        check << QPointF(cx + 6, iconCy + 14)
+              << QPointF(cx + 9, iconCy + 17)
+              << QPointF(cx + 14, iconCy + 11);
+        p.drawPolyline(check);
+
+        // Primary label
+        QFont tf = font();
+        tf.setPixelSize(12);
+        tf.setWeight(QFont::Medium);
+        p.setFont(tf);
+        p.setPen(pal.text_muted);
+        p.drawText(QRect(cx - 100, c.y() + 24, 200, 18),
+                   Qt::AlignCenter, "No changes yet");
+
+        // Secondary label
+        QFont hf = font();
+        hf.setPixelSize(11);
+        p.setFont(hf);
+        p.setPen(pal.surface2);
+        p.drawText(QRect(cx - 160, c.y() + 42, 320, 18),
+                   Qt::AlignCenter,
+                   "File edits will appear as your agent works");
+    }
+};
+
 // ─── FileChangeItem ─────────────────────────────────────────────────────────
 
 FileChangeItem::FileChangeItem(const FileChange &change, const QString &rootPath,
@@ -29,7 +111,7 @@ FileChangeItem::FileChangeItem(const FileChange &change, const QString &rootPath
 
     setCursor(Qt::PointingHandCursor);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setFixedHeight(36);
+    setFixedHeight(40);
     setMouseTracking(true);
 }
 
@@ -43,7 +125,7 @@ void FileChangeItem::update(const FileChange &change)
 
 QSize FileChangeItem::sizeHint() const
 {
-    return {200, 36};
+    return {200, 40};
 }
 
 void FileChangeItem::paintEvent(QPaintEvent *)
@@ -95,8 +177,16 @@ void FileChangeItem::paintEvent(QPaintEvent *)
         p.setFont(dirFont);
         p.setPen(pal.text_muted);
         int availW = width() - x - 80;
-        QString elidedDir = p.fontMetrics().elidedText(" " + dirPath, Qt::ElideMiddle, availW);
-        p.drawText(x, textBaseY, elidedDir);
+        if (availW > 30) {
+            QString dirStr = " " + dirPath;
+            int fullW = p.fontMetrics().horizontalAdvance(dirStr);
+            if (fullW <= availW) {
+                p.drawText(x, textBaseY, dirStr);
+            } else {
+                p.drawText(x, textBaseY,
+                    p.fontMetrics().elidedText(dirStr, Qt::ElideLeft, availW));
+            }
+        }
     }
 
     // Badge (M/A/D)
@@ -186,7 +276,7 @@ EffectsPanel::EffectsPanel(QWidget *parent)
     auto *headerLayout = new QHBoxLayout(m_header);
     headerLayout->setContentsMargins(12, 8, 8, 0);
 
-    m_headerLabel = new QLabel("EFFECTS", m_header);
+    m_headerLabel = new QLabel("Effects", m_header);
     QFont hf = m_headerLabel->font();
     hf.setPixelSize(10);
     hf.setWeight(QFont::DemiBold);
@@ -228,6 +318,13 @@ EffectsPanel::EffectsPanel(QWidget *parent)
 
     m_scrollArea->setWidget(m_scrollContent);
     m_mainLayout->addWidget(m_scrollArea, 1);
+
+    m_emptyState = new EffectsPanelEmptyState(this);
+    m_mainLayout->addWidget(m_emptyState, 1);
+    // Start with empty state visible, scroll area hidden
+    m_scrollArea->hide();
+    m_statsLabel->hide();
+    m_emptyState->show();
 
     applyThemeColors();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
@@ -443,10 +540,13 @@ void EffectsPanel::updateStats()
 
     auto &pal = ThemeManager::instance().palette();
     if (totalFiles == 0) {
-        m_statsLabel->setText(QStringLiteral(
-            "<span style='color:%1;font-size:11px;'>No changes yet</span>")
-            .arg(pal.text_faint.name()));
+        m_statsLabel->hide();
+        m_scrollArea->hide();
+        m_emptyState->show();
     } else {
+        m_emptyState->hide();
+        m_scrollArea->show();
+        m_statsLabel->show();
         m_statsLabel->setText(QStringLiteral(
             "<span style='color:%1;font-size:11px;font-weight:500;'>%2 file%3</span>"
             "<span style='color:%4;font-size:11px;'> \u00b7 </span>"
@@ -461,8 +561,8 @@ void EffectsPanel::updateStats()
             .arg(totalAdded)
             .arg(pal.red.name())
             .arg(totalRemoved));
+        m_statsLabel->setTextFormat(Qt::RichText);
     }
-    m_statsLabel->setTextFormat(Qt::RichText);
 }
 
 void EffectsPanel::updateTurnDividerLabels()
@@ -487,8 +587,8 @@ void EffectsPanel::updateTurnDividerLabels()
         }
 
         // Build rich text
-        QColor labelColor = highlighted ? pal.mauve : pal.text_muted;
-        QColor timeColor = highlighted ? pal.mauve : pal.text_muted;
+        QColor labelColor = highlighted ? pal.teal : pal.text_muted;
+        QColor timeColor = highlighted ? pal.teal : pal.text_muted;
         timeColor.setAlphaF(highlighted ? 0.7f : 0.5f);
 
         QString html = QStringLiteral(
@@ -505,8 +605,8 @@ void EffectsPanel::updateTurnDividerLabels()
         if (highlighted) {
             div->setStyleSheet(QStringLiteral(
                 "QLabel { background: %1; border-left: 2px solid %2; }")
-                .arg(QColor(pal.mauve.red(), pal.mauve.green(), pal.mauve.blue(), 15).name(QColor::HexArgb),
-                     pal.mauve.name()));
+                .arg(QColor(pal.teal.red(), pal.teal.green(), pal.teal.blue(), 15).name(QColor::HexArgb),
+                     pal.teal.name()));
         } else {
             div->setStyleSheet(QStringLiteral(
                 "QLabel { background: transparent; border-left: none; }"));

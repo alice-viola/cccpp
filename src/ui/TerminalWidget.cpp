@@ -289,7 +289,7 @@ void TerminalWidget::paintEvent(QPaintEvent *)
     if (m_scrollOffset == 0) {
         int cx = m_cursorPos.col * m_cellWidth;
         int cy = m_cursorPos.row * m_cellHeight;
-        QColor cursorColor = pal.mauve;
+        QColor cursorColor = pal.teal;
 
         if (hasFocus()) {
             if (m_cursorBlinkState || !m_cursorBlink) {

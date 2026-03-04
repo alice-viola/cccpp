@@ -79,15 +79,15 @@ private:
     void rebuildFleetPanel();
     void wireEffectsPanel();
     void showFileBar(const QString &fileName);
+    void dismissInlineFilePreview();
 
     ViewMode m_viewMode = ViewMode::Manager;
 
-    QPushButton *m_toggleTree = nullptr;
-    QPushButton *m_toggleEditor = nullptr;
-    QPushButton *m_toggleChat = nullptr;
-    QPushButton *m_toggleTerminal = nullptr;
     QPushButton *m_toggleMode = nullptr;
+    QPushButton *m_toggleAgents = nullptr;
     QPushButton *m_toggleEffects = nullptr;
+    QPushButton *m_toggleTree = nullptr;
+    QPushButton *m_toggleChat = nullptr;
     QWidget *m_fileBar = nullptr;
     QLabel *m_fileBarLabel = nullptr;
     QSplitter *m_splitter;

@@ -33,9 +33,9 @@ ToolCallGroupWidget::ToolCallGroupWidget(QWidget *parent)
     auto &tm = ThemeManager::instance();
     setStyleSheet(
         QStringLiteral(
-        "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 12px; }")
-        .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
+        "ToolCallGroupWidget { background: %1; border: none; "
+        "border-left: 2px solid %2; border-radius: 12px; }")
+        .arg(tm.hex("bg_raised"), tm.hex("teal")));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(10, 8, 10, 8);
@@ -129,9 +129,9 @@ void ToolCallGroupWidget::applyThemeColors()
     auto &tm = ThemeManager::instance();
     setStyleSheet(
         QStringLiteral(
-        "ToolCallGroupWidget { background: %1; border: 1px solid %2; "
-        "border-left: 2px solid %3; border-radius: 12px; }")
-        .arg(tm.hex("bg_raised"), tm.hex("border_standard"), tm.hex("text_muted")));
+        "ToolCallGroupWidget { background: %1; border: none; "
+        "border-left: 2px solid %2; border-radius: 12px; }")
+        .arg(tm.hex("bg_raised"), tm.hex("teal")));
 
     m_expandBtn->setStyleSheet(
         QStringLiteral(
@@ -199,7 +199,7 @@ void ToolCallGroupWidget::rebuildDetailView()
                              .arg(call.toolName, tm.hex("green"), icon);
         if (!call.filePath.isEmpty())
             header += QStringLiteral(" <a href='%1' style='color:%2;text-decoration:none;'>%1</a>")
-                          .arg(call.filePath.toHtmlEscaped(), tm.hex("blue"));
+                          .arg(call.filePath.toHtmlEscaped(), tm.hex("teal"));
 
         auto *headerLabel = new QLabel(header, row);
         headerLabel->setStyleSheet(QStringLiteral(

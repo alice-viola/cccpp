@@ -36,7 +36,7 @@ void SuggestionChips::setSuggestions(const QStringList &suggestions)
             "border-radius: 12px; font-size: 11px; padding: 0 10px; }"
             "QPushButton:hover { background: %4; color: %5; border-color: %6; }")
             .arg(p.bg_surface.name(), p.text_secondary.name(), p.border_standard.name(),
-                 p.bg_raised.name(), p.text_primary.name(), p.blue.name()));
+                 p.bg_raised.name(), p.text_primary.name(), p.teal.name()));
         connect(btn, &QPushButton::clicked, this, [this, text] {
             emit suggestionClicked(text);
         });

@@ -28,6 +28,9 @@ public:
     QList<qint64> telegramAllowedUsers() const;
     void setTelegramAllowedUsers(const QList<qint64> &users);
 
+    nlohmann::json &rawData() { return m_data; }
+    const nlohmann::json &rawData() const { return m_data; }
+
 private:
     Config();
     void autoSave();

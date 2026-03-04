@@ -24,7 +24,7 @@ InputBar::InputBar(QWidget *parent)
     setAcceptDrops(true);
 
     auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(16, 4, 16, 6);
+    outerLayout->setContentsMargins(16, 4, 16, 12);
     outerLayout->setSpacing(2);
 
     m_contextIndicator = new QLabel(this);
@@ -132,7 +132,7 @@ void InputBar::applyThemeColors()
         "border-radius: 16px; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }")
-        .arg(p.blue.name(), p.on_accent.name(), p.lavender.name(),
+        .arg(p.teal.name(), p.on_accent.name(), p.sky.name(),
              p.bg_raised.name(), p.text_faint.name()));
 
     m_contextIndicator->setStyleSheet(QStringLiteral(
@@ -221,7 +221,7 @@ void InputBar::setProcessing(bool processing)
             "QPushButton { background: %1; color: %2; border: none; "
             "border-radius: 16px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background: %3; }")
-            .arg(p.mauve.name(), p.bg_base.name(), p.lavender.name()));
+            .arg(p.teal.name(), p.bg_base.name(), p.sky.name()));
     } else {
         m_input->setEnabled(true);
         m_sendBtn->setEnabled(true);
@@ -365,7 +365,7 @@ void InputBar::updateContextPills()
             "QPushButton { background: %1; color: %2; border: none; border-radius: 12px; "
             "font-size: 11px; padding: 0 8px; }"
             "QPushButton:hover { background: %3; }")
-            .arg(p.bg_raised.name(), p.blue.name(), p.hover_raised.name()));
+            .arg(p.bg_raised.name(), p.teal.name(), p.hover_raised.name()));
         connect(pill, &QPushButton::clicked, this, [this, i] {
             if (i < m_attachedContexts.size()) {
                 m_attachedContexts.removeAt(i);
@@ -587,7 +587,7 @@ void InputBar::dragEnterEvent(QDragEnterEvent *event)
             if (url.isLocalFile() && isSupportedImageFile(url.toLocalFile())) {
                 event->acceptProposedAction();
                 auto &p = ThemeManager::instance().palette();
-                applyBorderColor(p.blue);
+                applyBorderColor(p.teal);
                 return;
             }
         }
@@ -596,7 +596,7 @@ void InputBar::dragEnterEvent(QDragEnterEvent *event)
     if (event->mimeData()->hasImage()) {
         event->acceptProposedAction();
         auto &p = ThemeManager::instance().palette();
-        applyBorderColor(p.blue);
+        applyBorderColor(p.teal);
         return;
     }
 }

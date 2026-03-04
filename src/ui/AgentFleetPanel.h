@@ -5,8 +5,10 @@
 #include <QScrollArea>
 #include <QPushButton>
 #include <QLabel>
+#include <QMenu>
 #include <QMap>
 #include <QPropertyAnimation>
+#include <QStringList>
 
 struct AgentSummary {
     QString sessionId;
@@ -19,6 +21,7 @@ struct AgentSummary {
     int turnCount = 0;
     double costUsd = 0.0;
     qint64 updatedAt = 0;
+    QStringList profileIds;
 };
 
 class AgentCard : public QWidget {
@@ -65,6 +68,7 @@ private:
     int m_turnCount = 0;
     double m_costUsd = 0.0;
     qint64 m_updatedAt = 0;
+    QStringList m_profileIds;
     QRect m_deleteRect;
 
     float m_pulsePhase = 1.0f;
@@ -88,6 +92,9 @@ signals:
     void newAgentRequested();
     void deleteRequested(const QString &sessionId);
     void exportAndDeleteRequested(const QString &sessionId);
+    void deleteAllRequested();
+    void deleteOlderThanDayRequested();
+    void deleteAllExceptTodayRequested();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -100,6 +107,8 @@ private:
     QWidget *m_header = nullptr;
     QLabel *m_headerLabel = nullptr;
     QPushButton *m_newAgentBtn = nullptr;
+    QPushButton *m_menuBtn = nullptr;
+    QMenu *m_actionsMenu = nullptr;
     QScrollArea *m_scrollArea = nullptr;
     QWidget *m_scrollContent = nullptr;
     QVBoxLayout *m_agentLayout = nullptr;

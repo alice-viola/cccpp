@@ -309,7 +309,7 @@ void SearchPanel::applyThemeColors()
         "border: 1px solid %2; background: %3; }"
         "QCheckBox::indicator:checked { background: %4; border-color: %4; }")
         .arg(p.text_muted.name(), p.border_standard.name(),
-             p.bg_surface.name(), p.mauve.name());
+             p.bg_surface.name(), p.teal.name());
     m_caseSensitive->setStyleSheet(checkStyle);
     m_regexCheck->setStyleSheet(checkStyle);
 }

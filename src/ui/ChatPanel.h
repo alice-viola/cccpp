@@ -17,6 +17,7 @@
 class InputBar;
 class ModeSelector;
 class ModelSelector;
+class ProfileSelector;
 class ChatMessageWidget;
 class ToolCallGroupWidget;
 class ThinkingIndicator;
@@ -61,6 +62,7 @@ struct ChatTab {
     // Agent fleet tracking
     int editCount = 0;
     QString lastActivity;
+    QStringList profileIds;
 };
 
 class ChatPanel : public QWidget {
@@ -97,6 +99,7 @@ public:
     void scrollToTurn(int turnId);
     void exportChatHistory(const QString &sessionId);
     void deleteSession(const QString &sessionId);
+    void deleteSessionNoConfirm(const QString &sessionId);
 
 signals:
     void fileChanged(const QString &filePath);
@@ -159,6 +162,7 @@ private:
     InputBar *m_inputBar;
     ModeSelector *m_modeSelector;
     ModelSelector *m_modelSelector;
+    ProfileSelector *m_profileSelector;
     QLabel *m_statsLabel;
     QMap<int, ChatTab> m_tabs;
 

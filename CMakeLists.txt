@@ -48,6 +48,7 @@ set(CORE_SOURCES
     src/core/TelegramBridge.cpp
     src/core/TelegramDaemon.cpp
     src/core/DaemonClient.cpp
+    src/core/PersonalityProfile.cpp
 )
 
 set(UI_SOURCES
@@ -81,6 +82,8 @@ set(UI_SOURCES
     src/ui/FindBar.cpp
     src/ui/AgentFleetPanel.cpp
     src/ui/EffectsPanel.cpp
+    src/ui/ProfileSelector.cpp
+    src/ui/ProfileEditorDialog.cpp
 )
 
 set(UTIL_SOURCES

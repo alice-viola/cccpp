@@ -75,7 +75,7 @@ void TerminalPanel::applyThemeColors()
         "padding: 4px 14px; font-size: 11px; }"
         "QTabBar::tab:selected { color: %3; border-top: 2px solid %4; }")
         .arg(pal.bg_base.name(), pal.overlay0.name(),
-             pal.text_primary.name(), pal.mauve.name()));
+             pal.text_primary.name(), pal.teal.name()));
 }
 
 void TerminalPanel::setWorkingDirectory(const QString &dir)
