@@ -78,20 +78,24 @@ void Database::createTables()
 
     // Drop legacy snapshots table if it exists (replaced by CLI checkpointing)
     q.exec("DROP TABLE IF EXISTS snapshots");
+
+    // Migrations — add columns introduced after initial schema
+    q.exec("ALTER TABLE sessions ADD COLUMN favorite INTEGER DEFAULT 0");
 }
 
 void Database::saveSession(const SessionInfo &info)
 {
     QSqlQuery q(m_db);
     q.prepare(
-        "INSERT OR REPLACE INTO sessions (session_id, title, workspace, mode, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
+        "INSERT OR REPLACE INTO sessions (session_id, title, workspace, mode, created_at, updated_at, favorite) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)");
     q.addBindValue(info.sessionId);
     q.addBindValue(info.title);
     q.addBindValue(info.workspace);
     q.addBindValue(info.mode);
     q.addBindValue(info.createdAt);
     q.addBindValue(info.updatedAt);
+    q.addBindValue(info.favorite ? 1 : 0);
     q.exec();
 }
 
@@ -99,7 +103,7 @@ QList<SessionInfo> Database::loadSessions()
 {
     QList<SessionInfo> list;
     QSqlQuery q(m_db);
-    q.exec("SELECT session_id, title, workspace, mode, created_at, updated_at "
+    q.exec("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite "
            "FROM sessions ORDER BY updated_at DESC");
     while (q.next()) {
         SessionInfo info;
@@ -109,9 +113,30 @@ QList<SessionInfo> Database::loadSessions()
         info.mode = q.value(3).toString();
         info.createdAt = q.value(4).toLongLong();
         info.updatedAt = q.value(5).toLongLong();
+        info.favorite = q.value(6).toInt() != 0;
         list.append(info);
     }
     return list;
+}
+
+SessionInfo Database::loadSession(const QString &sessionId)
+{
+    SessionInfo info;
+    QSqlQuery q(m_db);
+    q.prepare("SELECT session_id, title, workspace, mode, created_at, updated_at, favorite "
+              "FROM sessions WHERE session_id = ? LIMIT 1");
+    q.addBindValue(sessionId);
+    q.exec();
+    if (q.next()) {
+        info.sessionId = q.value(0).toString();
+        info.title = q.value(1).toString();
+        info.workspace = q.value(2).toString();
+        info.mode = q.value(3).toString();
+        info.createdAt = q.value(4).toLongLong();
+        info.updatedAt = q.value(5).toLongLong();
+        info.favorite = q.value(6).toInt() != 0;
+    }
+    return info;
 }
 
 void Database::deleteSession(const QString &sessionId)
@@ -205,6 +230,31 @@ int Database::turnCountForSession(const QString &sessionId)
     if (q.next())
         return q.value(0).toInt();
     return 0;
+}
+
+QMap<QString, int> Database::turnCountsForSessions(const QStringList &sessionIds)
+{
+    QMap<QString, int> result;
+    if (sessionIds.isEmpty()) return result;
+
+    QStringList placeholders;
+    for (int i = 0; i < sessionIds.size(); ++i)
+        placeholders << "?";
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT session_id, COALESCE(MAX(turn_id), 0) "
+        "FROM messages WHERE session_id IN (%1) GROUP BY session_id")
+        .arg(placeholders.join(",")));
+
+    for (const auto &sid : sessionIds)
+        q.addBindValue(sid);
+    q.exec();
+
+    while (q.next())
+        result[q.value(0).toString()] = q.value(1).toInt();
+
+    return result;
 }
 
 void Database::saveCheckpoint(const CheckpointRecord &cp)

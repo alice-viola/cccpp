@@ -14,6 +14,7 @@
 #include "ui/AgentFleetPanel.h"  // for AgentSummary
 #include "ui/EffectsPanel.h"     // for FileChange
 
+struct MessageRecord;
 class InputBar;
 class ModeSelector;
 class ModelSelector;
@@ -64,6 +65,7 @@ struct ChatTab {
     QString lastActivity;
     QStringList profileIds;
     qint64 updatedAt = 0;
+    bool favorite = false;
 };
 
 class ChatPanel : public QWidget {
@@ -96,11 +98,17 @@ public:
     QList<AgentSummary> agentSummaries() const;
     void selectSession(const QString &sessionId);
     QList<FileChange> extractFileChangesFromHistory(const QString &sessionId);
+    QList<FileChange> extractFileChangesFromHistory(const QString &sessionId,
+                                                     const QList<MessageRecord> &messages);
     QMap<int, qint64> turnTimestampsForSession(const QString &sessionId) const;
+    QMap<int, qint64> turnTimestampsForSession(const QList<MessageRecord> &messages) const;
+    AgentSummary agentSummaryForSession(const QString &sessionId) const;
     void scrollToTurn(int turnId);
     void exportChatHistory(const QString &sessionId);
     void deleteSession(const QString &sessionId);
     void deleteSessionNoConfirm(const QString &sessionId);
+    void setSessionFavorite(const QString &sessionId, bool favorite);
+    void renameSession(const QString &sessionId, const QString &title);
 
 signals:
     void fileChanged(const QString &filePath);
@@ -173,4 +181,6 @@ private:
     CodeViewer *m_codeViewer = nullptr;
     QString m_workingDir;
     int m_pendingRevertTurnId = 0;
+    int m_previousTabIndex = -1;
+    QTimer *m_scrollDebounce = nullptr;
 };

@@ -11,6 +11,7 @@ struct SessionInfo {
     QString mode = "agent";
     qint64 createdAt = 0;
     qint64 updatedAt = 0;
+    bool favorite = false;
 };
 
 class SessionManager : public QObject {
@@ -22,6 +23,7 @@ public:
     void registerSession(const QString &sessionId, const SessionInfo &info);
     void updateSessionId(const QString &tempId, const QString &realId);
     void setSessionTitle(const QString &sessionId, const QString &title);
+    void setSessionFavorite(const QString &sessionId, bool favorite);
     void removeSession(const QString &sessionId);
 
     SessionInfo sessionInfo(const QString &sessionId) const;

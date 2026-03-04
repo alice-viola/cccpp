@@ -42,6 +42,12 @@ private:
     int m_linesAdded = 0;
     int m_linesRemoved = 0;
     bool m_hovered = false;
+
+    // Cached fonts (avoid recreation in paintEvent)
+    QFont m_nameFont;
+    QFont m_dirFont;
+    QFont m_badgeFont;
+    QFont m_deltaFont;
 };
 
 class EffectsPanel : public QWidget {

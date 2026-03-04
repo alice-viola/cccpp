@@ -51,6 +51,14 @@ void SessionManager::setSessionTitle(const QString &sessionId, const QString &ti
     }
 }
 
+void SessionManager::setSessionFavorite(const QString &sessionId, bool favorite)
+{
+    if (m_sessions.contains(sessionId)) {
+        m_sessions[sessionId].favorite = favorite;
+        emit sessionUpdated(sessionId);
+    }
+}
+
 void SessionManager::removeSession(const QString &sessionId)
 {
     if (m_sessions.remove(sessionId) > 0)

@@ -167,6 +167,10 @@ ChatPanel::ChatPanel(QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
+    m_scrollDebounce = new QTimer(this);
+    m_scrollDebounce->setSingleShot(true);
+    m_scrollDebounce->setInterval(100);
+
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setDocumentMode(true);
@@ -244,9 +248,12 @@ ChatPanel::ChatPanel(QWidget *parent)
             m_tabs[idx].unread = false;
             emit activeSessionChanged(m_tabs[idx].sessionId);
         }
-        // Update all tab icons — the old tab may now need a processing/unread dot
-        for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it)
-            updateTabIcon(it.key());
+        // Update only the previous and current tab icons (not all)
+        if (m_previousTabIndex >= 0 && m_tabs.contains(m_previousTabIndex))
+            updateTabIcon(m_previousTabIndex);
+        if (m_tabs.contains(idx))
+            updateTabIcon(idx);
+        m_previousTabIndex = idx;
     });
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_tabs.size() <= 1) return;
@@ -818,13 +825,9 @@ void ChatPanel::restoreSession(const QString &sessionId)
     ChatTab tab;
     tab.sessionId = sessionId;
     // Look up the stored timestamp from the database
-    auto allSessions = m_database->loadSessions();
-    for (const auto &si : allSessions) {
-        if (si.sessionId == sessionId) {
-            tab.updatedAt = si.updatedAt;
-            break;
-        }
-    }
+    auto sessionInfo = m_database->loadSession(sessionId);
+    tab.updatedAt = sessionInfo.updatedAt;
+    tab.favorite = sessionInfo.favorite;
     if (tab.updatedAt == 0)
         tab.updatedAt = QDateTime::currentSecsSinceEpoch();
     tab.container = createChatContent();
@@ -837,6 +840,14 @@ void ChatPanel::restoreSession(const QString &sessionId)
     tab.sessionConfirmed = true;
 
     auto messages = m_database->loadMessages(sessionId);
+
+    // Batch-load all checkpoints for this session (avoids per-message DB queries)
+    auto checkpoints = m_database->loadCheckpoints(sessionId);
+    QSet<int> checkpointTurnIds;
+    for (const auto &cp : checkpoints) {
+        if (!cp.uuid.isEmpty())
+            checkpointTurnIds.insert(cp.turnId);
+    }
 
     int maxTurn = 0;
     ToolCallGroupWidget *pendingGroup = nullptr;
@@ -870,8 +881,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             w->setTurnId(turnId);
             if (msg.timestamp > 0)
                 w->setTimestamp(QDateTime::fromSecsSinceEpoch(msg.timestamp));
-            bool hasCheckpoint =
-                !m_database->checkpointUuid(sessionId, turnId).isEmpty();
+            bool hasCheckpoint = checkpointTurnIds.contains(turnId);
             w->showRevertButton(hasCheckpoint);
             tab.messagesLayout->insertWidget(insertPos(), w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
@@ -987,22 +997,30 @@ void ChatPanel::restoreSession(const QString &sessionId)
     auto *scrollBar = m_tabs[idx].scrollArea->verticalScrollBar();
     connect(scrollBar, &QScrollBar::valueChanged, this, [this, idx]() {
         if (!m_tabs.contains(idx)) return;
-        auto &t = m_tabs[idx];
-        if (!t.messagesLayout || !t.scrollArea) return;
-        int viewportTop = t.scrollArea->verticalScrollBar()->value();
-        int threshold = t.scrollArea->viewport()->height() / 3;
-        int bestTurnId = -1;
-        for (int i = 0; i < t.messagesLayout->count(); ++i) {
-            auto *item = t.messagesLayout->itemAt(i);
-            if (!item || !item->widget()) continue;
-            auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
-            if (!chatMsg || chatMsg->turnId() <= 0) continue;
-            int widgetTop = chatMsg->mapTo(t.scrollArea->widget(), QPoint(0, 0)).y();
-            if (widgetTop <= viewportTop + threshold)
-                bestTurnId = chatMsg->turnId();
-        }
-        if (bestTurnId > 0)
-            emit visibleTurnChanged(t.sessionId, bestTurnId);
+        m_scrollDebounce->disconnect();
+        connect(m_scrollDebounce, &QTimer::timeout, this, [this, idx]() {
+            if (!m_tabs.contains(idx)) return;
+            auto &t = m_tabs[idx];
+            if (!t.messagesLayout || !t.scrollArea) return;
+            int viewportTop = t.scrollArea->verticalScrollBar()->value();
+            int viewportBottom = viewportTop + t.scrollArea->viewport()->height();
+            int threshold = t.scrollArea->viewport()->height() / 3;
+            int bestTurnId = -1;
+            for (int i = 0; i < t.messagesLayout->count(); ++i) {
+                auto *item = t.messagesLayout->itemAt(i);
+                if (!item || !item->widget()) continue;
+                auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
+                if (!chatMsg || chatMsg->turnId() <= 0) continue;
+                int widgetTop = chatMsg->mapTo(t.scrollArea->widget(), QPoint(0, 0)).y();
+                if (widgetTop <= viewportTop + threshold)
+                    bestTurnId = chatMsg->turnId();
+                else if (widgetTop > viewportBottom)
+                    break;  // Past viewport — no need to check further
+            }
+            if (bestTurnId > 0)
+                emit visibleTurnChanged(t.sessionId, bestTurnId);
+        });
+        m_scrollDebounce->start();
     });
 
     m_tabWidget->setCurrentIndex(idx);
@@ -1014,11 +1032,12 @@ void ChatPanel::restoreSession(const QString &sessionId)
     emit sessionListChanged();
 
     // Populate effects panel with historical file changes and timestamps
-    auto historicalChanges = extractFileChangesFromHistory(sessionId);
+    // (reuse already-loaded messages to avoid redundant DB queries)
+    auto historicalChanges = extractFileChangesFromHistory(sessionId, messages);
     if (!historicalChanges.isEmpty())
         emit historicalEffectsReady(sessionId, historicalChanges);
 
-    auto timestamps = turnTimestampsForSession(sessionId);
+    auto timestamps = turnTimestampsForSession(messages);
     if (!timestamps.isEmpty())
         emit turnTimestampsReady(sessionId, timestamps);
 }
@@ -1402,6 +1421,7 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
         s.costUsd = it->totalCostUsd;
         s.profileIds = it->profileIds;
         s.updatedAt = it->updatedAt;
+        s.favorite = it->favorite;
         result.append(s);
         openIds.insert(it->sessionId);
     }
@@ -1409,6 +1429,18 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
     // Second: old sessions from database (not currently open)
     if (m_database) {
         auto sessions = m_database->loadSessions();
+
+        // Collect IDs of closed sessions that need turn counts
+        QStringList closedSessionIds;
+        for (const auto &session : sessions) {
+            if (session.workspace != m_workingDir) continue;
+            if (openIds.contains(session.sessionId)) continue;
+            closedSessionIds.append(session.sessionId);
+        }
+
+        // Single batch query for all turn counts
+        auto turnCounts = m_database->turnCountsForSessions(closedSessionIds);
+
         for (const auto &session : sessions) {
             if (session.workspace != m_workingDir) continue;
             if (openIds.contains(session.sessionId)) continue;
@@ -1418,12 +1450,39 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
                           ? session.sessionId.left(8) + "..."
                           : session.title;
             s.updatedAt = session.updatedAt;
-            s.turnCount = m_database->turnCountForSession(session.sessionId);
+            s.turnCount = turnCounts.value(session.sessionId, 0);
+            s.favorite = session.favorite;
             result.append(s);
         }
     }
 
     return result;
+}
+
+AgentSummary ChatPanel::agentSummaryForSession(const QString &sessionId) const
+{
+    for (auto it = m_tabs.constBegin(); it != m_tabs.constEnd(); ++it) {
+        if (it->sessionId == sessionId) {
+            AgentSummary s;
+            s.sessionId = it->sessionId;
+            int idx = it.key();
+            s.title = (idx >= 0 && idx < m_tabWidget->count())
+                          ? m_tabWidget->tabText(idx)
+                          : it->sessionId.left(8);
+            s.activity = it->lastActivity;
+            s.processing = it->processing;
+            s.hasPendingQuestion = it->hasPendingQuestion;
+            s.unread = it->unread;
+            s.editCount = it->editCount;
+            s.turnCount = it->turnId;
+            s.costUsd = it->totalCostUsd;
+            s.profileIds = it->profileIds;
+            s.updatedAt = it->updatedAt;
+            s.favorite = it->favorite;
+            return s;
+        }
+    }
+    return {};
 }
 
 void ChatPanel::selectSession(const QString &sessionId)
@@ -1442,9 +1501,13 @@ void ChatPanel::selectSession(const QString &sessionId)
 QList<FileChange> ChatPanel::extractFileChangesFromHistory(const QString &sessionId)
 {
     if (!m_database) return {};
-
     auto messages = m_database->loadMessages(sessionId);
-    // Key by (turnId, filePath) to preserve per-turn grouping
+    return extractFileChangesFromHistory(sessionId, messages);
+}
+
+QList<FileChange> ChatPanel::extractFileChangesFromHistory(
+    const QString &sessionId, const QList<MessageRecord> &messages)
+{
     QMap<QPair<int, QString>, FileChange> turnFileMap;
 
     for (const auto &msg : messages) {
@@ -1507,8 +1570,13 @@ QList<FileChange> ChatPanel::extractFileChangesFromHistory(const QString &sessio
 QMap<int, qint64> ChatPanel::turnTimestampsForSession(const QString &sessionId) const
 {
     if (!m_database) return {};
-
     auto messages = m_database->loadMessages(sessionId);
+    return turnTimestampsForSession(messages);
+}
+
+QMap<int, qint64> ChatPanel::turnTimestampsForSession(
+    const QList<MessageRecord> &messages) const
+{
     QMap<int, qint64> timestamps;
     for (const auto &msg : messages) {
         if (msg.turnId > 0 && msg.timestamp > 0 && !timestamps.contains(msg.turnId))
@@ -1989,6 +2057,26 @@ void ChatPanel::deleteSessionNoConfirm(const QString &sessionId)
         m_database->deleteSession(sessionId);
     if (m_sessionMgr)
         m_sessionMgr->removeSession(sessionId);
+}
+
+void ChatPanel::setSessionFavorite(const QString &sessionId, bool favorite)
+{
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->sessionId == sessionId) {
+            it->favorite = favorite;
+            return;
+        }
+    }
+}
+
+void ChatPanel::renameSession(const QString &sessionId, const QString &title)
+{
+    for (auto it = m_tabs.begin(); it != m_tabs.end(); ++it) {
+        if (it->sessionId == sessionId) {
+            m_tabWidget->setTabText(it.key(), title);
+            return;
+        }
+    }
 }
 
 void ChatPanel::showHistoryMenu()

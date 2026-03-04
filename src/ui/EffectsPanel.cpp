@@ -113,6 +113,18 @@ FileChangeItem::FileChangeItem(const FileChange &change, const QString &rootPath
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setFixedHeight(40);
     setMouseTracking(true);
+
+    // Cache fonts to avoid recreating them every paintEvent
+    m_nameFont = font();
+    m_nameFont.setPixelSize(11);
+    m_nameFont.setWeight(QFont::Medium);
+    m_dirFont = font();
+    m_dirFont.setPixelSize(10);
+    m_badgeFont = font();
+    m_badgeFont.setPixelSize(9);
+    m_badgeFont.setWeight(QFont::Bold);
+    m_deltaFont = font();
+    m_deltaFont.setPixelSize(10);
 }
 
 void FileChangeItem::update(const FileChange &change)
@@ -160,10 +172,7 @@ void FileChangeItem::paintEvent(QPaintEvent *)
     QString dirPath = fi.path();
     if (dirPath == ".") dirPath.clear();
 
-    QFont nameFont = font();
-    nameFont.setPixelSize(11);
-    nameFont.setWeight(QFont::Medium);
-    p.setFont(nameFont);
+    p.setFont(m_nameFont);
     p.setPen(pal.text_primary);
 
     int textBaseY = midY + p.fontMetrics().ascent() / 2;
@@ -172,9 +181,7 @@ void FileChangeItem::paintEvent(QPaintEvent *)
     x += nameW;
 
     if (!dirPath.isEmpty()) {
-        QFont dirFont = font();
-        dirFont.setPixelSize(10);
-        p.setFont(dirFont);
+        p.setFont(m_dirFont);
         p.setPen(pal.text_muted);
         int availW = width() - x - 80;
         if (availW > 30) {
@@ -191,10 +198,7 @@ void FileChangeItem::paintEvent(QPaintEvent *)
 
     // Badge (M/A/D)
     int badgeX = width() - 72;
-    QFont badgeFont = font();
-    badgeFont.setPixelSize(9);
-    badgeFont.setWeight(QFont::Bold);
-    p.setFont(badgeFont);
+    p.setFont(m_badgeFont);
 
     QString badge;
     QColor badgeColor;
@@ -225,9 +229,7 @@ void FileChangeItem::paintEvent(QPaintEvent *)
 
     // Line delta — centered vertically
     int deltaX = badgeX + 24;
-    QFont deltaFont = font();
-    deltaFont.setPixelSize(10);
-    p.setFont(deltaFont);
+    p.setFont(m_deltaFont);
     int deltaBaseY = midY + p.fontMetrics().ascent() / 2;
 
     if (m_linesAdded > 0) {

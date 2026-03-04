@@ -17,6 +17,7 @@ struct AgentSummary {
     bool processing = false;
     bool hasPendingQuestion = false;
     bool unread = false;
+    bool favorite = false;
     int editCount = 0;
     int turnCount = 0;
     double costUsd = 0.0;
@@ -42,11 +43,14 @@ signals:
     void clicked(const QString &sessionId);
     void deleteRequested(const QString &sessionId);
     void doubleClicked(const QString &sessionId);
+    void renameRequested(const QString &sessionId);
+    void favoriteToggled(const QString &sessionId, bool favorite);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
     QSize sizeHint() const override;
@@ -61,6 +65,7 @@ private:
     bool m_processing = false;
     bool m_blocked = false;
     bool m_unread = false;
+    bool m_favorite = false;
     bool m_selected = false;
     bool m_collapsed = false;
     bool m_hovered = false;
@@ -73,6 +78,10 @@ private:
 
     float m_pulsePhase = 1.0f;
     QPropertyAnimation *m_pulseAnim = nullptr;
+
+    // Cached fonts (avoid recreation in paintEvent)
+    QFont m_titleFont;
+    QFont m_smallFont;
 };
 
 class AgentFleetPanel : public QWidget {
@@ -95,6 +104,8 @@ signals:
     void deleteAllRequested();
     void deleteOlderThanDayRequested();
     void deleteAllExceptTodayRequested();
+    void renameRequested(const QString &sessionId);
+    void favoriteToggled(const QString &sessionId, bool favorite);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

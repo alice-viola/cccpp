@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QDebug>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QShortcut>
 
 static constexpr int    kTreePanelWidth     = 250;
@@ -388,6 +389,24 @@ void MainWindow::setupUI()
         m_chatPanel->deleteSession(sid);
         rebuildFleetPanel();
     });
+    connect(m_agentFleet, &AgentFleetPanel::renameRequested, this, [this](const QString &sid) {
+        auto info = m_sessionMgr->sessionInfo(sid);
+        bool ok = false;
+        QString newTitle = QInputDialog::getText(this, "Rename Chat",
+            "Name:", QLineEdit::Normal, info.title, &ok);
+        if (!ok || newTitle.trimmed().isEmpty()) return;
+        newTitle = newTitle.trimmed();
+        m_sessionMgr->setSessionTitle(sid, newTitle);
+        m_database->saveSession(m_sessionMgr->sessionInfo(sid));
+        m_chatPanel->renameSession(sid, newTitle);
+        rebuildFleetPanel();
+    });
+    connect(m_agentFleet, &AgentFleetPanel::favoriteToggled, this, [this](const QString &sid, bool fav) {
+        m_sessionMgr->setSessionFavorite(sid, fav);
+        m_database->saveSession(m_sessionMgr->sessionInfo(sid));
+        m_chatPanel->setSessionFavorite(sid, fav);
+        rebuildFleetPanel();
+    });
     connect(m_agentFleet, &AgentFleetPanel::deleteAllExceptTodayRequested, this, [this]() {
         QDate today = QDate::currentDate();
         auto summaries = m_chatPanel->agentSummaries();
@@ -445,21 +464,14 @@ void MainWindow::setupUI()
         rebuildFleetPanel();
     });
 
-    // Update fleet card activity in real-time
+    // Update fleet card activity in real-time (lightweight — no DB queries)
     connect(m_chatPanel, &ChatPanel::agentActivityChanged, this,
             [this](const QString &sid, const QString &activity) {
-        AgentSummary s;
-        s.sessionId = sid;
-        s.activity = activity;
-        // Get full summary from chat panel for other fields
-        for (const auto &agent : m_chatPanel->agentSummaries()) {
-            if (agent.sessionId == sid) {
-                s = agent;
-                s.activity = activity;
-                break;
-            }
+        auto s = m_chatPanel->agentSummaryForSession(sid);
+        if (!s.sessionId.isEmpty()) {
+            s.activity = activity;
+            m_agentFleet->updateAgent(s);
         }
-        m_agentFleet->updateAgent(s);
     });
 
     // Sync fleet selection when chat tab changes
@@ -468,13 +480,10 @@ void MainWindow::setupUI()
         m_effectsPanel->setCurrentSession(sid);
         m_diffEngine->setCurrentSessionId(sid);
 
-        // Sync current turn ID
-        for (const auto &s : m_chatPanel->agentSummaries()) {
-            if (s.sessionId == sid) {
-                m_effectsPanel->setCurrentTurnId(s.turnCount);
-                break;
-            }
-        }
+        // Sync current turn ID (lightweight — no DB queries)
+        auto s = m_chatPanel->agentSummaryForSession(sid);
+        if (!s.sessionId.isEmpty())
+            m_effectsPanel->setCurrentTurnId(s.turnCount);
 
         // If effects panel has no data for this session, load from history
         if (!m_effectsPanel->hasChangesForSession(sid)) {

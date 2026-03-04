@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
 #include <QDateTime>
 #include <QDate>
 #include <algorithm>
@@ -18,6 +19,13 @@ AgentCard::AgentCard(const QString &sessionId, QWidget *parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setMouseTracking(true);
     setFixedHeight(sizeHint().height());
+
+    // Cache fonts to avoid recreating them every paintEvent
+    m_titleFont = font();
+    m_titleFont.setPixelSize(12);
+    m_titleFont.setWeight(QFont::Medium);
+    m_smallFont = font();
+    m_smallFont.setPixelSize(10);
 }
 
 void AgentCard::update(const AgentSummary &summary)
@@ -27,6 +35,7 @@ void AgentCard::update(const AgentSummary &summary)
     m_processing = summary.processing;
     m_blocked = summary.hasPendingQuestion;
     m_unread = summary.unread;
+    m_favorite = summary.favorite;
     m_editCount = summary.editCount;
     m_turnCount = summary.turnCount;
     m_costUsd = summary.costUsd;
@@ -173,10 +182,7 @@ void AgentCard::paintEvent(QPaintEvent *)
     int textRight = width() - 10;
 
     // Title line
-    QFont titleFont = font();
-    titleFont.setPixelSize(12);
-    titleFont.setWeight(QFont::Medium);
-    p.setFont(titleFont);
+    p.setFont(m_titleFont);
     p.setPen(m_selected ? pal.text_primary : pal.text_secondary);
 
     // Status dot before title
@@ -188,6 +194,23 @@ void AgentCard::paintEvent(QPaintEvent *)
     p.drawEllipse(QPointF(dotX, titleY - 1), dotR, dotR);
 
     int textX = dotX + 12;
+
+    // Favorite star after status dot
+    if (m_favorite) {
+        QColor starColor(0xf9, 0xe2, 0xaf); // Catppuccin yellow
+        p.setPen(Qt::NoPen);
+        p.setBrush(starColor);
+        // Draw a 5-pointed star centered at (textX + 5, titleY - 1), radius 5
+        float cx = textX + 5, cy = titleY - 1, outerR = 5.0f, innerR = 2.2f;
+        QPolygonF star;
+        for (int i = 0; i < 10; ++i) {
+            float angle = -M_PI / 2.0f + i * M_PI / 5.0f;
+            float r = (i % 2 == 0) ? outerR : innerR;
+            star << QPointF(cx + r * std::cos(angle), cy + r * std::sin(angle));
+        }
+        p.drawPolygon(star);
+        textX += 14;
+    }
 
     // Delete button (trash) on hover — top right
     m_deleteRect = QRect();
@@ -211,7 +234,7 @@ void AgentCard::paintEvent(QPaintEvent *)
     }
 
     // Draw title text
-    p.setFont(titleFont);
+    p.setFont(m_titleFont);
     p.setPen(m_selected ? pal.text_primary : pal.text_secondary);
     QString elidedTitle = p.fontMetrics().elidedText(m_title, Qt::ElideRight, textRight - textX);
     p.drawText(textX, titleY, elidedTitle);
@@ -219,17 +242,13 @@ void AgentCard::paintEvent(QPaintEvent *)
     // Second line: activity (if processing) or date
     bool showActivity = m_processing && !m_activity.isEmpty();
     if (showActivity) {
-        QFont actFont = font();
-        actFont.setPixelSize(10);
-        p.setFont(actFont);
+        p.setFont(m_smallFont);
         p.setPen(pal.green);
         int actW = width() - textX - 10;
         QString elidedAct = p.fontMetrics().elidedText(m_activity, Qt::ElideRight, actW);
         p.drawText(textX, 42, elidedAct);
     } else if (m_updatedAt > 0) {
-        QFont dateFont = font();
-        dateFont.setPixelSize(10);
-        p.setFont(dateFont);
+        p.setFont(m_smallFont);
         p.setPen(pal.text_muted);
 
         QDateTime dt = QDateTime::fromSecsSinceEpoch(m_updatedAt);
@@ -270,6 +289,31 @@ void AgentCard::mouseDoubleClickEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
         emit doubleClicked(m_sessionId);
+}
+
+void AgentCard::contextMenuEvent(QContextMenuEvent *event)
+{
+    auto &thm = ThemeManager::instance();
+    QMenu menu(this);
+    menu.setStyleSheet(QStringLiteral(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 6px; padding: 4px 0; }"
+        "QMenu::item { color: %3; padding: 6px 16px; font-size: 12px; }"
+        "QMenu::item:selected { background: %4; }")
+        .arg(thm.hex("bg_raised"), thm.hex("border_standard"),
+             thm.hex("text_secondary"), thm.hex("surface1")));
+
+    menu.addAction("Rename\u2026", this, [this]() {
+        emit renameRequested(m_sessionId);
+    });
+    menu.addAction(m_favorite ? "Unfavorite" : "Favorite", this, [this]() {
+        emit favoriteToggled(m_sessionId, !m_favorite);
+    });
+    menu.addSeparator();
+    menu.addAction("Delete", this, [this]() {
+        emit deleteRequested(m_sessionId);
+    });
+
+    menu.exec(event->globalPos());
 }
 
 void AgentCard::enterEvent(QEnterEvent *)
@@ -364,7 +408,6 @@ void AgentFleetPanel::setCollapsed(bool)
 
 void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &selectedId)
 {
-    clearCards();
     m_selectedId = selectedId;
 
     // Sort by updatedAt descending (most recent first)
@@ -372,6 +415,35 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
     std::sort(sorted.begin(), sorted.end(), [](const AgentSummary &a, const AgentSummary &b) {
         return a.updatedAt > b.updatedAt;
     });
+
+    // Check if structure changed (adds/removes) vs. data-only update
+    QSet<QString> incomingIds;
+    for (const auto &agent : sorted)
+        incomingIds.insert(agent.sessionId);
+
+    bool structureChanged = (incomingIds.size() != m_cards.size());
+    if (!structureChanged) {
+        for (auto it = m_cards.constBegin(); it != m_cards.constEnd(); ++it) {
+            if (!incomingIds.contains(it.key())) {
+                structureChanged = true;
+                break;
+            }
+        }
+    }
+
+    if (!structureChanged) {
+        // Data-only update — update cards in-place, no layout rebuild
+        for (const auto &agent : sorted) {
+            if (auto *card = m_cards.value(agent.sessionId)) {
+                card->update(agent);
+                card->setSelected(agent.sessionId == selectedId);
+            }
+        }
+        return;
+    }
+
+    // Structure changed — full rebuild needed
+    clearCards();
 
     QString lastDateGroup;
     QDate today = QDate::currentDate();
@@ -421,6 +493,8 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
         });
         connect(card, &AgentCard::deleteRequested, this, &AgentFleetPanel::deleteRequested);
         connect(card, &AgentCard::doubleClicked, this, &AgentFleetPanel::exportAndDeleteRequested);
+        connect(card, &AgentCard::renameRequested, this, &AgentFleetPanel::renameRequested);
+        connect(card, &AgentCard::favoriteToggled, this, &AgentFleetPanel::favoriteToggled);
         m_agentLayout->insertWidget(m_agentLayout->count() - 1, card);  // before stretch
         m_cards[agent.sessionId] = card;
     }
