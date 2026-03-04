@@ -63,6 +63,7 @@ struct ChatTab {
     int editCount = 0;
     QString lastActivity;
     QStringList profileIds;
+    qint64 updatedAt = 0;
 };
 
 class ChatPanel : public QWidget {

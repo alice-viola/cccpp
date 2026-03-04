@@ -453,6 +453,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         // Track activity for Agent Fleet
         t->lastActivity = info.summary;
+        t->updatedAt = QDateTime::currentSecsSinceEpoch();
         emit agentActivityChanged(t->sessionId, info.summary);
 
         bool isEditTool = false;
@@ -528,6 +529,7 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                     t2->currentToolGroup = nullptr;
                     t2->process->setMode(m_modeSelector->currentMode());
                     t2->process->setModel(m_modelSelector->currentModelId());
+                    t2->process->setProfileIds(t2->profileIds);
                     if (t2->sessionConfirmed)
                         t2->process->setSessionId(t2->sessionId);
                     setTabProcessingState(*t2, true);
@@ -605,6 +607,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
                 m_database->updateMessageSessionId(oldId, sessionId);
                 m_database->deleteSession(oldId);
             }
+            // Notify EffectsPanel and DiffEngine of the confirmed session ID
+            emit activeSessionChanged(sessionId);
         }
         // Extract context usage from result event
         if (raw.contains("usage") && raw["usage"].is_object()) {
@@ -735,6 +739,7 @@ QString ChatPanel::newChat()
 
     ChatTab tab;
     tab.sessionId = sessionId;
+    tab.updatedAt = QDateTime::currentSecsSinceEpoch();
     tab.profileIds = m_profileSelector->selectedIds();
     tab.container = createChatContent();
     tab.scrollArea = tab.container->findChild<QScrollArea *>();
@@ -812,6 +817,16 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     ChatTab tab;
     tab.sessionId = sessionId;
+    // Look up the stored timestamp from the database
+    auto allSessions = m_database->loadSessions();
+    for (const auto &si : allSessions) {
+        if (si.sessionId == sessionId) {
+            tab.updatedAt = si.updatedAt;
+            break;
+        }
+    }
+    if (tab.updatedAt == 0)
+        tab.updatedAt = QDateTime::currentSecsSinceEpoch();
     tab.container = createChatContent();
     tab.scrollArea = tab.container->findChild<QScrollArea *>();
     tab.messagesLayout = tab.scrollArea->widget()->findChild<QVBoxLayout *>("messagesLayout");
@@ -1027,6 +1042,7 @@ void ChatPanel::onSendRequested(const QString &text)
     }
 
     tab.turnId++;
+    tab.updatedAt = QDateTime::currentSecsSinceEpoch();
     emit turnStarted(tab.sessionId, tab.turnId);
     tab.accumulatedRawContent.clear();
     tab.hasFirstAssistantMsg = false;
@@ -1086,6 +1102,7 @@ void ChatPanel::onSendRequested(const QString &text)
     QString systemPrompt = ProfileManager::instance().buildSystemPrompt(
         m_workingDir, tab.profileIds);
     tab.process->setSystemPrompt(systemPrompt);
+    tab.process->setProfileIds(tab.profileIds);
 
     qDebug() << "[cccpp] onSendRequested: sending message, session=" << tab.sessionId;
     setTabProcessingState(tab, true);
@@ -1384,7 +1401,7 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
         s.turnCount = it->turnId;
         s.costUsd = it->totalCostUsd;
         s.profileIds = it->profileIds;
-        s.updatedAt = QDateTime::currentSecsSinceEpoch();
+        s.updatedAt = it->updatedAt;
         result.append(s);
         openIds.insert(it->sessionId);
     }

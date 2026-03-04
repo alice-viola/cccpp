@@ -20,6 +20,7 @@ public:
     void setMode(const QString &mode); // "agent", "ask", "plan"
     void setModel(const QString &model); // e.g. "claude-sonnet-4-6"
     void setSystemPrompt(const QString &prompt);
+    void setProfileIds(const QStringList &ids);
 
     void sendMessage(const QString &message,
                      const QList<QPair<QByteArray, QString>> &images = {});
@@ -54,6 +55,7 @@ private:
     QString m_mode = "agent";
     QString m_model;
     QString m_systemPrompt;
+    QStringList m_profileIds;
     QByteArray m_stdoutBuffer;
     QByteArray m_stderrBuffer;
 };

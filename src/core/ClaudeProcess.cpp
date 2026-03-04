@@ -49,6 +49,11 @@ void ClaudeProcess::setSystemPrompt(const QString &prompt)
     m_systemPrompt = prompt;
 }
 
+void ClaudeProcess::setProfileIds(const QStringList &ids)
+{
+    m_profileIds = ids;
+}
+
 QProcessEnvironment ClaudeProcess::buildProcessEnvironment() const
 {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -137,8 +142,12 @@ void ClaudeProcess::sendMessage(const QString &message,
         qWarning() << "QProcess error:" << msg;
         emit errorOccurred(msg);
     });
-    connect(m_process, &QProcess::started, this, [] {
-        qDebug() << "[cccpp] Claude process started";
+    connect(m_process, &QProcess::started, this, [this] {
+        QString info = QStringLiteral("[cccpp] Claude process started | model=%1")
+            .arg(m_model.isEmpty() ? "default" : m_model);
+        if (!m_profileIds.isEmpty())
+            info += QStringLiteral(" | profiles=[%1]").arg(m_profileIds.join(", "));
+        qDebug().noquote() << info;
     });
 
     QString claudeBin = resolveClaudeBinary();
