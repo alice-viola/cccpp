@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMap>
+#include <QSet>
 #include <QPropertyAnimation>
 #include <QStringList>
 
@@ -29,6 +30,8 @@ struct AgentSummary {
     QString parentSessionId;
     int depth = 0;
     bool isDelegatedChild = false;
+    bool isOrchestratorRoot = false;
+    int childCount = 0;
     QString delegationTask;
     QString pipelineId;
 };
@@ -40,9 +43,13 @@ public:
     explicit AgentCard(const QString &sessionId, QWidget *parent = nullptr);
 
     QString sessionId() const { return m_sessionId; }
+    int depth() const { return m_depth; }
+    bool isOrchestratorRoot() const { return m_isOrchestratorRoot; }
+    int childCount() const { return m_childCount; }
     void update(const AgentSummary &summary);
     void setSelected(bool selected);
     void setCollapsed(bool collapsed);
+    void setChildrenCollapsed(bool collapsed);
 
     float pulsePhase() const { return m_pulsePhase; }
     void setPulsePhase(float phase);
@@ -53,6 +60,7 @@ signals:
     void doubleClicked(const QString &sessionId);
     void renameRequested(const QString &sessionId);
     void favoriteToggled(const QString &sessionId, bool favorite);
+    void collapseToggled(const QString &sessionId, bool collapsed);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -80,10 +88,14 @@ private:
     int m_editCount = 0;
     int m_turnCount = 0;
     int m_depth = 0;
+    bool m_isOrchestratorRoot = false;
+    bool m_childrenCollapsed = false;
+    int m_childCount = 0;
     double m_costUsd = 0.0;
     qint64 m_updatedAt = 0;
     QStringList m_profileIds;
     QRect m_deleteRect;
+    QRect m_chevronRect;
 
     float m_pulsePhase = 1.0f;
     QPropertyAnimation *m_pulseAnim = nullptr;
@@ -122,6 +134,9 @@ protected:
 private:
     void applyThemeColors();
     void clearCards();
+    void updateChildVisibility(const QString &rootId, bool visible);
+    bool isDescendantOf(const QString &sessionId, const QString &ancestorId) const;
+    void ensureVisible(const QString &sessionId);
 
     QVBoxLayout *m_mainLayout = nullptr;
     QWidget *m_header = nullptr;
@@ -137,6 +152,8 @@ private:
     QList<QWidget *> m_dividers;
     QString m_selectedId;
     bool m_collapsed = false;
+    QSet<QString> m_collapsedRoots;
+    QMap<QString, QString> m_parentOf;  // sessionId → parentSessionId
 
     QList<AgentSummary> buildHierarchicalOrder(const QList<AgentSummary> &flat) const;
 };

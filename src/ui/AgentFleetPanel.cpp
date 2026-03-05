@@ -39,6 +39,8 @@ void AgentCard::update(const AgentSummary &summary)
     m_editCount = summary.editCount;
     m_turnCount = summary.turnCount;
     m_depth = summary.depth;
+    m_isOrchestratorRoot = summary.isOrchestratorRoot;
+    m_childCount = summary.childCount;
     m_costUsd = summary.costUsd;
     m_updatedAt = summary.updatedAt;
     m_profileIds = summary.profileIds;
@@ -59,6 +61,13 @@ void AgentCard::setCollapsed(bool collapsed)
     m_collapsed = collapsed;
     setFixedHeight(m_collapsed ? 36 : sizeHint().height());
     updateGeometry();
+    QWidget::update();
+}
+
+void AgentCard::setChildrenCollapsed(bool collapsed)
+{
+    if (m_childrenCollapsed == collapsed) return;
+    m_childrenCollapsed = collapsed;
     QWidget::update();
 }
 
@@ -170,7 +179,11 @@ void AgentCard::paintEvent(QPaintEvent *)
         p.setBrush(dotColor);
         p.drawEllipse(center, dotR, dotR);
 
-        if (m_unread) {
+        if (m_isOrchestratorRoot) {
+            p.setPen(QPen(pal.mauve, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(center, dotR + 3, dotR + 3);
+        } else if (m_unread) {
             p.setPen(QPen(pal.teal, 1.5));
             p.setBrush(Qt::NoBrush);
             p.drawEllipse(center, dotR + 3, dotR + 3);
@@ -189,6 +202,32 @@ void AgentCard::paintEvent(QPaintEvent *)
         int lineX = 14 + (m_depth - 1) * 16 + 4;
         p.drawLine(lineX, 0, lineX, height());
         p.drawLine(lineX, height() / 2, lineX + 10, height() / 2);
+    }
+
+    // Orchestrator root: mauve accent bar
+    m_chevronRect = QRect();
+    if (m_isOrchestratorRoot) {
+        QPainterPath accentPath;
+        accentPath.addRoundedRect(QRectF(2, 4, 3, height() - 8), 1.5, 1.5);
+        QColor accentColor = pal.mauve;
+        accentColor.setAlpha(m_selected ? 200 : 140);
+        p.fillPath(accentPath, accentColor);
+
+        // Chevron toggle
+        int chX = 9;
+        int chY = height() / 2;
+        m_chevronRect = QRect(0, chY - 10, 18, 20);
+        p.setPen(QPen(m_hovered ? pal.text_secondary : pal.text_muted, 1.3));
+        p.setBrush(Qt::NoBrush);
+        if (m_childrenCollapsed) {
+            // Right-pointing chevron ▸
+            p.drawLine(chX - 2, chY - 4, chX + 2, chY);
+            p.drawLine(chX + 2, chY, chX - 2, chY + 4);
+        } else {
+            // Down-pointing chevron ▾
+            p.drawLine(chX - 3, chY - 2, chX, chY + 2);
+            p.drawLine(chX, chY + 2, chX + 3, chY - 2);
+        }
     }
 
     // Title line
@@ -249,9 +288,15 @@ void AgentCard::paintEvent(QPaintEvent *)
     QString elidedTitle = p.fontMetrics().elidedText(m_title, Qt::ElideRight, textRight - textX);
     p.drawText(textX, titleY, elidedTitle);
 
-    // Second line: activity (if processing) or date
+    // Second line: collapsed badge, activity, or date
+    bool showCollapsedBadge = m_isOrchestratorRoot && m_childrenCollapsed && m_childCount > 0;
     bool showActivity = m_processing && !m_activity.isEmpty();
-    if (showActivity) {
+    if (showCollapsedBadge) {
+        p.setFont(m_smallFont);
+        p.setPen(pal.mauve);
+        QString label = QString("%1 agent%2").arg(m_childCount).arg(m_childCount > 1 ? "s" : "");
+        p.drawText(textX, 42, label);
+    } else if (showActivity) {
         p.setFont(m_smallFont);
         p.setPen(pal.green);
         int actW = width() - textX - 10;
@@ -288,6 +333,12 @@ void AgentCard::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton) {
         if (m_hovered && m_deleteRect.isValid() && m_deleteRect.contains(event->pos())) {
             emit deleteRequested(m_sessionId);
+            return;
+        }
+        if (m_isOrchestratorRoot && m_chevronRect.isValid() && m_chevronRect.contains(event->pos())) {
+            m_childrenCollapsed = !m_childrenCollapsed;
+            emit collapseToggled(m_sessionId, m_childrenCollapsed);
+            QWidget::update();
             return;
         }
         emit clicked(m_sessionId);
@@ -444,6 +495,8 @@ QList<AgentSummary> AgentFleetPanel::buildHierarchicalOrder(const QList<AgentSum
         auto s = byId[id];
         s.depth = depth;
         s.isDelegatedChild = (depth > 0);
+        s.isOrchestratorRoot = (depth == 0 && childrenOf.contains(id) && !childrenOf[id].isEmpty());
+        s.childCount = childrenOf.value(id).size();
         result.append(s);
         auto children = childrenOf.value(id);
         // Sort children by createdAt ascending (stable — doesn't change during processing)
@@ -478,6 +531,21 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
     if (hasHierarchy)
         sorted = buildHierarchicalOrder(sorted);
 
+    // Rebuild parent map for collapse logic
+    m_parentOf.clear();
+    for (const auto &agent : sorted) {
+        if (!agent.parentSessionId.isEmpty())
+            m_parentOf[agent.sessionId] = agent.parentSessionId;
+    }
+
+    // Clean stale collapse state
+    QSet<QString> validRoots;
+    for (const auto &agent : sorted) {
+        if (agent.isOrchestratorRoot)
+            validRoots.insert(agent.sessionId);
+    }
+    m_collapsedRoots.intersect(validRoots);
+
     // Check if structure changed (adds/removes) vs. data-only update
     QSet<QString> incomingIds;
     for (const auto &agent : sorted)
@@ -499,8 +567,13 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
             if (auto *card = m_cards.value(agent.sessionId)) {
                 card->update(agent);
                 card->setSelected(agent.sessionId == selectedId);
+                if (agent.isOrchestratorRoot)
+                    card->setChildrenCollapsed(m_collapsedRoots.contains(agent.sessionId));
             }
         }
+        // Reapply visibility for collapsed roots
+        for (const QString &rootId : m_collapsedRoots)
+            updateChildVisibility(rootId, false);
         return;
     }
 
@@ -512,7 +585,7 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
     auto &thm = ThemeManager::instance();
 
     for (const auto &agent : sorted) {
-        // Day divider
+        // Day divider (skip for children of collapsed roots)
         if (!m_collapsed && agent.updatedAt > 0) {
             QDate date = QDateTime::fromSecsSinceEpoch(agent.updatedAt).date();
             QString dateGroup;
@@ -549,6 +622,25 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
         card->update(agent);
         card->setSelected(agent.sessionId == selectedId);
         card->setCollapsed(m_collapsed);
+
+        if (agent.isOrchestratorRoot) {
+            card->setChildrenCollapsed(m_collapsedRoots.contains(agent.sessionId));
+            connect(card, &AgentCard::collapseToggled, this, [this](const QString &rootId, bool collapsed) {
+                if (collapsed) {
+                    m_collapsedRoots.insert(rootId);
+                    // Auto-select root if selected child is being hidden
+                    if (isDescendantOf(m_selectedId, rootId)) {
+                        setSelectedAgent(rootId);
+                        emit agentSelected(rootId);
+                    }
+                    updateChildVisibility(rootId, false);
+                } else {
+                    m_collapsedRoots.remove(rootId);
+                    updateChildVisibility(rootId, true);
+                }
+            });
+        }
+
         connect(card, &AgentCard::clicked, this, [this](const QString &sid) {
             setSelectedAgent(sid);
             emit agentSelected(sid);
@@ -560,12 +652,21 @@ void AgentFleetPanel::rebuild(const QList<AgentSummary> &agents, const QString &
         m_agentLayout->insertWidget(m_agentLayout->count() - 1, card);  // before stretch
         m_cards[agent.sessionId] = card;
     }
+
+    // Apply collapse visibility after all cards are created
+    for (const QString &rootId : m_collapsedRoots)
+        updateChildVisibility(rootId, false);
 }
 
 void AgentFleetPanel::updateAgent(const AgentSummary &summary)
 {
     if (auto *card = m_cards.value(summary.sessionId)) {
-        card->update(summary);
+        // Preserve layout-computed fields (set by buildHierarchicalOrder during rebuild)
+        AgentSummary patched = summary;
+        patched.depth = card->depth();
+        patched.isOrchestratorRoot = card->isOrchestratorRoot();
+        patched.childCount = card->childCount();
+        card->update(patched);
     }
 }
 
@@ -575,8 +676,55 @@ void AgentFleetPanel::setSelectedAgent(const QString &sessionId)
     if (auto *old = m_cards.value(m_selectedId))
         old->setSelected(false);
     m_selectedId = sessionId;
+    ensureVisible(sessionId);
     if (auto *cur = m_cards.value(sessionId))
         cur->setSelected(true);
+}
+
+void AgentFleetPanel::updateChildVisibility(const QString &rootId, bool visible)
+{
+    for (auto it = m_parentOf.constBegin(); it != m_parentOf.constEnd(); ++it) {
+        QString current = it.key();
+        QString parent = it.value();
+        bool isDescendant = false;
+        while (!parent.isEmpty()) {
+            if (parent == rootId) {
+                isDescendant = true;
+                break;
+            }
+            parent = m_parentOf.value(parent);
+        }
+        if (isDescendant) {
+            if (auto *card = m_cards.value(current))
+                card->setVisible(visible);
+        }
+    }
+}
+
+bool AgentFleetPanel::isDescendantOf(const QString &sessionId, const QString &ancestorId) const
+{
+    QString current = sessionId;
+    while (m_parentOf.contains(current)) {
+        current = m_parentOf[current];
+        if (current == ancestorId)
+            return true;
+    }
+    return false;
+}
+
+void AgentFleetPanel::ensureVisible(const QString &sessionId)
+{
+    QString current = sessionId;
+    while (m_parentOf.contains(current)) {
+        QString parent = m_parentOf[current];
+        if (m_collapsedRoots.contains(parent)) {
+            m_collapsedRoots.remove(parent);
+            updateChildVisibility(parent, true);
+            if (auto *rootCard = m_cards.value(parent))
+                rootCard->setChildrenCollapsed(false);
+        }
+        current = parent;
+    }
 }
 
 void AgentFleetPanel::clearCards()

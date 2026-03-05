@@ -21,6 +21,8 @@ public:
     void appendContentFast(const QString &text);
     void syncMarkdown();
     void finalizeContent();
+    bool needsResize() const { return m_needsResize; }
+    void flushDeferredResize() { if (m_needsResize) resizeBrowser(); }
     void appendRawHtml(const QString &html, const QString &plainSummary);
     void appendHtmlOnly(const QString &html, const QString &plainTextForStorage);
     void setToolInfo(const QString &toolName, const QString &summary);
@@ -43,6 +45,7 @@ signals:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     void applyStyle();
@@ -50,6 +53,7 @@ private:
     void setupAssistantContent(const QString &content);
     void setupToolWidget(const QString &toolName, const QString &summary);
     void resizeBrowser();
+    bool isInViewport() const;
 
     Role m_role;
     int m_turnId = 0;
@@ -70,4 +74,5 @@ private:
     bool m_isCollapsed = true;
     bool m_resizePending = false;
     bool m_markdownDirty = false;
+    bool m_needsResize = false;
 };

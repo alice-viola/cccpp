@@ -1383,8 +1383,13 @@ void MainWindow::onThemeChanged(const QString &name)
     }
 }
 
-void MainWindow::openWorkspace(const QString &path)
+void MainWindow::openWorkspace(const QString &rawPath)
 {
+    // Normalize: strip trailing slash for consistent DB matching
+    QString path = rawPath;
+    while (path.size() > 1 && path.endsWith('/'))
+        path.chop(1);
+
     bool workspaceChanged = !m_workspacePath.isEmpty() && m_workspacePath != path;
     if (workspaceChanged)
         m_chatPanel->closeAllTabs();
@@ -1421,22 +1426,30 @@ void MainWindow::openWorkspace(const QString &path)
     // Populate SessionManager from DB so hierarchy and titles are preserved
     restoreSessions();
 
-    if (m_chatPanel->tabCount() == 0)
-        m_chatPanel->newChat();
+    if (m_chatPanel->tabCount() == 0) {
+        // Find the most recent session for this workspace
+        auto sessions = m_database->loadSessions();
+        QString latestSessionId;
+        qint64 latestTime = 0;
+        for (const auto &s : sessions) {
+            // Normalize stored workspace path too
+            QString ws = s.workspace;
+            while (ws.size() > 1 && ws.endsWith('/'))
+                ws.chop(1);
+            if (ws == path && s.updatedAt > latestTime) {
+                latestTime = s.updatedAt;
+                latestSessionId = s.sessionId;
+            }
+        }
+
+        if (!latestSessionId.isEmpty())
+            m_chatPanel->restoreSession(latestSessionId);
+        else
+            m_chatPanel->newChat();
+    }
 
     // Initial fleet rebuild
     rebuildFleetPanel();
-
-    // Load the most recent session for this workspace into the checkpoint timeline
-    auto sessions = m_database->loadSessions();
-    QString latestSessionId;
-    qint64 latestTime = 0;
-    for (const auto &s : sessions) {
-        if (s.workspace == path && s.updatedAt > latestTime) {
-            latestTime = s.updatedAt;
-            latestSessionId = s.sessionId;
-        }
-    }
 }
 
 void MainWindow::onFileSelected(const QString &filePath)

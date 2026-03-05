@@ -1146,6 +1146,15 @@ void ChatPanel::restoreSession(const QString &sessionId)
             }
         }
 
+        // Flush deferred resizes for widgets now in viewport
+        for (int i = 0; i < t.messagesLayout->count(); ++i) {
+            auto *item = t.messagesLayout->itemAt(i);
+            if (!item || !item->widget()) continue;
+            auto *chatMsg = qobject_cast<ChatMessageWidget *>(item->widget());
+            if (chatMsg && chatMsg->needsResize())
+                chatMsg->flushDeferredResize();
+        }
+
         // Debounced visible turn detection
         m_scrollDebounce->disconnect();
         connect(m_scrollDebounce, &QTimer::timeout, this, [this, idx]() {
@@ -1207,6 +1216,25 @@ void ChatPanel::onSendRequested(const QString &text)
     // If orchestrator toggle is ON, route through the Orchestrator
     if (m_orchestratorToggle->isChecked()) {
         m_orchestratorToggle->setChecked(false);  // one-shot: reset after use
+
+        // Derive title from user's goal before handing off to orchestrator
+        auto &tab = currentTab();
+        if (tab.turnId == 0) {
+            QString simplified = text.simplified();
+            QString title;
+            if (simplified.length() <= 30) {
+                title = simplified;
+            } else {
+                int cutoff = simplified.lastIndexOf(' ', 30);
+                if (cutoff < 15) cutoff = 30;
+                title = simplified.left(cutoff) + "\xe2\x80\xa6";
+            }
+            m_tabWidget->setTabText(tab.tabIndex, title);
+            if (m_sessionMgr)
+                m_sessionMgr->setSessionTitle(tab.sessionId, title);
+            emit sessionListChanged();
+        }
+
         emit orchestrateRequested(text, m_profileSelector->selectedIds());
         return;
     }
@@ -1710,6 +1738,15 @@ AgentSummary ChatPanel::agentSummaryForSession(const QString &sessionId) const
             s.profileIds = it->profileIds;
             s.updatedAt = it->updatedAt;
             s.favorite = it->favorite;
+            // Hierarchy fields from SessionManager
+            if (m_sessionMgr) {
+                auto info = m_sessionMgr->sessionInfo(it->sessionId);
+                s.parentSessionId = info.parentSessionId;
+                s.delegationTask = info.delegationTask;
+                s.pipelineId = info.pipelineId;
+                s.isDelegatedChild = !info.parentSessionId.isEmpty();
+                s.createdAt = info.createdAt;
+            }
             return s;
         }
     }

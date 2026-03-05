@@ -11,6 +11,8 @@
 #include <QTimer>
 #include <QPixmap>
 #include <QTextCursor>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QtMath>
 
 ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget *parent)
@@ -249,11 +251,46 @@ void ChatMessageWidget::setupAssistantContent(const QString &content)
     m_layout->addWidget(m_contentBrowser);
 }
 
+bool ChatMessageWidget::isInViewport() const
+{
+    auto *sa = qobject_cast<QScrollArea *>(parentWidget()
+        ? parentWidget()->parentWidget() : nullptr);
+    if (!sa) {
+        // Walk up further — layout nesting may add extra layers
+        QWidget *p = parentWidget();
+        while (p) {
+            sa = qobject_cast<QScrollArea *>(p);
+            if (sa) break;
+            p = p->parentWidget();
+        }
+    }
+    if (!sa) return true; // no scroll area found — assume visible
+
+    int scrollTop = sa->verticalScrollBar()->value();
+    int scrollBottom = scrollTop + sa->viewport()->height();
+    // Widget position relative to the scroll content widget
+    QPoint pos = mapTo(sa->widget(), QPoint(0, 0));
+    int widgetTop = pos.y();
+    int widgetBottom = widgetTop + height();
+
+    // Include a generous buffer (one viewport height each direction)
+    int buffer = sa->viewport()->height();
+    return widgetBottom >= (scrollTop - buffer) && widgetTop <= (scrollBottom + buffer);
+}
+
 void ChatMessageWidget::resizeBrowser()
 {
     if (!m_contentBrowser) return;
     if (m_resizePending) return;
+
+    // Skip expensive QTextDocument re-layout for off-screen widgets
+    if (!isInViewport()) {
+        m_needsResize = true;
+        return;
+    }
+
     m_resizePending = true;
+    m_needsResize = false;
     QTimer::singleShot(0, this, [this] {
         m_resizePending = false;
         if (!m_contentBrowser) return;
@@ -261,7 +298,6 @@ void ChatMessageWidget::resizeBrowser()
         if (vpWidth <= 0)
             vpWidth = m_contentBrowser->width() - 4;
         if (vpWidth <= 0) {
-            // Widget not laid out yet — retry after layout settles
             QTimer::singleShot(50, this, [this] { resizeBrowser(); });
             return;
         }
@@ -276,6 +312,13 @@ void ChatMessageWidget::resizeEvent(QResizeEvent *event)
 {
     QFrame::resizeEvent(event);
     resizeBrowser();
+}
+
+void ChatMessageWidget::paintEvent(QPaintEvent *event)
+{
+    if (m_needsResize)
+        resizeBrowser();
+    QFrame::paintEvent(event);
 }
 
 void ChatMessageWidget::appendContent(const QString &text)
