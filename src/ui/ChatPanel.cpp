@@ -19,6 +19,7 @@
 #include "core/DiffEngine.h"
 #include "core/Database.h"
 #include "util/JsonUtils.h"
+#include <algorithm>
 #include <QLabel>
 #include <QScrollBar>
 #include <QTimer>
@@ -399,6 +400,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (!t) return;
         flushPendingText(*t);
         saveCurrentTextSegment(*t);
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->finalizeContent();
         t->currentAssistantMsg = nullptr;
         if (t->currentToolGroup) {
             t->currentToolGroup->finalize();
@@ -472,6 +475,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         flushPendingText(*t);
         saveCurrentTextSegment(*t);
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->finalizeContent();
         t->currentAssistantMsg = nullptr;
 
         ToolCallInfo info;
@@ -655,6 +660,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
             emit sessionIdChanged(oldId, sessionId);
             // Notify EffectsPanel and DiffEngine of the confirmed session ID
             emit activeSessionChanged(sessionId);
+            // Rebuild fleet panel so cards use the confirmed session ID
+            emit sessionListChanged();
         }
         // Extract context usage from result event
         if (raw.contains("usage") && raw["usage"].is_object()) {
@@ -724,6 +731,8 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
 
         showSuggestionChips(*t, t->accumulatedRawContent);
         showAcceptAllButton(*t);
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->finalizeContent();
         t->currentAssistantMsg = nullptr;
 
         bool hasCheckpoint = m_database &&
@@ -775,6 +784,17 @@ void ChatPanel::wireProcessSignals(ChatTab &tab)
         if (t) flushPendingText(*t);
     });
     tab.textFlushTimer = flushTimer;
+
+    // Slow-tier markdown sync: full re-render every 500ms for proper formatting
+    auto *syncTimer = new QTimer(this);
+    syncTimer->setInterval(500);
+    syncTimer->setSingleShot(false);
+    connect(syncTimer, &QTimer::timeout, this, [this, proc] {
+        auto *t = tabForProcess(proc);
+        if (t && t->currentAssistantMsg)
+            t->currentAssistantMsg->syncMarkdown();
+    });
+    tab.markdownSyncTimer = syncTimer;
 }
 
 QString ChatPanel::newChat()
@@ -857,41 +877,16 @@ void ChatPanel::closeAllTabs()
     m_tabs.clear();
 }
 
-void ChatPanel::restoreSession(const QString &sessionId)
+// ---------------------------------------------------------------------------
+// renderMessageRange — create widgets for allMessages[startIndex..endIndex)
+// Returns the layout insert position after the last widget added.
+// ---------------------------------------------------------------------------
+int ChatPanel::renderMessageRange(ChatTab &tab, int startIndex, int endIndex, int insertPos)
 {
-    if (!m_database) return;
-
-    ChatTab tab;
-    tab.sessionId = sessionId;
-    // Look up the stored timestamp from the database
-    auto sessionInfo = m_database->loadSession(sessionId);
-    tab.updatedAt = sessionInfo.updatedAt;
-    tab.favorite = sessionInfo.favorite;
-    if (tab.updatedAt == 0)
-        tab.updatedAt = QDateTime::currentSecsSinceEpoch();
-    tab.container = createChatContent();
-    tab.scrollArea = tab.container->findChild<QScrollArea *>();
-    tab.messagesLayout = tab.scrollArea->widget()->findChild<QVBoxLayout *>("messagesLayout");
-
-    tab.process = new ClaudeProcess(this);
-    tab.process->setWorkingDirectory(m_workingDir);
-    tab.process->setSessionId(sessionId);
-    tab.sessionConfirmed = true;
-
-    auto messages = m_database->loadMessages(sessionId);
-
-    // Batch-load all checkpoints for this session (avoids per-message DB queries)
-    auto checkpoints = m_database->loadCheckpoints(sessionId);
-    QSet<int> checkpointTurnIds;
-    for (const auto &cp : checkpoints) {
-        if (!cp.uuid.isEmpty())
-            checkpointTurnIds.insert(cp.turnId);
-    }
-
-    int maxTurn = 0;
     ToolCallGroupWidget *pendingGroup = nullptr;
     bool firstAssistantInTurn = true;
     int currentTurn = -1;
+    int pos = insertPos;
 
     auto flushGroup = [&] {
         if (pendingGroup) {
@@ -900,13 +895,9 @@ void ChatPanel::restoreSession(const QString &sessionId)
         }
     };
 
-    auto insertPos = [&] {
-        return tab.messagesLayout->count() - 1;
-    };
-
-    for (const auto &msg : messages) {
+    for (int mi = startIndex; mi < endIndex; ++mi) {
+        const auto &msg = tab.allMessages[mi];
         int turnId = msg.turnId;
-        if (turnId > maxTurn) maxTurn = turnId;
 
         if (turnId != currentTurn) {
             flushGroup();
@@ -920,9 +911,8 @@ void ChatPanel::restoreSession(const QString &sessionId)
             w->setTurnId(turnId);
             if (msg.timestamp > 0)
                 w->setTimestamp(QDateTime::fromSecsSinceEpoch(msg.timestamp));
-            bool hasCheckpoint = checkpointTurnIds.contains(turnId);
-            w->showRevertButton(hasCheckpoint);
-            tab.messagesLayout->insertWidget(insertPos(), w);
+            w->showRevertButton(tab.checkpointTurnIds.contains(turnId));
+            tab.messagesLayout->insertWidget(pos++, w);
             connect(w, &ChatMessageWidget::revertRequested, this, &ChatPanel::onRevertRequested);
 
         } else if (msg.role == "thinking" && !msg.content.trimmed().isEmpty()) {
@@ -930,7 +920,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             auto *tb = new ThinkingBlockWidget;
             tb->appendContent(msg.content);
             tb->finalize();
-            tab.messagesLayout->insertWidget(insertPos(), tb);
+            tab.messagesLayout->insertWidget(pos++, tb);
 
         } else if (msg.role == "assistant" && !msg.content.trimmed().isEmpty()) {
             flushGroup();
@@ -941,7 +931,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
             if (!firstAssistantInTurn)
                 w->setHeaderVisible(false);
             firstAssistantInTurn = false;
-            tab.messagesLayout->insertWidget(insertPos(), w);
+            tab.messagesLayout->insertWidget(pos++, w);
             connect(w, &ChatMessageWidget::fileNavigationRequested,
                     this, [this](const QString &fp, int line) { emit navigateToFile(fp, line); });
             connect(w, &ChatMessageWidget::applyCodeRequested,
@@ -983,32 +973,140 @@ void ChatPanel::restoreSession(const QString &sessionId)
                 editGroup->addToolCall(info);
                 editGroup->finalize();
                 editGroup->setExpandedByDefault();
-                tab.messagesLayout->insertWidget(insertPos(), editGroup);
+                tab.messagesLayout->insertWidget(pos++, editGroup);
             } else {
                 if (!pendingGroup) {
                     pendingGroup = new ToolCallGroupWidget;
                     connect(pendingGroup, &ToolCallGroupWidget::fileClicked, this, &ChatPanel::onToolFileClicked);
-                    tab.messagesLayout->insertWidget(insertPos(), pendingGroup);
+                    tab.messagesLayout->insertWidget(pos++, pendingGroup);
                 }
                 pendingGroup->addToolCall(info);
             }
         }
     }
     flushGroup();
+    return pos;
+}
+
+// ---------------------------------------------------------------------------
+// loadOlderMessages — prepend a batch of older messages, preserving scroll pos
+// ---------------------------------------------------------------------------
+void ChatPanel::loadOlderMessages(ChatTab &tab, int count)
+{
+    if (tab.lazyRenderIndex <= 0) return;
+    if (tab.lazyLoadingInProgress) return;
+    tab.lazyLoadingInProgress = true;
+
+    int endIndex = tab.lazyRenderIndex;
+    int startIndex = qMax(0, endIndex - count);
+
+    // Align backward to a turn boundary so we don't split a turn
+    if (startIndex > 0) {
+        int turnAtStart = tab.allMessages[startIndex].turnId;
+        while (startIndex > 0 && tab.allMessages[startIndex - 1].turnId == turnAtStart)
+            --startIndex;
+    }
+
+    // Record scroll state before inserting
+    QScrollBar *sb = tab.scrollArea->verticalScrollBar();
+    int oldScrollValue = sb->value();
+    QWidget *scrollContent = tab.scrollArea->widget();
+    int oldContentHeight = scrollContent->sizeHint().height();
+
+    // Render the batch at position 0 (top of layout)
+    renderMessageRange(tab, startIndex, endIndex, 0);
+    tab.lazyRenderIndex = startIndex;
+
+    // Restore scroll position so viewport does not jump
+    QTimer::singleShot(0, this, [sb, oldScrollValue, oldContentHeight, scrollContent] {
+        int newContentHeight = scrollContent->sizeHint().height();
+        int heightDelta = newContentHeight - oldContentHeight;
+        sb->setValue(oldScrollValue + heightDelta);
+    });
+
+    tab.lazyLoadingInProgress = false;
+
+    // Free stored messages when fully rendered
+    if (tab.lazyRenderIndex == 0) {
+        tab.allMessages.clear();
+        tab.allMessages.squeeze();
+        tab.checkpointTurnIds.clear();
+    }
+}
+
+void ChatPanel::restoreSession(const QString &sessionId)
+{
+    if (!m_database) return;
+
+    ChatTab tab;
+    tab.sessionId = sessionId;
+    auto sessionInfo = m_database->loadSession(sessionId);
+    tab.updatedAt = sessionInfo.updatedAt;
+    tab.favorite = sessionInfo.favorite;
+    if (tab.updatedAt == 0)
+        tab.updatedAt = QDateTime::currentSecsSinceEpoch();
+    tab.container = createChatContent();
+    tab.scrollArea = tab.container->findChild<QScrollArea *>();
+    tab.messagesLayout = tab.scrollArea->widget()->findChild<QVBoxLayout *>("messagesLayout");
+
+    tab.process = new ClaudeProcess(this);
+    tab.process->setWorkingDirectory(m_workingDir);
+    tab.process->setSessionId(sessionId);
+    tab.sessionConfirmed = true;
+
+    // Load ALL messages (needed for effects panel, editCount, title)
+    tab.allMessages = m_database->loadMessages(sessionId);
+
+    // Batch-load all checkpoints (store for lazy widget creation)
+    auto checkpoints = m_database->loadCheckpoints(sessionId);
+    for (const auto &cp : checkpoints) {
+        if (!cp.uuid.isEmpty())
+            tab.checkpointTurnIds.insert(cp.turnId);
+    }
+
+    // Compute metadata from full history (lightweight, no widget creation)
+    int maxTurn = 0;
+    for (const auto &msg : tab.allMessages) {
+        if (msg.turnId > maxTurn) maxTurn = msg.turnId;
+        if (msg.role == "tool") {
+            tab.lastActivity = msg.content;
+            if (msg.toolName == "Edit" || msg.toolName == "StrReplace"
+                || msg.toolName == "Write" || msg.toolName == "MultiEdit") {
+                tab.editCount++;
+            }
+        }
+    }
     tab.turnId = maxTurn;
+
+    // Determine initial render range: only the last N messages
+    static constexpr int kInitialRenderCount = 40;
+    int totalCount = tab.allMessages.size();
+    int startIndex = qMax(0, totalCount - kInitialRenderCount);
+
+    // Align startIndex backward to a turn boundary
+    if (startIndex > 0) {
+        int turnAtStart = tab.allMessages[startIndex].turnId;
+        while (startIndex > 0 && tab.allMessages[startIndex - 1].turnId == turnAtStart)
+            --startIndex;
+    }
+    tab.lazyRenderIndex = startIndex;
+
+    // Render only the visible tail
+    int insertAt = tab.messagesLayout->count() - 1; // before stretch spacer
+    renderMessageRange(tab, startIndex, totalCount, insertAt);
 
     auto *scrollContent = tab.scrollArea->widget();
     auto *indicator = new ThinkingIndicator(scrollContent);
     tab.messagesLayout->insertWidget(tab.messagesLayout->count() - 1, indicator);
     tab.thinkingIndicator = indicator;
 
+    // Title derivation (iterates allMessages, lightweight)
     SessionInfo info = m_sessionMgr ? m_sessionMgr->sessionInfo(sessionId) : SessionInfo();
     QString title;
     if (!info.title.isEmpty()) {
         title = info.title;
     } else {
-        // Derive title from first user message
-        for (const auto &msg : messages) {
+        for (const auto &msg : tab.allMessages) {
             if (msg.role == "user" && !msg.content.trimmed().isEmpty()) {
                 QString simplified = msg.content.simplified();
                 if (simplified.length() <= 30) {
@@ -1032,10 +1130,23 @@ void ChatPanel::restoreSession(const QString &sessionId)
 
     wireProcessSignals(m_tabs[idx]);
 
-    // Scroll monitoring: detect which turn is visible
+    // Scroll monitoring: lazy load trigger + visible turn detection
     auto *scrollBar = m_tabs[idx].scrollArea->verticalScrollBar();
     connect(scrollBar, &QScrollBar::valueChanged, this, [this, idx]() {
         if (!m_tabs.contains(idx)) return;
+        auto &t = m_tabs[idx];
+        if (!t.messagesLayout || !t.scrollArea) return;
+
+        // Lazy load trigger: render older messages when near top
+        if (t.lazyRenderIndex > 0 && !t.lazyLoadingInProgress) {
+            int scrollValue = t.scrollArea->verticalScrollBar()->value();
+            int viewportHeight = t.scrollArea->viewport()->height();
+            if (scrollValue < viewportHeight * 1.5) {
+                loadOlderMessages(t, 30);
+            }
+        }
+
+        // Debounced visible turn detection
         m_scrollDebounce->disconnect();
         connect(m_scrollDebounce, &QTimer::timeout, this, [this, idx]() {
             if (!m_tabs.contains(idx)) return;
@@ -1054,7 +1165,7 @@ void ChatPanel::restoreSession(const QString &sessionId)
                 if (widgetTop <= viewportTop + threshold)
                     bestTurnId = chatMsg->turnId();
                 else if (widgetTop > viewportBottom)
-                    break;  // Past viewport — no need to check further
+                    break;
             }
             if (bestTurnId > 0)
                 emit visibleTurnChanged(t.sessionId, bestTurnId);
@@ -1063,22 +1174,27 @@ void ChatPanel::restoreSession(const QString &sessionId)
     });
 
     m_tabWidget->setCurrentIndex(idx);
-
-    // Scroll to the end so user sees most recent messages
     scrollTabToBottom(m_tabs[idx]);
 
     emit activeSessionChanged(sessionId);
     emit sessionListChanged();
 
-    // Populate effects panel with historical file changes and timestamps
-    // (reuse already-loaded messages to avoid redundant DB queries)
-    auto historicalChanges = extractFileChangesFromHistory(sessionId, messages);
+    // Populate effects panel with complete history (uses stored allMessages)
+    auto &storedTab = m_tabs[idx];
+    auto historicalChanges = extractFileChangesFromHistory(sessionId, storedTab.allMessages);
     if (!historicalChanges.isEmpty())
         emit historicalEffectsReady(sessionId, historicalChanges);
 
-    auto timestamps = turnTimestampsForSession(messages);
+    auto timestamps = turnTimestampsForSession(storedTab.allMessages);
     if (!timestamps.isEmpty())
         emit turnTimestampsReady(sessionId, timestamps);
+
+    // Free stored messages if everything was rendered (short session)
+    if (storedTab.lazyRenderIndex == 0) {
+        storedTab.allMessages.clear();
+        storedTab.allMessages.squeeze();
+        storedTab.checkpointTurnIds.clear();
+    }
 }
 
 void ChatPanel::sendMessage(const QString &text)
@@ -1387,6 +1503,14 @@ void ChatPanel::removeMessagesAfterTurn(int turnId)
     tab.currentAssistantMsg = nullptr;
     tab.currentToolGroup = nullptr;
     tab.suggestionChips = nullptr;
+
+    // Truncate lazy message state
+    if (!tab.allMessages.isEmpty()) {
+        auto it = std::remove_if(tab.allMessages.begin(), tab.allMessages.end(),
+            [turnId](const MessageRecord &m) { return m.turnId >= turnId; });
+        tab.allMessages.erase(it, tab.allMessages.end());
+        tab.lazyRenderIndex = qMin(tab.lazyRenderIndex, tab.allMessages.size());
+    }
 }
 
 QString ChatPanel::buildContextPreamble(const QString &userText)
@@ -1523,6 +1647,7 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
             s.delegationTask = info.delegationTask;
             s.pipelineId = info.pipelineId;
             s.isDelegatedChild = !info.parentSessionId.isEmpty();
+            s.createdAt = info.createdAt;
         }
         result.append(s);
         openIds.insert(it->sessionId);
@@ -1551,6 +1676,7 @@ QList<AgentSummary> ChatPanel::agentSummaries() const
             s.title = session.title.isEmpty()
                           ? session.sessionId.left(8) + "..."
                           : session.title;
+            s.createdAt = session.createdAt;
             s.updatedAt = session.updatedAt;
             s.turnCount = turnCounts.value(session.sessionId, 0);
             s.favorite = session.favorite;
@@ -1705,6 +1831,17 @@ void ChatPanel::scrollToTurn(int turnId)
         if (chatMsg && chatMsg->turnId() == turnId) {
             tab.scrollArea->ensureWidgetVisible(chatMsg, 0, 20);
             return;
+        }
+    }
+
+    // Target turn not found — force-render older messages up to it
+    if (tab.lazyRenderIndex > 0 && !tab.allMessages.isEmpty()) {
+        for (int mi = 0; mi < tab.lazyRenderIndex; ++mi) {
+            if (tab.allMessages[mi].turnId >= turnId) {
+                loadOlderMessages(tab, tab.lazyRenderIndex - mi);
+                QTimer::singleShot(20, this, [this, turnId] { scrollToTurn(turnId); });
+                return;
+            }
         }
     }
 }
@@ -1864,7 +2001,7 @@ void ChatPanel::flushPendingText(ChatTab &tab)
         tab.pendingText.clear();
         return;
     }
-    tab.currentAssistantMsg->appendContent(tab.pendingText);
+    tab.currentAssistantMsg->appendContentFast(tab.pendingText);
     tab.pendingText.clear();
     scrollTabToBottom(tab);
 }
@@ -1905,6 +2042,14 @@ void ChatPanel::setTabProcessingState(ChatTab &tab, bool processing)
         } else {
             tab.textFlushTimer->stop();
             flushPendingText(tab);
+        }
+    }
+
+    if (tab.markdownSyncTimer) {
+        if (processing) {
+            tab.markdownSyncTimer->start();
+        } else {
+            tab.markdownSyncTimer->stop();
         }
     }
 
@@ -2397,6 +2542,8 @@ QString ChatPanel::delegateToChild(const QString &parentSessionId,
         if (!t) return;
         flushPendingText(*t);
         saveCurrentTextSegment(*t);
+        if (t->currentAssistantMsg)
+            t->currentAssistantMsg->finalizeContent();
         QString currentChildId = t->sessionId;
         // Look up the LIVE parent session ID from SessionManager
         QString liveParentId;

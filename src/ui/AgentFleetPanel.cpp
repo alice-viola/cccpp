@@ -430,6 +430,14 @@ QList<AgentSummary> AgentFleetPanel::buildHierarchicalOrder(const QList<AgentSum
             childrenOf[a.parentSessionId].append(a.sessionId);
     }
 
+    // Promote orphans (children whose parent was deleted) to roots
+    for (auto it = childrenOf.constBegin(); it != childrenOf.constEnd(); ++it) {
+        if (!byId.contains(it.key())) {
+            for (const auto &orphanId : it.value())
+                roots.append(orphanId);
+        }
+    }
+
     QList<AgentSummary> result;
     std::function<void(const QString &, int)> visit = [&](const QString &id, int depth) {
         if (!byId.contains(id)) return;
@@ -438,9 +446,9 @@ QList<AgentSummary> AgentFleetPanel::buildHierarchicalOrder(const QList<AgentSum
         s.isDelegatedChild = (depth > 0);
         result.append(s);
         auto children = childrenOf.value(id);
-        // Sort children by updatedAt descending
+        // Sort children by createdAt ascending (stable — doesn't change during processing)
         std::sort(children.begin(), children.end(), [&byId](const QString &a, const QString &b) {
-            return byId[a].updatedAt > byId[b].updatedAt;
+            return byId[a].createdAt < byId[b].createdAt;
         });
         for (const auto &childId : children)
             visit(childId, depth + 1);

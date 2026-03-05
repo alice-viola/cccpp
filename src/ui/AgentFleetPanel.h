@@ -21,6 +21,7 @@ struct AgentSummary {
     int editCount = 0;
     int turnCount = 0;
     double costUsd = 0.0;
+    qint64 createdAt = 0;
     qint64 updatedAt = 0;
     QStringList profileIds;
 

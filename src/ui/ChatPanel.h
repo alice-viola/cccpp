@@ -14,7 +14,7 @@
 #include "ui/AgentFleetPanel.h"  // for AgentSummary
 #include "ui/EffectsPanel.h"     // for FileChange
 
-struct MessageRecord;
+#include "core/Database.h"  // for MessageRecord
 class InputBar;
 class ModeSelector;
 class ModelSelector;
@@ -46,6 +46,7 @@ struct ChatTab {
     QString accumulatedRawContent;
     QString pendingText;
     QTimer *textFlushTimer = nullptr;
+    QTimer *markdownSyncTimer = nullptr;
     int turnId = 0;
     int tabIndex = -1;
     bool processing = false;
@@ -67,6 +68,12 @@ struct ChatTab {
     QString overrideMode;  // if set, overrides the UI mode selector
     qint64 updatedAt = 0;
     bool favorite = false;
+
+    // Lazy message rendering
+    QList<MessageRecord> allMessages;
+    QSet<int> checkpointTurnIds;
+    int lazyRenderIndex = 0;        // messages [0, lazyRenderIndex) are NOT yet rendered
+    bool lazyLoadingInProgress = false;
 };
 
 class ChatPanel : public QWidget {
@@ -186,6 +193,8 @@ private:
     void showAcceptAllButton(ChatTab &tab);
     void saveCurrentTextSegment(ChatTab &tab);
     int insertPosForTab(const ChatTab &tab) const;
+    int renderMessageRange(ChatTab &tab, int startIndex, int endIndex, int insertPos);
+    void loadOlderMessages(ChatTab &tab, int count = 30);
     void removeMessagesAfterTurn(int turnId);
     void showPlansMenu();
     void updateStatsLabel();

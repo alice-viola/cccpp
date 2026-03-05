@@ -18,6 +18,9 @@ public:
                                QWidget *parent = nullptr);
 
     void appendContent(const QString &text);
+    void appendContentFast(const QString &text);
+    void syncMarkdown();
+    void finalizeContent();
     void appendRawHtml(const QString &html, const QString &plainSummary);
     void appendHtmlOnly(const QString &html, const QString &plainTextForStorage);
     void setToolInfo(const QString &toolName, const QString &summary);
@@ -66,4 +69,5 @@ private:
     QStringList m_pendingHtmlBlocks;
     bool m_isCollapsed = true;
     bool m_resizePending = false;
+    bool m_markdownDirty = false;
 };

@@ -10,6 +10,7 @@
 #include <QResizeEvent>
 #include <QTimer>
 #include <QPixmap>
+#include <QTextCursor>
 #include <QtMath>
 
 ChatMessageWidget::ChatMessageWidget(Role role, const QString &content, QWidget *parent)
@@ -289,6 +290,40 @@ void ChatMessageWidget::appendContent(const QString &text)
     } else if (m_userLabel) {
         m_userLabel->setText(m_rawContent);
     }
+}
+
+void ChatMessageWidget::appendContentFast(const QString &text)
+{
+    m_rawContent += text;
+    m_markdownDirty = true;
+
+    if (m_contentBrowser) {
+        QString escaped = text.toHtmlEscaped();
+        escaped.replace('\n', "<br>");
+
+        QTextCursor cursor(m_contentBrowser->document());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertHtml(escaped);
+    } else if (m_userLabel) {
+        m_userLabel->setText(m_rawContent);
+    }
+}
+
+void ChatMessageWidget::syncMarkdown()
+{
+    if (!m_markdownDirty || !m_contentBrowser) return;
+    m_markdownDirty = false;
+
+    MarkdownRenderer renderer;
+    QString html = renderer.toHtml(m_rawContent);
+    if (!m_pendingHtmlBlocks.isEmpty())
+        html += m_pendingHtmlBlocks.join("");
+    m_contentBrowser->setHtml(html);
+}
+
+void ChatMessageWidget::finalizeContent()
+{
+    syncMarkdown();
 }
 
 void ChatMessageWidget::appendRawHtml(const QString &html, const QString &plainSummary)

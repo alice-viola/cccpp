@@ -1418,6 +1418,9 @@ void MainWindow::openWorkspace(const QString &path)
 
     syncEditorContextToChat();
 
+    // Populate SessionManager from DB so hierarchy and titles are preserved
+    restoreSessions();
+
     if (m_chatPanel->tabCount() == 0)
         m_chatPanel->newChat();
 
