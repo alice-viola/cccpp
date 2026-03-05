@@ -2,7 +2,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QMap>
 #include <QProcess>
+#include <QFileSystemWatcher>
 #include <nlohmann/json.hpp>
 
 class ChatPanel;
@@ -16,6 +18,14 @@ struct OrchestratorCommand {
     QString description;    // for Validate
     QString summary;        // for Done
     QString reason;         // for Fail
+};
+
+struct PendingChild {
+    QString sessionId;
+    QString role;
+    QString agentName;      // e.g. "implementer-2"
+    bool completed = false;
+    QString output;
 };
 
 class Orchestrator : public QObject {
@@ -58,6 +68,7 @@ signals:
     void completed(const QString &summary);
     void failed(const QString &reason);
     void progressUpdate(const QString &message);
+    void peerMessageSent(const QString &from, const QString &to, const QString &content);
 
 private slots:
     void onOrchestratorTurnFinished();
@@ -66,6 +77,9 @@ private:
     OrchestratorCommand parseCommand(const QString &assistantOutput) const;
     void executeCommand(const OrchestratorCommand &cmd);
     void feedResult(const QString &resultText);
+    void checkAllChildrenDone();
+    QString generateAgentName(const QString &role);
+    void cleanupInboxes();
 
     ChatPanel *m_chatPanel = nullptr;
     QString m_workspace;
@@ -83,11 +97,18 @@ private:
     static const int MAX_TOTAL_DELEGATIONS = 20;
 
     QStringList m_contextProfileIds;  // user's personality profiles for specialists
-    QString m_pendingChildSessionId;
     QProcess *m_validationProcess = nullptr;
+
+    // Parallel delegation: map of pending children (replaces single m_pendingChildSessionId)
+    QMap<QString, PendingChild> m_pendingChildren;
+    QString m_teamId;       // UUID per orchestration run, scopes inbox directory
+    int m_agentCounter = 0; // for generating unique agent names
 
     // Deferred feed: validation may finish before the Claude CLI process exits.
     // Store the result and send it once onSessionFinishedProcessing fires.
     bool m_orchestratorTurnDone = false;
     QString m_pendingFeedResult;
+
+    // Watch inbox directory for UI updates
+    QFileSystemWatcher *m_inboxWatcher = nullptr;
 };

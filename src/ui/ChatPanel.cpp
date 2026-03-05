@@ -2321,7 +2321,10 @@ QString ChatPanel::delegateToChild(const QString &parentSessionId,
                                     const QString &task,
                                     const QString &context,
                                     const QString &specialistProfileId,
-                                    const QStringList &extraProfileIds)
+                                    const QStringList &extraProfileIds,
+                                    const QString &agentName,
+                                    const QString &teamId,
+                                    const QStringList &teammates)
 {
     // Determine mode and profile from specialist
     QString mode = "agent";
@@ -2356,6 +2359,12 @@ QString ChatPanel::delegateToChild(const QString &parentSessionId,
     tab.process = new ClaudeProcess(this);
     tab.process->setWorkingDirectory(m_workingDir);
     tab.process->setMode(mode);
+
+    // Set agent identity for peer messaging
+    if (!agentName.isEmpty())
+        tab.process->setAgentName(agentName);
+    if (!teamId.isEmpty())
+        tab.process->setTeamId(teamId);
 
     auto *scrollContent = tab.scrollArea->widget();
     auto *indicator = new ThinkingIndicator(scrollContent);
@@ -2431,6 +2440,21 @@ QString ChatPanel::delegateToChild(const QString &parentSessionId,
 
     // Configure and send
     QString systemPrompt = ProfileManager::instance().buildSystemPrompt(m_workingDir, profileIds);
+
+    // Add peer messaging instructions when part of a team
+    if (!teammates.isEmpty() && !agentName.isEmpty()) {
+        systemPrompt += QStringLiteral(
+            "\n\n## Peer Communication\n"
+            "Your agent name is '%1'. Your teammates are: %2.\n\n"
+            "You have two messaging tools:\n"
+            "- `send_message(to, content)` — send a message to a specific teammate\n"
+            "- `check_inbox()` — check for messages from teammates\n\n"
+            "Use messaging to coordinate when your work depends on or affects a teammate's work. "
+            "After each major step, check your inbox for feedback. "
+            "Share key decisions (API shapes, file paths, interfaces) proactively.")
+            .arg(agentName, teammates.join(", "));
+    }
+
     m_tabs[idx].process->setSystemPrompt(systemPrompt);
     m_tabs[idx].process->setProfileIds(profileIds);
     m_tabs[idx].process->setModel(m_modelSelector->currentModelId());

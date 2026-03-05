@@ -54,6 +54,9 @@ void ClaudeProcess::setProfileIds(const QStringList &ids)
     m_profileIds = ids;
 }
 
+void ClaudeProcess::setAgentName(const QString &name) { m_agentName = name; }
+void ClaudeProcess::setTeamId(const QString &teamId) { m_teamId = teamId; }
+
 QProcessEnvironment ClaudeProcess::buildProcessEnvironment() const
 {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -78,6 +81,13 @@ QProcessEnvironment ClaudeProcess::buildProcessEnvironment() const
     if (env.value("HOME").isEmpty())
         env.insert("HOME", QDir::homePath());
     env.insert("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
+
+    // Peer messaging: inject agent identity (inherited by MCP server subprocess)
+    if (!m_agentName.isEmpty())
+        env.insert("CCCPP_AGENT_NAME", m_agentName);
+    if (!m_teamId.isEmpty())
+        env.insert("CCCPP_TEAM_ID", m_teamId);
+
     return env;
 }
 
@@ -386,9 +396,13 @@ QStringList ClaudeProcess::buildArguments(const QString &message) const
     } else if (m_mode == "plan") {
         args << "--permission-mode" << "plan";
     } else {
+        QString allowedTools = "Bash,Read,Edit,Write,Glob,Grep,Task,AskUserQuestion";
+        // Add peer messaging tools when agent is part of a team
+        if (!m_teamId.isEmpty())
+            allowedTools += ",mcp__c3p2-orchestrator__send_message"
+                            ",mcp__c3p2-orchestrator__check_inbox";
         args << "--permission-mode" << "bypassPermissions"
-             << "--allowedTools"
-             << "Bash,Read,Edit,Write,Glob,Grep,Task,AskUserQuestion";
+             << "--allowedTools" << allowedTools;
     }
 
     return args;

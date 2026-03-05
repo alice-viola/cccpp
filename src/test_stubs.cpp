@@ -5,5 +5,6 @@
 
 QString ChatPanel::delegateToChild(const QString &, const QString &,
                                     const QString &, const QString &,
-                                    const QStringList &) { return {}; }
+                                    const QStringList &, const QString &,
+                                    const QString &, const QStringList &) { return {}; }
 QString ChatPanel::sessionFinalOutput(const QString &) const { return {}; }

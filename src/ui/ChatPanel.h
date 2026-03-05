@@ -116,7 +116,10 @@ public:
                             const QString &task,
                             const QString &context,
                             const QString &specialistProfileId = {},
-                            const QStringList &extraProfileIds = {});
+                            const QStringList &extraProfileIds = {},
+                            const QString &agentName = {},
+                            const QString &teamId = {},
+                            const QStringList &teammates = {});
     void sendMessageToSession(const QString &sessionId, const QString &text);
     void configureSession(const QString &sessionId,
                           const QString &mode,

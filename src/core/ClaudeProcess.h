@@ -21,6 +21,8 @@ public:
     void setModel(const QString &model); // e.g. "claude-sonnet-4-6"
     void setSystemPrompt(const QString &prompt);
     void setProfileIds(const QStringList &ids);
+    void setAgentName(const QString &name);
+    void setTeamId(const QString &teamId);
 
     void sendMessage(const QString &message,
                      const QList<QPair<QByteArray, QString>> &images = {});
@@ -56,6 +58,8 @@ private:
     QString m_model;
     QString m_systemPrompt;
     QStringList m_profileIds;
+    QString m_agentName;   // peer messaging: this agent's name (e.g. "implementer-2")
+    QString m_teamId;      // peer messaging: team UUID for inbox scoping
     QByteArray m_stdoutBuffer;
     QByteArray m_stderrBuffer;
 };

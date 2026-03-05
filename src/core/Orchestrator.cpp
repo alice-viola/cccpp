@@ -7,12 +7,13 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUuid>
 #include <nlohmann/json.hpp>
 
 // ─── MCP Server Script (embedded) ───────────────────────────────────────────
 // Keep in sync with resources/mcp/orchestrator_server.py.
 // We embed a version hash so we can detect when the installed copy is outdated.
-static const char *MCP_SCRIPT_VERSION = "1.0.0";
+static const char *MCP_SCRIPT_VERSION = "2.0.0";
 
 static QString mcpScriptPath()
 {
@@ -22,6 +23,11 @@ static QString mcpScriptPath()
 static QString mcpServerToolPrefix()
 {
     return QStringLiteral("mcp__%1__").arg(Orchestrator::MCP_SERVER_NAME);
+}
+
+static QString inboxBaseDir()
+{
+    return QDir::homePath() + "/.cccpp/inboxes";
 }
 
 // ─── ensureMcpServerInstalled ────────────────────────────────────────────────
@@ -48,7 +54,6 @@ bool Orchestrator::ensureMcpServerInstalled()
                           + "/../resources/mcp/orchestrator_server.py";
         // Fallback: try relative to source tree (development)
         if (!QFile::exists(srcPath)) {
-            // Try common dev paths
             QStringList candidates = {
                 QDir::currentPath() + "/resources/mcp/orchestrator_server.py",
                 QCoreApplication::applicationDirPath() + "/../../resources/mcp/orchestrator_server.py",
@@ -64,7 +69,6 @@ bool Orchestrator::ensureMcpServerInstalled()
                 qWarning() << "[Orchestrator] Failed to copy MCP script to" << scriptPath;
                 return false;
             }
-            // Make executable
             QFile(scriptPath).setPermissions(
                 QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
                 QFileDevice::ReadGroup | QFileDevice::ExeGroup |
@@ -90,7 +94,6 @@ bool Orchestrator::ensureMcpServerInstalled()
         }
     }
 
-    // Check if already registered with correct path
     bool needsRegister = true;
     if (config.contains("mcpServers") && config["mcpServers"].is_object()) {
         auto &servers = config["mcpServers"];
@@ -139,6 +142,32 @@ Orchestrator::Orchestrator(QObject *parent)
 void Orchestrator::setChatPanel(ChatPanel *panel) { m_chatPanel = panel; }
 void Orchestrator::setWorkspace(const QString &workspace) { m_workspace = workspace; }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+QString Orchestrator::generateAgentName(const QString &role)
+{
+    m_agentCounter++;
+    return QStringLiteral("%1-%2").arg(role.toLower()).arg(m_agentCounter);
+}
+
+void Orchestrator::cleanupInboxes()
+{
+    if (m_teamId.isEmpty()) return;
+
+    QString inboxDir = inboxBaseDir() + "/" + m_teamId;
+    QDir dir(inboxDir);
+    if (dir.exists())
+        dir.removeRecursively();
+
+    if (m_inboxWatcher) {
+        delete m_inboxWatcher;
+        m_inboxWatcher = nullptr;
+    }
+
+    m_teamId.clear();
+    m_pendingChildren.clear();
+}
+
 // ─── Start / Cancel ──────────────────────────────────────────────────────────
 
 QString Orchestrator::start(const QString &goal,
@@ -160,8 +189,28 @@ QString Orchestrator::start(const QString &goal,
     m_mcpCommandReceived = false;
     m_orchestratorTurnDone = false;
     m_pendingFeedResult.clear();
+    m_pendingChildren.clear();
+    m_agentCounter = 0;
     m_currentPhase = "planning";
     emit phaseChanged(m_currentPhase);
+
+    // Generate unique team ID for inbox scoping
+    m_teamId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QString inboxDir = inboxBaseDir() + "/" + m_teamId;
+    QDir().mkpath(inboxDir);
+
+    // Watch inbox directory for UI updates (peer messages)
+    m_inboxWatcher = new QFileSystemWatcher(this);
+    m_inboxWatcher->addPath(inboxDir);
+    connect(m_inboxWatcher, &QFileSystemWatcher::directoryChanged, this,
+            [this](const QString &path) {
+        // Scan for new message files → emit signal for fleet panel
+        QDir dir(path);
+        for (const auto &file : dir.entryList({"*.jsonl"}, QDir::Files)) {
+            Q_UNUSED(file);
+            // Optional: parse last line for UI display
+        }
+    });
 
     // Create a new chat session for the orchestrator itself
     m_sessionId = m_chatPanel->newChat();
@@ -171,7 +220,7 @@ QString Orchestrator::start(const QString &goal,
                                    {"specialist-orchestrator"});
 
     qDebug() << "[Orchestrator] Started with goal:" << goal
-             << "session:" << m_sessionId;
+             << "session:" << m_sessionId << "team:" << m_teamId;
 
     // Connect signals using member slots (safe for repeated start() calls)
     connect(m_chatPanel, &ChatPanel::sessionIdChanged,
@@ -191,7 +240,11 @@ QString Orchestrator::start(const QString &goal,
         "- `validate(command, description)` — run a shell command to verify the work\n"
         "- `done(summary)` — report the goal is fully achieved\n"
         "- `fail(reason)` — report unrecoverable failure\n\n"
-        "Call exactly ONE tool per turn. Start by delegating to an architect.")
+        "You may call MULTIPLE delegate tools in a single turn to run agents in parallel.\n"
+        "For example, after the architect finishes, delegate to both a backend implementer "
+        "and a frontend implementer simultaneously.\n\n"
+        "For validate, done, and fail — call exactly ONE tool per turn.\n\n"
+        "Start by delegating to an architect to design the solution.")
         .arg(goal);
 
     m_chatPanel->sendMessageToSession(m_sessionId, initialMessage);
@@ -208,6 +261,7 @@ void Orchestrator::cancel()
         m_validationProcess->deleteLater();
         m_validationProcess = nullptr;
     }
+    cleanupInboxes();
     emit phaseChanged(m_currentPhase);
 }
 
@@ -263,8 +317,12 @@ void Orchestrator::onSessionIdChanged(const QString &oldId, const QString &newId
         qDebug() << "[Orchestrator] Session ID changed:" << oldId << "->" << newId;
         m_sessionId = newId;
     }
-    if (oldId == m_pendingChildSessionId)
-        m_pendingChildSessionId = newId;
+    // Re-key pending children map if a child session ID changed
+    if (m_pendingChildren.contains(oldId)) {
+        auto pc = m_pendingChildren.take(oldId);
+        pc.sessionId = newId;
+        m_pendingChildren[newId] = pc;
+    }
 }
 
 // ─── Fallback: Text Parsing (when MCP tools not available) ───────────────────
@@ -301,7 +359,11 @@ void Orchestrator::onSessionFinishedProcessing(const QString &sessionId)
 void Orchestrator::onOrchestratorTurnFinished()
 {
     if (!m_running) return;
-    if (!m_pendingChildSessionId.isEmpty()) return; // waiting for delegation
+
+    // Still waiting for delegated children to finish
+    for (const auto &pc : m_pendingChildren) {
+        if (!pc.completed) return;
+    }
 
     // Fallback text parsing — only reached if MCP tool call was not intercepted
     QString output = m_chatPanel->sessionFinalOutput(m_sessionId);
@@ -394,6 +456,8 @@ void Orchestrator::executeCommand(const OrchestratorCommand &cmd)
             return;
         }
         m_totalDelegations++;
+
+        QString agentName = generateAgentName(cmd.role);
         m_currentPhase = "delegating to " + cmd.role;
         emit phaseChanged(m_currentPhase);
         emit delegationStarted(cmd.role, cmd.task);
@@ -403,12 +467,30 @@ void Orchestrator::executeCommand(const OrchestratorCommand &cmd)
         // Get orchestrator's context summary for the child
         QString context = m_chatPanel->sessionFinalOutput(m_sessionId);
 
-        m_pendingChildSessionId = m_chatPanel->delegateToChild(
-            m_sessionId, cmd.task, context, profileId, m_contextProfileIds);
+        // Build teammate list from currently pending (non-completed) children
+        QStringList teammates;
+        for (const auto &pc : m_pendingChildren) {
+            if (!pc.completed)
+                teammates << pc.agentName;
+        }
+
+        QString childId = m_chatPanel->delegateToChild(
+            m_sessionId, cmd.task, context, profileId, m_contextProfileIds,
+            agentName, m_teamId, teammates);
+
+        PendingChild pc;
+        pc.sessionId = childId;
+        pc.role = cmd.role;
+        pc.agentName = agentName;
+        m_pendingChildren[childId] = pc;
+
+        // Update teammate lists for previously spawned children in this batch.
+        // (They were spawned before this agent existed, so they don't know about it yet.
+        //  The system prompt is already sent, but the agent can discover via check_inbox.)
 
         qDebug() << "[Orchestrator] Delegated to" << cmd.role
-                 << "profiles:" << (QStringList{profileId} + m_contextProfileIds)
-                 << "child:" << m_pendingChildSessionId;
+                 << "agent:" << agentName << "child:" << childId
+                 << "pending:" << m_pendingChildren.size();
         break;
     }
 
@@ -466,6 +548,7 @@ void Orchestrator::executeCommand(const OrchestratorCommand &cmd)
         m_currentPhase = "completed";
         emit phaseChanged(m_currentPhase);
         qDebug() << "[Orchestrator] Completed:" << cmd.summary;
+        cleanupInboxes();
         emit completed(cmd.summary);
         break;
 
@@ -474,6 +557,7 @@ void Orchestrator::executeCommand(const OrchestratorCommand &cmd)
         m_currentPhase = "failed";
         emit phaseChanged(m_currentPhase);
         qDebug() << "[Orchestrator] Failed:" << cmd.reason;
+        cleanupInboxes();
         emit failed(cmd.reason);
         break;
 
@@ -488,20 +572,39 @@ void Orchestrator::executeCommand(const OrchestratorCommand &cmd)
 void Orchestrator::onDelegateFinished(const QString &childSessionId, const QString &output)
 {
     if (!m_running) return;
-    if (childSessionId != m_pendingChildSessionId) return;
+    if (!m_pendingChildren.contains(childSessionId)) return;
 
-    m_pendingChildSessionId.clear();
+    auto &pc = m_pendingChildren[childSessionId];
+    pc.completed = true;
+    pc.output = output;
 
-    qDebug() << "[Orchestrator] Delegation finished, feeding result back";
+    qDebug() << "[Orchestrator] Agent" << pc.agentName << "finished ("
+             << pc.role << ")";
 
-    QString role = "specialist";
-    if (m_currentPhase.startsWith("delegating to "))
-        role = m_currentPhase.mid(14);
+    checkAllChildrenDone();
+}
+
+void Orchestrator::checkAllChildrenDone()
+{
+    // Check if ALL pending children have completed
+    for (const auto &pc : m_pendingChildren) {
+        if (!pc.completed) return;
+    }
+
+    // All done — aggregate results
+    QStringList parts;
+    for (const auto &pc : m_pendingChildren) {
+        parts << QStringLiteral("## Agent '%1' (%2) completed\n\n%3")
+                     .arg(pc.agentName, pc.role, pc.output);
+    }
+
+    int count = m_pendingChildren.size();
+    m_pendingChildren.clear();
 
     feedResult(QStringLiteral(
-        "Agent '%1' completed successfully.\n\nOutput:\n%2\n\n"
+        "%1 agent(s) completed successfully.\n\n%2\n\n"
         "What should be done next?")
-        .arg(role, output));
+        .arg(count).arg(parts.join("\n\n---\n\n")));
 }
 
 // ─── Feed Result ─────────────────────────────────────────────────────────────

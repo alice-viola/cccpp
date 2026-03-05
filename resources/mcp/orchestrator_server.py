@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """
 MCP server for C3P2 orchestrator — zero dependencies (stdlib only).
+version: 2.0.0
 
-Exposes 4 tools over JSON-RPC 2.0 / stdio:
-  delegate  — Delegate work to a specialist agent
-  validate  — Run a shell command to check results
-  done      — Report goal achieved
-  fail      — Report unrecoverable failure
+Exposes 6 tools over JSON-RPC 2.0 / stdio:
+  delegate      — Delegate work to a specialist agent
+  validate      — Run a shell command to check results
+  done          — Report goal achieved
+  fail          — Report unrecoverable failure
+  send_message  — Send a message to a teammate agent
+  check_inbox   — Check your inbox for messages from teammates
 
-The C++ app intercepts tool calls from the stream-json output.
-This server just acknowledges them so the Claude CLI round-trip completes.
+The C++ app intercepts delegate/validate/done/fail from the stream-json output.
+send_message and check_inbox do actual file I/O (inbox JSONL files).
 """
 import json
 import sys
+import os
+import time
+import fcntl
 
 TOOLS = [
     {
@@ -98,6 +104,40 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "send_message",
+        "description": (
+            "Send a message to a teammate agent. "
+            "Use this to share findings, coordinate work, or request information from another agent on your team."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "Name of the target agent (e.g. 'implementer-2', 'architect-1')",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The message content to send",
+                },
+            },
+            "required": ["to", "content"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "check_inbox",
+        "description": (
+            "Check your inbox for messages from teammates. "
+            "Returns all unread messages. Call this periodically between major steps."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
 ]
 
 # Tool call acknowledgments — Claude sees these as tool results
@@ -107,6 +147,91 @@ TOOL_ACKS = {
     "done": "Orchestration marked as complete.",
     "fail": "Orchestration marked as failed.",
 }
+
+INBOX_BASE = os.path.expanduser("~/.cccpp/inboxes")
+
+
+def get_team_id():
+    return os.environ.get("CCCPP_TEAM_ID", "")
+
+
+def get_agent_name():
+    return os.environ.get("CCCPP_AGENT_NAME", "")
+
+
+def handle_send_message(args):
+    team_id = get_team_id()
+    sender = get_agent_name()
+    target = args.get("to", "")
+    content = args.get("content", "")
+
+    if not team_id or not sender:
+        return "Error: Agent identity not configured (no team context)."
+    if not target:
+        return "Error: 'to' is required."
+    if not content:
+        return "Error: 'content' is required."
+
+    inbox_dir = os.path.join(INBOX_BASE, team_id)
+    os.makedirs(inbox_dir, exist_ok=True)
+    inbox_file = os.path.join(inbox_dir, target + ".jsonl")
+
+    msg = json.dumps({
+        "from": sender,
+        "to": target,
+        "content": content,
+        "timestamp": time.time(),
+    })
+
+    # Atomic append with file locking
+    with open(inbox_file, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.write(msg + "\n")
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+    return "Message sent to " + target
+
+
+def handle_check_inbox():
+    team_id = get_team_id()
+    agent_name = get_agent_name()
+
+    if not team_id or not agent_name:
+        return "Error: Agent identity not configured (no team context)."
+
+    inbox_file = os.path.join(INBOX_BASE, team_id, agent_name + ".jsonl")
+
+    if not os.path.exists(inbox_file):
+        return "No messages in your inbox."
+
+    messages = []
+    with open(inbox_file, "r") as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    messages.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+    # Clear inbox after reading (rename to .read for debugging)
+    try:
+        read_path = inbox_file + ".read"
+        if os.path.exists(read_path):
+            os.remove(read_path)
+        os.rename(inbox_file, read_path)
+    except OSError:
+        pass
+
+    if not messages:
+        return "No messages in your inbox."
+
+    parts = []
+    for m in messages:
+        parts.append("From %s: %s" % (m.get("from", "unknown"), m.get("content", "")))
+    return "Inbox messages:\n" + "\n---\n".join(parts)
 
 
 def send(msg):
@@ -144,7 +269,7 @@ def main():
             reply(req_id, {
                 "protocolVersion": params.get("protocolVersion", "2025-11-25"),
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "c3p2-orchestrator", "version": "0.1.0"},
+                "serverInfo": {"name": "c3p2-orchestrator", "version": "2.0.0"},
             })
 
         elif method in ("notifications/initialized", "notifications/cancelled"):
@@ -158,9 +283,17 @@ def main():
         elif method == "tools/call":
             params = msg.get("params", {})
             name = params.get("name", "")
-            ack = TOOL_ACKS.get(name, f"Acknowledged: {name}")
+            args = params.get("arguments", {})
+
+            if name == "send_message":
+                result_text = handle_send_message(args)
+            elif name == "check_inbox":
+                result_text = handle_check_inbox()
+            else:
+                result_text = TOOL_ACKS.get(name, "Acknowledged: " + name)
+
             reply(req_id, {
-                "content": [{"type": "text", "text": ack}],
+                "content": [{"type": "text", "text": result_text}],
             })
 
         # ─── Other Standard Methods ───────────────────────────────
@@ -175,7 +308,7 @@ def main():
 
         # ─── Unknown ──────────────────────────────────────────────
         elif req_id is not None:
-            reply_error(req_id, -32601, f"Method not found: {method}")
+            reply_error(req_id, -32601, "Method not found: " + method)
         # else: unknown notification — silently ignore
 
 
